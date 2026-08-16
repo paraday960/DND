@@ -9,6 +9,7 @@ import hmac
 import json
 import os
 import random
+import urllib.parse
 from urllib.parse import parse_qsl
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -33,18 +34,32 @@ def _rand_chat_id() -> int:
 
 
 def validate_init_data(init_data: str):
-    """اعتبارسنجی initData تلگرام — کلید مخفی از توکن ربات ساخته می‌شود."""
+    """اعتبارسنجی initData تلگرام — کلید مخفی از توکن ربات ساخته می‌شود.
+
+    هش تلگرام روی مقادیر «خام» (درصد-کد شده) محاسبه می‌شود؛ decode کردن آن‌ها
+    (parse_qsl) برای نام فارسی و کاراکترهای خاص هش را خراب می‌کند.
+    """
     try:
-        params = dict(parse_qsl(init_data, keep_blank_values=True))
-        received = params.pop("hash", None)
-        if not received or not config.BOT_TOKEN:
+        if not init_data or not config.BOT_TOKEN:
+            return None
+        received = None
+        fields = {}
+        for part in init_data.split("&"):
+            if "=" not in part:
+                continue
+            k, v = part.split("=", 1)
+            if k == "hash":
+                received = v
+            else:
+                fields[k] = v
+        if not received:
             return None
         secret = hmac.new(b"WebAppData", config.BOT_TOKEN.encode(), hashlib.sha256).digest()
-        dcs = "\n".join(f"{k}={v}" for k, v in sorted(params.items()))
+        dcs = "\n".join(f"{k}={fields[k]}" for k in sorted(fields))
         calc = hmac.new(secret, dcs.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(calc, received):
             return None
-        return json.loads(params.get("user", "{}"))
+        return json.loads(urllib.parse.unquote(fields.get("user", "{}")))
     except Exception:
         return None
 

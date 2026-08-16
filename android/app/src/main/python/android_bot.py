@@ -597,17 +597,29 @@ def bot_loop(store):
 # ==================== سرور مینی‌گیم ====================
 
 def validate_init_data(init_data, bot_token):
+    # نکته مهم: هش تلگرام روی مقادیر «خام» (درصد-کد شده) محاسبه می‌شود.
+    # parse_qsl مقادیر را decode می‌کند و برای نام فارسی/کاراکترهای خاص هش را خراب می‌کند.
     try:
-        params = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
-        received = params.pop("hash", None)
-        if not received or not bot_token:
+        if not init_data or not bot_token:
+            return None
+        received = None
+        fields = {}
+        for part in init_data.split("&"):
+            if "=" not in part:
+                continue
+            k, v = part.split("=", 1)
+            if k == "hash":
+                received = v
+            else:
+                fields[k] = v
+        if not received:
             return None
         secret = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
-        dcs = "\n".join("%s=%s" % (k, v) for k, v in sorted(params.items()))
+        dcs = "\n".join("%s=%s" % (k, fields[k]) for k in sorted(fields))
         calc = hmac.new(secret, dcs.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(calc, received):
             return None
-        return json.loads(params.get("user", "{}"))
+        return json.loads(urllib.parse.unquote(fields.get("user", "{}")))
     except Exception:
         return None
 
