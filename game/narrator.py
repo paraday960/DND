@@ -19,20 +19,25 @@ SYSTEM_PROMPT = """تو «دانجن مستر» یک بازی نقش‌آفری�
 - حداکثر ۳ پاراگراف کوتاه و پرتنش بنویس.
 - هرگز نگو «من یک هوش مصنوعی هستم»."""
 
-SCENARIO_PROMPT = """یک سناریوی کامل و جذاب D&D 5e برای گروهی {players} نفره با میانگین سطح {level} طراحی کن.
-سناریو باید تاریک، پرتعلیق و قابل‌بازی باشد. فقط یک JSON معتبر و بدون متن اضافه برگردان با این ساختار دقیق:
+SCENARIO_PROMPT = """یک سناریوی کامل و قابل‌بازی D&D 5e برای گروهی {players} نفره با سطح {level} طراحی کن.
+مهم: بودجه سختی باید مناسب باشد — گروه سطح {level} نباید با دشمنان خیلی قوی یا تعداد خیلی زیاد روبه‌رو شود.
+- برای سطح ۱: حداکثر ۲ تا ۴ دشمن ضعیف (goblin, wolf, bandit, skeleton, zombie)
+- برای سطح ۲ تا ۴: ۳ تا ۵ دشمن متوسط
+- سطح ۵ به بالا: می‌توان از دشمنان قوی‌تر (troll, giant_spider, harpy) استفاده کرد
+- اژدها (dragon_young) فقط برای سطح ۶ به بالا
+تاریک، پرتعلیق و کوتاه باشد. فقط یک JSON معتبر و بدون متن اضافه برگردان با این ساختار:
 {{
-  "title": "عنوان سناریو",
-  "hook": "دلیل شروع ماجرا (چند جمله)",
-  "goal": "هدف نهایی گروه",
-  "locations": ["مکان ۱", "مکان ۲", "مکان ۳"],
-  "npcs": ["NPC ۱", "NPC ۲"],
+  "title": "عنوان",
+  "hook": "شروع ماجرا",
+  "goal": "هدف گروه",
+  "locations": ["مکان ۱", "مکان ۲"],
+  "npcs": ["NPC"],
   "encounters": [
-    {{"name": "نام دشمن", "count": 3, "ac": 12, "hp": 10, "dmg": "1d6+2", "xp": 50, "cr": 0.25}}
+    {{"name": "goblin", "count": 2, "ac": 15, "hp": 7, "dmg": "1d6+2", "xp": 50}}
   ],
-  "treasure": "گنج و پاداش نهایی"
+  "treasure": "گنج"
 }}
-نام دشمن‌ها را از این لیست انتخاب کن (همان املای لاتین): goblin, orc, skeleton, zombie, wolf, bandit, harpy, troll, dragon_young, giant_spider"""
+نام دشمن‌ها فقط از این لیست: goblin, orc, skeleton, zombie, wolf, bandit, harpy, troll, dragon_young, giant_spider"""
 
 
 def _post_json(url: str, body: dict, headers: dict = None, timeout: int = 45) -> str:
@@ -144,17 +149,38 @@ class Narrator:
 
     def scenario(self, session: Session, request: str = "") -> dict:
         """ساخت سناریوی کامل توسط هوش مصنوعی."""
-        level = max(1, min(20, session.char_count() or 1))
-        user_msg = SCENARIO_PROMPT.format(
-            players=session.char_count() or 1, level=level
-        )
+        from .rules import MONSTERS
+        chars = [p["char"] for p in session.players.values() if p.get("char")]
+        players = max(1, len(chars))
+        level = max(1, min(20, (sum(c.level for c in chars) // players) if chars else 1))
+        user_msg = SCENARIO_PROMPT.format(players=players, level=level)
         if request.strip():
             user_msg += f"\n\nالزامات اضافه از طرف DM: {request}"
         try:
             text = self._call("", user_msg, max_tokens=1400)
             data = _extract_json(text) if text else None
             if data and data.get("title"):
-                return data
+                clean = []
+                for e in (data.get("encounters") or []):
+                    if not isinstance(e, dict):
+                        continue
+                    name = str(e.get("name", "")).lower().strip()
+                    if name not in MONSTERS:
+                        continue
+                    base = MONSTERS[name]
+                    try:
+                        count = max(1, min(12, int(e.get("count", 1))))
+                        ac = max(8, min(25, int(e.get("ac", base["ac"]))))
+                        hp = max(1, min(400, int(e.get("hp", base["hp"]))))
+                        xp = max(1, int(e.get("xp", base["xp"])))
+                    except (TypeError, ValueError):
+                        count, ac, hp, xp = 1, base["ac"], base["hp"], base["xp"]
+                    clean.append({"name": name, "count": count, "ac": ac, "hp": hp,
+                                  "dmg": e.get("dmg", base["dmg"]), "xp": xp,
+                                  "cr": base.get("cr", 0.25)})
+                if clean:
+                    data["encounters"] = clean
+                    return data
         except Exception:
             pass
         return self._fallback_scenario(session)

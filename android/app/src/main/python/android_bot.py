@@ -156,33 +156,12 @@ def is_dm(session, uid):
 
 # ==================== دستورها ====================
 
-def set_menu_button(url):
-    """دکمه منوی کنار باکس پیام را برای همه کاربران به مینی‌گیم وصل می‌کند."""
-    if not url:
-        return False
-    payload = {
-        "menu_button": {
-            "type": "web_app",
-            "text": "🎮 مینی‌گیم D&D",
-            "web_app": {"url": url},
-        }
-    }
-    r = tg("setChatMenuButton", payload, timeout=15)
-    return bool(r and r.get("ok"))
-
-
 def cmd_start(store, chat, uid, uname, args):
     url = tunnel_url()
     if url:
-        # دکمه منو هم برای همیشه ست شود تا در هر چتی در دسترس باشد
-        set_menu_button(url)
         send(chat, WELCOME, webapp_kb(url))
     else:
-        send(chat,
-             "🐉 به دانجن‌مستر هوشمند خوش اومدی!\n\n"
-             "⏳ تونل مینی‌گیم هنوز آماده نشده. ۳۰-۴۰ ثانیه صبر کن و دوباره /start بزن.\n"
-             "اگر بعد از یک دقیقه هنوز خبری نشد، لاگ اپ رو بررسی کن.\n\n"
-             "🧙 دستورها: /newgame → /join → /newchar → /scenario → /story")
+        send(chat, WELCOME)
 
 
 def cmd_help(store, chat, uid, uname, args):
@@ -365,34 +344,14 @@ def cmd_combat(store, chat, uid, uname, args):
     text = start_combat(s)
     store.save(s)
     send(chat, text)
-    # اگر اولین نوبت‌ها مال هیولاها بود، همه‌شان را پشت سر هم اجرا کن
-    from game.combat import run_initial_monsters
-    t2 = run_initial_monsters(s)
-    if t2:
+    if s.combat and s.combat["participants"][0]["kind"] == "monster":
+        t2 = advance(s)
         store.save(s)
         send(chat, t2)
 
 
-def _post_player_action(s, store, chat, did_act):
-    """بعد از اقدام موفق بازیکن، نوبت‌های هیولا را خودکار اجرا کن و پیروزی را ثبت کن."""
-    if not s.combat or not did_act:
-        return
-    from game.combat import advance, end_combat
-    t2 = advance(s)
-    store.save(s)
-    if t2:
-        send(chat, t2)
-    # پایان خودکار نبرد اگر همه هیولاها مردند
-    if s.combat:
-        monsters = [p for p in s.combat["participants"] if p["kind"] == "monster"]
-        if monsters and all(not m.get("alive", False) for m in monsters):
-            end = end_combat(s)
-            store.save(s)
-            send(chat, end)
-
-
 def cmd_attack(store, chat, uid, uname, args):
-    from game.combat import attack
+    from game.combat import attack, advance
     s, err = need_room(store, chat)
     if err:
         send(chat, err)
@@ -404,16 +363,16 @@ def cmd_attack(store, chat, uid, uname, args):
     if not target:
         send(chat, "مثل: /attack گابلین")
         return
-    before = len(s.log)
     result = attack(s, uid, target)
     store.save(s)
     send(chat, result)
-    did_act = len(s.log) > before  # حمله موفق لاگ اضافه می‌کند
-    _post_player_action(s, store, chat, did_act)
+    t2 = advance(s)
+    store.save(s)
+    send(chat, t2)
 
 
 def cmd_cast(store, chat, uid, uname, args):
-    from game.combat import cast
+    from game.combat import cast, advance
     from game.rules import SPELLS
     s, err = need_room(store, chat)
     if err:
@@ -425,32 +384,15 @@ def cmd_cast(store, chat, uid, uname, args):
     if not args:
         send(chat, "مثل: /cast firebolt گابلین\nطلسم‌ها: " + ", ".join("`%s`" % k for k in SPELLS))
         return
-    before = len(s.log)
     result = cast(s, uid, args[0].lower(), " ".join(args[1:]))
     store.save(s)
     send(chat, result)
-    did_act = len(s.log) > before
-    _post_player_action(s, store, chat, did_act)
-
-
-def cmd_dodge(store, chat, uid, uname, args):
-    from game.combat import dodge
-    s, err = need_room(store, chat)
-    if err:
-        send(chat, err)
-        return
-    if not s.combat:
-        send(chat, "نبردی نیست.")
-        return
-    result = dodge(s, uid)
+    t2 = advance(s)
     store.save(s)
-    send(chat, result)
-    if "دفاع کرد" in result:
-        _post_player_action(s, store, chat, True)
+    send(chat, t2)
 
 
-def cmd_deathsave(store, chat, uid, uname, args):
-    from game.adventure import death_save
+def cmd_skip(store, chat, uid, uname, args):
     from game.combat import advance
     s, err = need_room(store, chat)
     if err:
@@ -458,30 +400,6 @@ def cmd_deathsave(store, chat, uid, uname, args):
         return
     if not s.combat:
         send(chat, "نبردی نیست.")
-        return
-    text = death_save(s, uid)
-    store.save(s)
-    send(chat, text)
-    # فقط اگر زنده شد نوبت جلو برود
-    ch = user_char(s, uid)
-    if ch and ch.hp > 0 and s.combat:
-        t2 = advance(s)
-        store.save(s)
-        if t2:
-            send(chat, t2)
-
-
-def cmd_skip(store, chat, uid, uname, args):
-    from game.combat import advance, is_player_turn
-    s, err = need_room(store, chat)
-    if err:
-        send(chat, err)
-        return
-    if not s.combat:
-        send(chat, "نبردی نیست.")
-        return
-    if not is_player_turn(s, uid):
-        send(chat, "هنوز نوبت تو نیست.")
         return
     t = advance(s)
     store.save(s)
@@ -577,8 +495,7 @@ def on_message(store, msg):
         "sheet": cmd_sheet, "party": cmd_party, "roll": cmd_roll,
         "scenario": cmd_scenario, "story": cmd_story, "where": cmd_where,
         "combat": cmd_combat, "attack": cmd_attack, "cast": cmd_cast,
-        "skip": cmd_skip, "dodge": cmd_dodge, "deathsave": cmd_deathsave,
-        "combatend": cmd_combatend,
+        "skip": cmd_skip, "combatend": cmd_combatend,
         "levelup": cmd_levelup, "xp": cmd_xp, "newchar": cmd_newchar,
     }
     fn = handlers.get(cmd)
@@ -797,16 +714,10 @@ class ApiHandler(BaseHTTPRequestHandler):
         idx = min(c.get("turn", 0), len(parts) - 1)
         out = []
         for i, p in enumerate(parts):
-            is_dead = bool(p.get("dead"))
-            is_downed = bool(p.get("downed"))
             out.append({
-                "name": p["name"], "kind": p["kind"],
-                "hp": p.get("hp", 0),
-                "max_hp": p.get("max_hp", p.get("hp", 0)), "ac": p["ac"],
-                "alive": (not is_dead) and p.get("alive", True) and p.get("hp", 0) > 0,
-                "downed": is_downed, "dead": is_dead,
-                "init": p["init"], "conditions": p.get("conditions", []),
-                "turn": i == idx,
+                "name": p["name"], "kind": p["kind"], "hp": p["hp"],
+                "max_hp": p.get("max_hp", p["hp"]), "ac": p["ac"], "alive": p["alive"],
+                "init": p["init"], "turn": i == idx,
                 "is_player": p["kind"] == "player",
                 "is_me": p["kind"] == "player" and uid is not None and p.get("uid") == str(uid),
             })
@@ -1009,7 +920,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/combat/start":
-            from game.combat import start_combat, run_initial_monsters
+            from game.combat import start_combat, advance
             if s.dm_id != user["id"]:
                 self._json(403, {"ok": False, "error": "فقط میزبان."})
                 return
@@ -1017,42 +928,26 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._json(400, {"ok": False, "error": "نبرد در جریان است."})
                 return
             msgs = [start_combat(s)]
-            init = run_initial_monsters(s)
-            if init:
-                msgs.append(init)
+            if s.combat and s.combat["participants"][0]["kind"] == "monster":
+                msgs.append(advance(s))
             self.store.save(s)
             self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(s, user)}})
             return
 
-        if path in ("/api/combat/attack", "/api/combat/cast", "/api/combat/skip",
-                    "/api/combat/dodge", "/api/combat/deathsave"):
-            from game.combat import attack, cast, advance, dodge
-            from game.adventure import death_save
+        if path in ("/api/combat/attack", "/api/combat/cast", "/api/combat/skip"):
+            from game.combat import attack, cast, advance
             if not s.combat:
                 self._json(400, {"ok": False, "error": "نبردی نیست."})
                 return
             msgs = []
-            before = len(s.log)
             if path == "/api/combat/attack":
                 msgs.append(attack(s, user["id"], body.get("target", "")))
             elif path == "/api/combat/cast":
                 msgs.append(cast(s, user["id"], body.get("spell", ""), body.get("target", "")))
-            elif path == "/api/combat/dodge":
-                msgs.append(dodge(s, user["id"]))
-            elif path == "/api/combat/deathsave":
-                msgs.append(death_save(s, user["id"]))
             else:
                 msgs.append(advance(s))
-            did_act = len(s.log) > before or path == "/api/combat/skip"
-            # بعد از اقدام موفق بازیکن، نوبت‌های هیولا را اجرا کن
-            if s.combat and did_act and path not in ("/api/combat/deathsave",):
-                msgs.append(advance(s))
-            # پایان خودکار نبرد اگر همه دشمن‌ها مردند
             if s.combat:
-                monsters = [p for p in s.combat["participants"] if p["kind"] == "monster"]
-                if monsters and all(not m.get("alive", False) for m in monsters):
-                    from game.combat import end_combat
-                    msgs.append(end_combat(s))
+                msgs.append(advance(s))
             self.store.save(s)
             self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(s, user)}})
             return
@@ -1073,8 +968,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         self._json(404, {"ok": False, "error": "not found"})
 
 
-def http_server_start(store, narrator, port, ready_event=None):
-    """وب‌سرور را راه می‌اندازد و شیء سرور را برمی‌گرداند (یا None)."""
+def http_server_loop(store, narrator, port):
     ApiHandler.store = store
     ApiHandler.narrator = narrator
     ApiHandler.dev = os.environ.get("WEBAPP_DEV", "0") == "1"
@@ -1082,28 +976,19 @@ def http_server_start(store, narrator, port, ready_event=None):
         srv = ThreadingHTTPServer(("0.0.0.0", port), ApiHandler)
     except OSError as e:
         if getattr(e, "errno", None) == 98:
-            log("⚠️ پورت %d اشغال است — نسخه دیگری از ربات هنوز فعال است." % port)
+            log("⚠️ پورت %d اشغال است — نسخه دیگری از ربات هنوز فعال است. دکمه «توقف» را بزن، چند ثانیه صبر کن و دوباره شروع کن" % port)
         else:
             log("خطای سرور وب: %s" % e)
-        return None
+        return
     log("🌐 مینی‌گیم روی پورت %d فعال شد" % port)
 
     def serve():
-        if ready_event is not None:
-            ready_event.set()
         try:
             srv.serve_forever(poll_interval=0.5)
         except Exception:
             pass
 
     threading.Thread(target=serve, daemon=True).start()
-    return srv
-
-
-def http_server_loop(store, narrator, port):
-    srv = http_server_start(store, narrator, port)
-    if srv is None:
-        return
     while not stopped():
         time.sleep(1)
     try:
@@ -1187,23 +1072,6 @@ def resolve_edge_ips():
     return ips
 
 
-def _probe_tunnel(url, timeout=8):
-    """بررسی می‌کند تونل واقعاً به سرور محلی وصل است (جلوگیری از خطای 1033)."""
-    try:
-        with urllib.request.urlopen(url + "/api/meta", timeout=timeout) as r:
-            if r.status == 200:
-                return True
-    except urllib.error.HTTPError as e:
-        if e.code in (1033, 502, 503, 521, 522, 523, 530):
-            log("⚠️ تونل وصل است اما سرور محلی در دسترس نیست (HTTP %d)" % e.code)
-            return False
-        return True
-    except Exception as e:
-        log("⚠️ بررسی تونل ناموفق: %s" % e)
-        return False
-    return False
-
-
 def tunnel_loop(port, native_dir=None):
     while not stopped():
         proc = None
@@ -1247,49 +1115,12 @@ def tunnel_loop(port, native_dir=None):
             proc = subprocess.Popen(
                 cmd, stdout=cf_log, stderr=subprocess.STDOUT,
                 env={"HOME": FILES_DIR, "PATH": "/system/bin:/system/xbin"})
-
-            # قبل از ذخیره URL، چند بار تست می‌کنیم تا تونل واقعاً وصل شده باشد
-            healthy = False
-            for attempt in range(12):
-                if stopped() or proc.poll() is not None:
-                    break
-                time.sleep(3)
-                if _probe_tunnel(url, timeout=6):
-                    healthy = True
-                    break
-                log("⏳ تونل در حال اتصال... (تلاش %d/12)" % (attempt + 1))
-
-            if not healthy:
-                log("⚠️ تونل به سرور محلی وصل نشد (خطای 1033) — ری‌استارت")
-                try:
-                    proc.terminate()
-                except Exception:
-                    pass
-                proc = None
-                time.sleep(8)
-                continue
-
             with open(os.path.join(FILES_DIR, "tunnel_url.txt"), "w", encoding="utf-8") as f:
                 f.write(url)
-            # دکمه منو را هم برای همه کاربران روی مینی‌گیم تنظیم کن
-            try:
-                set_menu_button(url)
-            except Exception:
-                pass
-            log("✅ تونل سالم و آماده — آدرس مینی‌گیم: " + url)
-
-            # پایش سلامت در حین کار
-            fail_streak = 0
+            log("✅ آدرس مینی‌گیم: " + url)
             while not stopped() and proc.poll() is None:
-                time.sleep(20)
-                if _probe_tunnel(url, timeout=8):
-                    fail_streak = 0
-                else:
-                    fail_streak += 1
-                    if fail_streak >= 3:
-                        log("⚠️ تونل ۳ بار پشت سر هم سالم نبود — راه‌اندازی مجدد")
-                        break
-            if not stopped() and proc and proc.poll() is None:
+                time.sleep(5)
+            if not stopped():
                 log("⚠️ تونل قطع شد — اتصال مجدد...")
         except Exception as e:
             log("خطای تونل: %s" % e)
@@ -1299,15 +1130,7 @@ def tunnel_loop(port, native_dir=None):
                     proc.terminate()
                 except Exception:
                     pass
-            # وقتی تونل قطع/ری‌استارت می‌شود، URL قدیمی را پاک کن
-            # تا دکمه تلگرام به آدرس مرده اشاره نکند
-            try:
-                p = os.path.join(FILES_DIR, "tunnel_url.txt")
-                if os.path.exists(p):
-                    os.remove(p)
-            except Exception:
-                pass
-        time.sleep(10)
+        time.sleep(15)
 
 
 # ==================== نقطه ورود ====================
@@ -1357,30 +1180,8 @@ def main(files_dir, native_lib_dir=None):
         log("بررسی وب‌هوک ناموفق: %s" % e)
 
     port = int(os.environ.get("PORT", "8080"))
-
-    # اول وب‌سرور کاملاً بالا بیاید و پاسخ بدهد، بعد تونل را وصل کن
-    # (اگر تونل قبل از آماده شدن سرور وصل شود خطای 1033 می‌دهد)
-    srv_ready = threading.Event()
-    srv = http_server_start(store, narrator, port, srv_ready)
-    if srv is None:
-        log("❌ وب‌سرور بالا نیامد — بدون تونل ادامه می‌دهم")
-    else:
-        log("⏳ صبر برای آماده شدن وب‌سرور...")
-        srv_ready.wait(timeout=10)
-        local_ok = False
-        for _ in range(5):
-            try:
-                with urllib.request.urlopen("http://127.0.0.1:%d/api/meta" % port, timeout=3) as r:
-                    if r.status == 200:
-                        local_ok = True
-                        break
-            except Exception:
-                time.sleep(1)
-        if local_ok:
-            log("✅ وب‌سرور محلی پاسخ می‌دهد — شروع تونل امن")
-            threading.Thread(target=tunnel_loop, args=(port, native_lib_dir), daemon=True).start()
-        else:
-            log("❌ وب‌سرور از داخل گوشی پاسخ نمی‌دهد (علت 1033) — تونل شروع نشد")
+    threading.Thread(target=tunnel_loop, args=(port, native_lib_dir), daemon=True).start()
+    threading.Thread(target=http_server_loop, args=(store, narrator, port), daemon=True).start()
 
     bot_loop(store)
     log("🛑 سرور متوقف شد")

@@ -227,8 +227,11 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         if not room.combat:
             return msgs
         msgs.append(advance(room))
+        if not room.combat:
+            return msgs  # end_combat داخل advance ممکنه فراخوانی شده باشه
+        # پایان خودکار نبرد اگر همه دشمن‌ها مردند
         monsters = [p for p in room.combat["participants"] if p["kind"] == "monster"]
-        if monsters and all(not m["alive"] for m in monsters):
+        if monsters and all(not m.get("alive", False) for m in monsters):
             msgs.append(end_combat(room))
         return msgs
 
