@@ -61,16 +61,26 @@ def use_item(session, uid: int, item: str) -> str:
 def death_save(session, uid: int) -> str:
     """نجات از مرگ استاندارد: سه موفقیت یا سه شکست."""
     ch = session.get_char(uid)
-    if not ch or ch.hp > 0:
+    if not ch:
+        return "کاراکتری برایت پیدا نشد."
+    if ch.hp > 0:
         return "در وضعیت مرگ نیستی."
     participant = next((p for p in (session.combat or {}).get("participants", [])
                         if p.get("kind") == "player" and p.get("uid") == str(uid)), None)
-    if not participant or participant.get("alive"):
-        return "در این نبرد زمین‌گیر نیستی."
+    if not participant:
+        return "در این نبرد شرکت نکردی."
+    if participant.get("dead"):
+        return "این کاراکتر مرده است."
+    if not participant.get("downed"):
+        participant["downed"] = True
+        participant["hp"] = 0
     roll = roll_d20()
     if roll == 20:
-        ch.hp = 1; participant["hp"] = 1; participant["alive"] = True
+        ch.hp = 1
         ch.death_saves = {"success": 0, "fail": 0}
+        participant["hp"] = 1
+        participant["downed"] = False
+        participant["alive"] = True
         return "🌟 بیست طبیعی! با ۱ HP دوباره بلند شدی."
     if roll == 1:
         ch.death_saves["fail"] += 2
@@ -80,10 +90,16 @@ def death_save(session, uid: int) -> str:
         ch.death_saves["fail"] += 1
     s, f = ch.death_saves["success"], ch.death_saves["fail"]
     if s >= 3:
+        ch.hp = 1
         ch.death_saves = {"success": 0, "fail": 0}
-        return "🩹 پایدار شدی؛ هنوز بیهوشی اما دیگر مرگ‌سیو نمی‌دهی."
+        participant["hp"] = 1
+        participant["downed"] = False
+        participant["alive"] = True
+        return "🩹 پایدار شدی و با ۱ HP به هوش آمدی!"
     if f >= 3:
         participant["dead"] = True
+        participant["alive"] = False
+        participant["downed"] = False
         return "☠️ سه شکست! کاراکترت مرد. هم‌گروهی‌ها باید از Revivify یا Resurrection استفاده کنند."
     return f"💀 مرگ‌سیو: {roll} — موفقیت {s}/3، شکست {f}/3"
 

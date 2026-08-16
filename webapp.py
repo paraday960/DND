@@ -15,7 +15,8 @@ from urllib.parse import parse_qsl
 from flask import Flask, jsonify, request, send_from_directory
 
 import config
-from game.combat import advance, attack, cast, dodge, end_combat, is_player_turn, start_combat
+from game.combat import (advance, attack, cast, dodge, end_combat,
+                         is_player_turn, run_initial_monsters, start_combat)
 from game.adventure import death_save, inventory_text, rest, skill_check, use_item
 from game.dice import (
     DiceError, roll_advantage, roll_disadvantage, roll_expression,
@@ -163,10 +164,14 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         idx = min(c.get("turn", 0), len(parts) - 1)
         out_parts = []
         for i, p in enumerate(parts):
+            is_dead = bool(p.get("dead"))
+            is_downed = bool(p.get("downed"))
             out_parts.append({
-                "name": p["name"], "kind": p["kind"], "hp": p["hp"],
-                "max_hp": p.get("max_hp", p["hp"]), "ac": p["ac"],
-                "alive": p["alive"], "init": p["init"], "conditions": p.get("conditions", []), "turn": i == idx,
+                "name": p["name"], "kind": p["kind"], "hp": p.get("hp", 0),
+                "max_hp": p.get("max_hp", p.get("hp", 0)), "ac": p["ac"],
+                "alive": (not is_dead) and p.get("alive", True) and p.get("hp", 0) > 0,
+                "downed": is_downed, "dead": is_dead,
+                "init": p["init"], "conditions": p.get("conditions", []), "turn": i == idx,
                 "is_player": p["kind"] == "player",
                 "is_me": p["kind"] == "player" and uid is not None and p.get("uid") == str(uid),
             })
@@ -190,6 +195,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
                 "uid": int(u2), "name": p["user"], "is_dm": int(u2) == room.dm_id,
                 "char": None if not ch else {
                     "name": ch.name, "race": RACES[ch.race]["fa"],
+                    "race_emoji": RACES[ch.race]["emoji"],
                     "cls": CLASSES[ch.cls]["fa"], "emoji": CLASSES[ch.cls]["emoji"],
                     "level": ch.level, "hp": ch.hp, "max_hp": ch.max_hp,
                     "ac": ch.ac, "alive": ch.hp > 0,
@@ -472,8 +478,9 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         if room.combat:
             return api_err("نبرد در جریان است!")
         msgs = [start_combat(room)]
-        if room.combat and room.combat["participants"][0]["kind"] == "monster":
-            msgs += do_advance(room)
+        init_monster = run_initial_monsters(room)
+        if init_monster:
+            msgs.append(init_monster)
         persist(room)
         return api_ok({"messages": msgs, "state": build_state(room, user)})
 
@@ -510,6 +517,31 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     def api_combat_dodge():
         return _combat_action(lambda room, uid: dodge(room, uid))
 
+    @app.post("/api/combat/deathsave")
+    def api_combat_deathsave():
+        user, err = need_user()
+        if err:
+            return err
+        d = request.json or {}
+        room = room_of(d.get("room", ""))
+        if not room:
+            return api_err("اتاق پیدا نشد!")
+        ch = room.get_char(user["id"])
+        if not ch or ch.hp > 0:
+            return api_err("تو زمین‌گیر نیستی!")
+        text = death_save(room, user["id"])
+        msgs = [text]
+        # بعد از مرگ‌سیو (چه موفق و چه ناموفق)، نوبت را جلو ببر
+        # اگر در این مرگ‌سیو فوت کرده، جلو نرو
+        failed = ch.death_saves.get("fail", 0) >= 3 or any(
+            p.get("dead") for p in (room.combat or {}).get("participants", [])
+            if p.get("kind") == "player" and p.get("uid") == str(user["id"])
+        )
+        if room.combat and not failed:
+            msgs += do_advance(room)
+        persist(room)
+        return api_ok({"messages": msgs, "state": build_state(room, user)})
+
     @app.post("/api/combat/skip")
     def api_combat_skip():
         user, err = need_user()
@@ -519,7 +551,9 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         room = room_of(d.get("room", ""))
         if not room:
             return api_err("اتاق پیدا نشد!")
-        if not is_player_turn(room, user["id"]):
+        # در حالت DEV اجازه می‌دهیم با skip در نوبت دشمن هم جلو برویم (برای تست)
+        cur = room.combat["participants"][room.combat["turn"]] if room.combat else None
+        if not config.WEBAPP_DEV and not is_player_turn(room, user["id"]):
             return api_err("هنوز نوبت تو نیست.")
         msgs = do_advance(room)
         persist(room)

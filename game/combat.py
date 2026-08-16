@@ -22,7 +22,11 @@ def is_player_turn(session: Session, uid: int) -> bool:
     if turn >= len(combat["participants"]):
         return False
     current = combat["participants"][turn]
-    return current.get("kind") == "player" and current.get("uid") == str(uid) and current.get("alive", False)
+    if current.get("dead"):
+        return False
+    if current.get("kind") != "player" or current.get("uid") != str(uid):
+        return False
+    return True
 
 
 def _roll_damage(expr: str) -> int:
@@ -43,16 +47,18 @@ def start_combat(session: Session) -> str:
     combat["xp_pool"] = 0
     session.state = "combat"
 
-    # بازیکنان زنده
+    # بازیکنان (حتّی کسانی که در شروع نبرد آسیب دیده‌اند اما زنده‌اند)
     for uid, p in session.players.items():
         ch = p["char"]
-        if not ch or ch.hp <= 0:
+        if not ch:
             continue
+        alive = ch.hp > 0
         init = roll_d20() + ability_mod(ch.abilities["DEX"])
         combat["participants"].append({
             "kind": "player", "uid": uid, "name": ch.name,
             "init": init, "hp": ch.hp, "max_hp": ch.max_hp,
-            "ac": ch.ac, "alive": True, "conditions": list(ch.conditions),
+            "ac": ch.ac, "alive": True, "downed": not alive,
+            "conditions": list(ch.conditions),
         })
 
     # دشمنان از سناریو
@@ -110,13 +116,60 @@ def order_text(session: Session) -> str:
 
 
 def _next_alive(combat: dict, start_idx: int) -> int:
-    """اولین شرکت‌کننده زنده بعد از start_idx (چرخشی)."""
+    """اولین شرکت‌کننده‌ای که هنوز کامل نمرده بعد از start_idx (چرخشی).
+
+    بازیکن زمین‌گیر (hp=0) هم واجد نوبت است (برای death save)؛ فقط اگر
+    فلگ dead=True باشد از گردش خارج می‌شود.
+    """
     n = len(combat["participants"])
     for step in range(1, n + 1):
         idx = (start_idx + step) % n
-        if combat["participants"][idx]["alive"]:
-            return idx
+        p = combat["participants"][idx]
+        if p.get("dead"):
+            continue
+        if p["kind"] == "monster" and not p.get("alive", False):
+            continue
+        return idx
     return start_idx
+
+
+def _goto_next(combat):
+    """حرکت به نوبت بعدی شرکت‌کننده زنده؛ در صورت عبور از پایان لیست، round را زیاد می‌کند."""
+    n = len(combat["participants"])
+    if n == 0:
+        return
+    cur_idx = combat["turn"]
+    nxt = _next_alive(combat, cur_idx)
+    if nxt <= cur_idx:
+        combat["round"] += 1
+    combat["turn"] = nxt
+    nxt_p = combat["participants"][nxt]
+    # وضعیت دفاع (Dodge) فقط تا شروع نوبت بعدی همین بازیکن دوام دارد
+    if "dodge" in nxt_p.get("conditions", []):
+        nxt_p["conditions"].remove("dodge")
+    # وقتی نوبت به یک بازیکن می‌رسد، در صورت زنده بودن، وضعیت downed از نوبت قبل پاک شود
+    if nxt_p.get("kind") == "player" and not nxt_p.get("dead") and nxt_p.get("hp", 0) > 0:
+        nxt_p["downed"] = False
+
+
+def _run_pending_monsters(session: Session, messages: list, advance_first: bool):
+    """همه نوبت‌های پشت‌سرهم هیولاها را اجرا می‌کند تا به یک بازیکن برسد."""
+    combat = session.combat
+    n = len(combat["participants"])
+    if advance_first:
+        _goto_next(combat)
+    safety = 0
+    while safety < n + 1:
+        safety += 1
+        p = combat["participants"][combat["turn"]]
+        if p["kind"] == "player":
+            break
+        # هیولای مرده را رد کن
+        if p.get("dead") or not p.get("alive", True):
+            _goto_next(combat)
+            continue
+        messages.append(auto_act(session, p))
+        _goto_next(combat)
 
 
 def advance(session: Session) -> str:
@@ -125,42 +178,55 @@ def advance(session: Session) -> str:
     n = len(combat["participants"])
     if n == 0:
         return "هیچ‌کس در میدان نیست!"
-    cur_idx = combat["turn"]
-    nxt = _next_alive(combat, cur_idx)
-    if nxt <= cur_idx:
-        combat["round"] += 1
-    combat["turn"] = nxt
 
     messages = []
-    # نوبت‌های دشمن خودکار اجرا می‌شوند
-    for _ in range(n + 1):
-        p = combat["participants"][combat["turn"]]
-        if p["kind"] == "player":
-            break
-        messages.append(auto_act(session, p))
-        if not p["alive"]:
-            nxt2 = _next_alive(combat, combat["turn"])
-            if nxt2 <= combat["turn"]:
-                combat["round"] += 1
-            combat["turn"] = nxt2
+    _run_pending_monsters(session, messages, advance_first=True)
 
     cur = combat["participants"][combat["turn"]]
     messages.append(f"— نوبت **{cur['name']}** (دور {combat['round']})")
     if cur["kind"] == "player":
-        messages.append("🎯 `/attack <دشمن>` | ✨ `/cast <طلسم> <هدف>` | ⏭️ `/skip`")
+        if cur.get("dead"):
+            messages.append("☠️ این کاراکتر مرده است.")
+        elif not cur.get("alive", True) or cur.get("hp", 1) <= 0:
+            messages.append("💀 تو زمین‌گیر شدی! برای نجات از مرگ: `/deathsave`")
+        else:
+            messages.append("🎯 `/attack <دشمن>` | ✨ `/cast <طلسم> <هدف>` | 🛡️ `/dodge` | ⏭️ `/skip`")
+    return "\n\n".join(messages)
+
+
+def run_initial_monsters(session: Session) -> str:
+    """در شروع نبرد، اگر اولین نوبت هیولا بود، نوبت‌های هیولاها را تا رسیدن به بازیکن اجرا می‌کند."""
+    combat = session.combat
+    if not combat or not combat.get("participants"):
+        return ""
+    messages = []
+    first = combat["participants"][combat["turn"]]
+    if first["kind"] == "monster":
+        _run_pending_monsters(session, messages, advance_first=False)
+    if not messages:
+        return ""
+    cur = combat["participants"][combat["turn"]]
+    messages.append(f"— نوبت **{cur['name']}** (دور {combat['round']})")
+    if cur["kind"] == "player" and cur.get("alive", True) and cur.get("hp", 1) > 0:
+        messages.append("🎯 `/attack <دشمن>` | ✨ `/cast <طلسم> <هدف>` | 🛡️ `/dodge` | ⏭️ `/skip`")
     return "\n\n".join(messages)
 
 
 def auto_act(session: Session, mon: dict) -> str:
-    """دشمن به نزدیک‌ترین بازیکن زنده حمله می‌کند."""
+    """دشمن به یک بازیکن زنده (HP>0) حمله می‌کند؛ بازیکنان زمین‌گیر هدف ترجیحی نیستند."""
     players = [p for p in session.combat["participants"]
-               if p["kind"] == "player" and p["alive"]]
+               if p["kind"] == "player"
+               and not p.get("dead")
+               and not p.get("downed")
+               and p.get("alive", True)
+               and p.get("hp", 0) > 0]
     if not players:
         return f"☠️ {mon['name']} به دنبال هدف می‌گردد اما همه نابود شده‌اند..."
     target = random.choice(players)
-    atk = roll_d20() + 2
-    hit = atk >= target["ac"]
-    crit = atk == 20
+    raw = roll_d20()
+    atk = raw + 2
+    hit = raw == 20 or atk >= target["ac"]
+    crit = raw == 20
     if hit:
         dmg = _roll_damage(mon.get("dmg", "1d6+0"))
         if crit:
@@ -169,12 +235,15 @@ def auto_act(session: Session, mon: dict) -> str:
         result = (f"🎲 {mon['name']} به {target['name']} حمله کرد: {atk} "
                   f"(AC {target['ac']}) {'— 💥 اصابت! ' + str(dmg) + ' آسیب' if hit else '— خطا!'}")
         if target["hp"] <= 0:
-            target["alive"] = False
+            # بازیکن زمین‌گیر (downed) هنوز در گردش نوبت می‌ماند تا death_save بدهد
+            # فقط وقتی فلگ dead=True شد کاملاً خارج می‌شود
+            target["hp"] = 0
+            target["downed"] = True
             real_char = session.get_char(int(target["uid"]))
             if real_char:
                 real_char.hp = 0
                 real_char.death_saves = {"success": 0, "fail": 0}
-            result += f"\n💀 **{target['name']} از پا درآمد!**"
+            result += f"\n💀 **{target['name']} از پا درآمد!** (در نوبتت /deathsave بزن)"
     else:
         result = f"🎲 {mon['name']} به {target['name']} حمله کرد: {atk} (AC {target['ac']}) — بی‌اثر!"
     session.add_log(mon["name"], result.replace("\n", " "))
@@ -192,13 +261,17 @@ def _find_target(combat: dict, name: str):
 def attack(session: Session, uid: int, target_name: str) -> str:
     combat = _combat(session)
     ch = session.get_char(uid)
-    if not ch or ch.hp <= 0:
+    if not ch:
         return "کاراکترت در میدان نیست!"
     if combat["turn"] >= len(combat["participants"]):
         return "نبردی در جریان نیست!"
     cur = combat["participants"][combat["turn"]]
     if cur.get("uid") != str(uid):
         return f"هنوز نوبت تو نیست — نوبت {cur['name']} است!"
+    if cur.get("dead"):
+        return "کاراکترت مرده است."
+    if ch.hp <= 0 or cur.get("downed"):
+        return "تو زمین‌گیری! فقط می‌توانی `/deathsave` بزنی."
 
     target = _find_target(combat, target_name)
     if not target:
@@ -208,10 +281,12 @@ def attack(session: Session, uid: int, target_name: str) -> str:
 
     from .rules import WEAPONS
     weapon = WEAPONS[ch.weapon]
-    rolls = [roll_d20(), roll_d20()] if "dodge" in target.get("conditions", []) else [roll_d20()]
-    atk = (min(rolls) if len(rolls) == 2 else rolls[0]) + ch.attack_bonus()
-    crit = atk == 20
-    hit = crit or atk >= target["ac"]
+    raw_rolls = [roll_d20(), roll_d20()] if "dodge" in target.get("conditions", []) else [roll_d20()]
+    raw = min(raw_rolls) if len(raw_rolls) == 2 else raw_rolls[0]
+    atk = raw + ch.attack_bonus()
+    crit = raw == 20
+    fumble = raw == 1
+    hit = (crit or atk >= target["ac"]) and not fumble
     if hit:
         dmg = _roll_damage(weapon["dmg"]) + ch.stat_mod(weapon["stat"])
         if crit:
@@ -236,6 +311,8 @@ def dodge(session: Session, uid: int) -> str:
     if not is_player_turn(session, uid):
         return "هنوز نوبت تو نیست."
     cur = session.combat["participants"][session.combat["turn"]]
+    if cur.get("downed") or cur.get("dead") or cur.get("hp", 1) <= 0:
+        return "در وضعیت مرگ نمی‌توانی دفاع کنی — `/deathsave` بزن."
     if "dodge" not in cur.setdefault("conditions", []):
         cur["conditions"].append("dodge")
     session.add_log(cur["name"], "حالت دفاعی گرفت (Dodge)")
@@ -252,6 +329,10 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
     cur = combat["participants"][combat["turn"]]
     if cur.get("uid") != str(uid):
         return f"هنوز نوبت تو نیست — نوبت {cur['name']} است!"
+    if cur.get("dead"):
+        return "کاراکترت مرده است."
+    if ch.hp <= 0 or cur.get("downed"):
+        return "تو زمین‌گیری! فقط می‌توانی `/deathsave` بزنی."
 
     spell = SPELLS.get(spell_key.lower())
     if not spell:
@@ -279,6 +360,10 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
             if real_char:
                 healed = real_char.heal(healed)
                 target["hp"] = real_char.hp
+                if real_char.hp > 0:
+                    target["downed"] = False
+                    target["alive"] = True
+                    real_char.death_saves = {"success": 0, "fail": 0}
         result = f"💚 {ch.name} طلسم «{spell['fa']}» را روی {target['name']} می‌اندازد... +{healed} HP"
         session.add_log(ch.name, result)
         return result
@@ -294,9 +379,11 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
         target["hp"] = max(0, target["hp"] - dmg)
         result = f"✨ {ch.name} «{spell['fa']}» می‌اندازد: {dmg} آسیب به {target['name']}!"
     else:  # attack roll
-        atk = roll_d20() + ch.spell_mod() + 2
-        crit = atk == 20
-        hit = crit or atk >= target["ac"]
+        raw = roll_d20()
+        atk = raw + ch.spell_mod() + 2
+        crit = raw == 20
+        fumble = raw == 1
+        hit = (crit or atk >= target["ac"]) and not fumble
         if hit:
             dmg = _roll_damage(spell["dmg"])
             if crit:
@@ -318,7 +405,10 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
 def end_combat(session: Session) -> str:
     combat = session.combat
     monsters = [p for p in combat["participants"] if p["kind"] == "monster"]
-    alive_players = [p for p in combat["participants"] if p["kind"] == "player" and p["alive"]]
+    # بازیکن زنده = کسی که نمرده و زمین‌گیر نشده (hp>0)
+    alive_players = [p for p in combat["participants"]
+                     if p["kind"] == "player" and not p.get("dead")
+                     and not p.get("downed") and p.get("hp", 0) > 0]
     all_dead = monsters and all(not m["alive"] for m in monsters)
 
     if all_dead and alive_players:

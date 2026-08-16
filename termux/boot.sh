@@ -6,6 +6,8 @@
 #     mkdir -p ~/.termux/boot
 #     cp termux/boot.sh ~/.termux/boot/
 # ============================================================
-cd "$HOME/dnd-bot" || exit 1
+# محل پیش‌فرض: ~/DND (همان نام ریپازیتوری)
+cd "$HOME/DND" || cd "$HOME/dnd-bot" || exit 1
+mkdir -p data
 termux-wake-lock 2>/dev/null || true
-nohup ./termux/run.sh > data/bot.log 2>&1 &
+nohup bash ./termux/run.sh > data/bot.log 2>&1 &

@@ -20,7 +20,7 @@ def _get_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def _start_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ورودی مشترک برای /newchar و /join — بررسی جلسه و شروع ساخت کاراکتر."""
+    """ورودی /newchar — بررسی جلسه و شروع ساخت کاراکتر."""
     session = _get_session(update, context)
     if not session:
         await update.message.reply_text(
@@ -29,12 +29,18 @@ async def _start_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🔗 اگر دعوت شده‌ای: `/join <کد>` (کد را از میزبان بگیر)"
         )
         return ConversationHandler.END
+    if str(update.effective_user.id) not in session.players:
+        await update.message.reply_text(
+            "❌ تو عضو این اتاق نیستی!\n"
+            "🔗 اول با `/join <کد>` به اتاق بپیوند، بعد `/newchar` بزن."
+        )
+        return ConversationHandler.END
     if len(session.players) >= 8 and not session.has_char(update.effective_user.id):
         await update.message.reply_text("❌ ظرفیت جلسه پر است (حداکثر ۸ بازیکن).")
         return ConversationHandler.END
     if session.has_char(update.effective_user.id):
         await update.message.reply_text(
-            "🧙 تو قبلاً کاراکتر داری. با `/newchar` می‌تونی از اول بسازی.\n"
+            "🧙 تو قبلاً کاراکتر داری. برای ساخت دوباره از میزبان بخواه اتاق را ریست کند.\n"
             "برای دیدنش: `/sheet`"
         )
         return ConversationHandler.END
@@ -121,7 +127,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 conv_character = ConversationHandler(
     entry_points=[
         CommandHandler("newchar", _start_flow),
-        CommandHandler("join", _start_flow),
     ],
     states={
         NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, name_received)],
@@ -131,5 +136,6 @@ conv_character = ConversationHandler(
     },
     fallbacks=[CommandHandler("cancel", cancel)],
     per_chat=True,
+    per_message=False,
     conversation_timeout=600,  # اگر ۱۰ دقیقه بی‌فعالیت بماند خودکار بسته می‌شود
 )

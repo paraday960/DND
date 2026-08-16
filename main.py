@@ -62,9 +62,11 @@ def start_web(store, narrator, telegram_app=None):
 
 async def _activate_webhook(app: Application, url: str) -> bool:
     """تلگرام را روی وب‌هوک تنظیم می‌کند — آپدیت‌ها مستقیم پوش می‌شوند."""
-    if app.post_init:
-        await app.post_init(app)
     await app.initialize()
+    try:
+        await app.bot.set_my_commands(COMMANDS)
+    except Exception as e:
+        logger.warning("set_my_commands failed: %s", e)
     ok = await app.bot.set_webhook(
         url=f"{url.rstrip('/')}/webhook/{config.BOT_TOKEN.split(':')[0]}",
         allowed_updates=Update.ALL_TYPES,
@@ -188,6 +190,7 @@ def build_app(store=None, narrator=None) -> Application:
     app.add_handler(CommandHandler("game", handlers.game_cmd))
     app.add_handler(CommandHandler("help", handlers.help_cmd))
     app.add_handler(CommandHandler("newgame", handlers.newgame_cmd))
+    app.add_handler(CommandHandler("join", handlers.join_cmd))
     app.add_handler(CommandHandler("reset", handlers.reset_cmd))
     app.add_handler(CommandHandler("sheet", handlers.sheet_cmd))
     app.add_handler(CommandHandler("party", handlers.party_cmd))

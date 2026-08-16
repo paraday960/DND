@@ -203,6 +203,54 @@ async def newgame_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE, from_c
         await update.message.reply_text(text)
 
 
+async def join_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پیوستن به یک اتاق با کد — /join K7Q2A"""
+    store = context.bot_data["store"]
+    args = context.args or []
+    if not args:
+        await update.message.reply_text(
+            "🔗 مثال: `/join K7Q2A`\n"
+            "کد اتاق را از میزبان بگیر."
+        )
+        return
+    code = args[0].strip().upper()
+    target = store.find_by_code(code)
+    if not target:
+        await update.message.reply_text("❌ اتاقی با این کد پیدا نشد!")
+        return
+
+    # هر چتِ دعوت‌شونده، یک جلسه محلی مختص همان چت می‌سازد که به همان کد وصل است.
+    # اما مدل داده فعلی «یک جلسه = یک چت» است؛ پس /join در همان چت میزبان معنی دارد
+    # (یا در چت خصوصی میزبان/بازیکن در همان اتاق). برای سادگی، اگر کاربر از قبل
+    # در همان چتِ میزبان است فقط عضو می‌شود؛ در غیر این صورت اطلاع می‌دهد.
+    session = store.load(update.effective_chat.id)
+    if session and session.code != code:
+        await update.message.reply_text(
+            f"⚠️ در این چت اتاق دیگری با کد {session.code} فعال است.\n"
+            "اگر می‌خواهی به این اتاق بپیوندی، اول `/reset` بزن."
+        )
+        return
+
+    user = update.effective_user
+    if not session:
+        # این چت همان چت میزبان است که اتاق را دارد
+        session = target
+    res = session.add_player(user.id, user.first_name or "ماجراجو")
+    if res == "already":
+        await update.message.reply_text(f"✅ تو قبلاً در اتاق {code} عضو هستی. حالا `/newchar` بزن!")
+        return
+    if res == "full":
+        await update.message.reply_text("❌ اتاق پر است! (حداکثر ۸ بازیکن)")
+        return
+    session.add_log("سیستم", f"{user.first_name} به اتاق پیوست")
+    store.save(session)
+    await update.message.reply_text(
+        f"🎉 **به اتاق {code} خوش اومدی!**\n"
+        f"👥 گروه: {session.name} (میزبان: {session.dm_name})\n\n"
+        f"🧙 حالا کاراکترت رو بساز: `/newchar`"
+    )
+
+
 async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     store = context.bot_data["store"]
     session = store.load(update.effective_chat.id)
@@ -366,12 +414,13 @@ async def combat_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE, from_ca
         await update.effective_message.reply_text(
             "🐉 اول سناریو بساز تا دشمن‌ها معلوم شن:\n`/scenario`\n"
             "(فعلاً با دشمن‌های پیش‌فرض شروع می‌کنم...)")
+    from game.combat import run_initial_monsters
     text = start_combat(session)
     _save(update, context, session)
     await update.effective_message.reply_text(text)
     # اگر اولین نوبت مال دشمن بود، خودکار اجرا می‌شه
-    if session.combat and session.combat["participants"][0]["kind"] == "monster":
-        text2 = advance(session)
+    text2 = run_initial_monsters(session)
+    if text2:
         _save(update, context, session)
         await update.effective_message.reply_text(text2)
 

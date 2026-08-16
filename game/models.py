@@ -49,7 +49,14 @@ class Character:
         hit_die = CLASSES[cls]["hit_die"]
         con_mod = ability_mod(self.abilities["CON"])
         self.hit_die = hit_die
-        self.max_hp = (hp if hp else hit_die) + con_mod * level
+        # برای کاراکتر جدید با سطح بالاتر، میانگین هر مرحله (half+1) لحاظ می‌شود
+        if hp is not None:
+            self.max_hp = hp
+        elif level == 1:
+            self.max_hp = hit_die + con_mod
+        else:
+            avg = hit_die // 2 + 1
+            self.max_hp = hit_die + (level - 1) * avg + con_mod * level
         self.max_hp = max(self.max_hp, level)
         self.hp = self.max_hp
         # زره ساده: کلاس‌های زره‌پوش +۲ AC
