@@ -5,6 +5,48 @@
 
 ---
 
+## ⚡ راه‌اندازی سریع روی گوشی (۵ دقیقه)
+
+> 💡 گوشی اندرویدت را سرور کن! ربات روی گوشی با شبکه خودت ۲۴/۷ کار می‌کند — بدون نیاز به هاست خارجی.
+
+**۱. نصب Termux** از F-Droid: https://f-droid.org/packages/com.termux/
+
+**۲. کپی پروژه (کدها از قبل روی گیت‌هاب است):**
+```bash
+pkg install -y git
+git clone https://github.com/paraday960/DND.git
+cd DND
+```
+
+**۳. نصب خودکار همه‌چیز (یک دستور):**
+```bash
+bash termux/setup.sh
+```
+
+**۴. تنظیمات (توکن ربات و کلید AI):**
+```bash
+cp .env.example .env
+nano .env
+```
+> توکن ربات را از @BotFather بگیر؛ کلید AI رایگان را از https://console.mistral.ai (یا Gemini/Groq — راهنما داخل .env.example)
+
+**۵. اجرا:**
+```bash
+bash termux/run.sh
+```
+ربات + تونل امن مینی‌گیم خودکار بالا می‌آیند. همین! 🎉
+
+**۶. (اختیاری) راه‌اندازی خودکار با روشن شدن گوشی:**
+```bash
+pkg install -y termux-boot
+mkdir -p ~/.termux/boot
+cp termux/boot.sh ~/.termux/boot/
+```
+
+> ⚙️ در تنظیمات باتری اندروید، Termux را از «بهینه‌سازی باتری» مستثنی کن.
+
+---
+
 ## ✨ امکانات
 
 | بخش | امکانات |
