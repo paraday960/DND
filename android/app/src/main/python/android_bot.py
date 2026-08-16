@@ -21,6 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 FILES_DIR = ""
 STOP_FILE = ""
 CHAR_STATE = {}   # chat_id -> مرحله ساخت کاراکتر
+_last_409_log = 0.0
 
 
 # ==================== ابزار پایه ====================
@@ -57,6 +58,17 @@ def tg(method, payload=None, timeout=40):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        global _last_409_log
+        if e.code == 409:
+            now = time.time()
+            if now - _last_409_log > 60:
+                _last_409_log = now
+                log("⚠️ خطای 409: نمونه دیگری از ربات با همین توکن در حال اجراست (در Termux، گوشی دیگر یا هاست). آن را متوقف کن — این نسخه خودکار ادامه می‌دهد")
+            time.sleep(8)
+        else:
+            log("TG %s: %s" % (method, e))
+        return None
     except Exception as e:
         log("TG %s: %s" % (method, e))
         return None
@@ -1140,6 +1152,20 @@ def main(files_dir, native_lib_dir=None):
     narrator = get_narrator()
     if not narrator.available:
         log("⚠️ کلید AI خالی است — حالت آفلاین (روایت قالب‌بندی‌شده)")
+
+    # اگر نسخه Termux/هاست قبلاً روی این بات webhook ست کرده باشد،
+    # حالت polling با خطای 409 Conflict مواجه می‌شود — آن را پاک می‌کنیم
+    try:
+        info = tg("getWebhookInfo", timeout=15)
+        wh = (info or {}).get("result") or {}
+        if wh.get("url"):
+            log("🔔 وب‌هوک قدیمی شناسایی شد — در حال حذف...")
+            tg("deleteWebhook", {"drop_pending_updates": True}, timeout=15)
+            log("✅ وب‌هوک حذف شد — حالت polling فعال است")
+        else:
+            log("✅ حالت polling آماده است")
+    except Exception as e:
+        log("بررسی وب‌هوک ناموفق: %s" % e)
 
     port = int(os.environ.get("PORT", "8080"))
     threading.Thread(target=tunnel_loop, args=(port, native_lib_dir), daemon=True).start()
