@@ -9,10 +9,12 @@ android {
         applicationId 'ir.paraday.dndbot'
         minSdk 24
         targetSdk 33
-        versionCode 6
-        versionName '2.2'
+        versionCode 7
+        versionName '2.3'
         ndk { abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64' }
         python { version '3.10' }
     }
+    // باینری cloudflared به‌صورت libcloudflared.so در jniLibs است؛ باید فیزیکی extract شود تا قابل اجرا باشد
+    packagingOptions { jniLibs { useLegacyPackaging = true } }
     buildTypes { release { minifyEnabled false } }
 }

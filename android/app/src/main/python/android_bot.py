@@ -9,6 +9,7 @@ import json
 import os
 import random
 import re
+import socket
 import subprocess
 import threading
 import time
@@ -555,10 +556,11 @@ def on_callback(store, cb):
 
 def bot_loop(store):
     offset = 0
+    last_net_log = 0.0
     log("🚀 ربات آنلاین — منتظر پیام‌ها...")
     while not stopped():
         try:
-            data = tg("getUpdates", {"offset": offset, "timeout": 25, "allowed_updates": ["message", "callback_query"]}, timeout=35)
+            data = tg("getUpdates", {"offset": offset, "timeout": 10, "allowed_updates": ["message", "callback_query"]}, timeout=20)
             if not data or not data.get("ok"):
                 time.sleep(3)
                 continue
@@ -572,7 +574,10 @@ def bot_loop(store):
                 except Exception as e:
                     log("خطای پردازش آپدیت: %s" % e)
         except Exception as e:
-            log("خطای حلقه: %s" % e)
+            now = time.time()
+            if now - last_net_log > 30:
+                last_net_log = now
+                log("⚠️ اتصال به تلگرام برقرار نشد (%s) — وای‌فای/دیتا گوشی را بررسی کن؛ اگر شبکه‌ات تلگرام را مسدود می‌کند ابزار عبور را روشن کن" % e)
             time.sleep(5)
     log("حلقه ربات متوقف شد")
 
@@ -945,79 +950,168 @@ def http_server_loop(store, narrator, port):
     ApiHandler.dev = os.environ.get("WEBAPP_DEV", "0") == "1"
     try:
         srv = ThreadingHTTPServer(("0.0.0.0", port), ApiHandler)
-        log("🌐 مینی‌گیم روی پورت %d فعال شد" % port)
-        srv.serve_forever(poll_interval=0.5)
-    except Exception as e:
-        log("خطای سرور وب: %s" % e)
+    except OSError as e:
+        if getattr(e, "errno", None) == 98:
+            log("⚠️ پورت %d اشغال است — نسخه دیگری از ربات هنوز فعال است. دکمه «توقف» را بزن، چند ثانیه صبر کن و دوباره شروع کن" % port)
+        else:
+            log("خطای سرور وب: %s" % e)
+        return
+    log("🌐 مینی‌گیم روی پورت %d فعال شد" % port)
+
+    def serve():
+        try:
+            srv.serve_forever(poll_interval=0.5)
+        except Exception:
+            pass
+
+    threading.Thread(target=serve, daemon=True).start()
+    while not stopped():
+        time.sleep(1)
+    try:
+        srv.shutdown()
+        srv.server_close()
+    except Exception:
+        pass
+    log("🌐 وب‌سرور مینی‌گیم متوقف شد")
 
 
 # ==================== تونل امن ====================
 
-CF_URL = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
+# روی اندروید مدرن (targetSdk 29+) اجرای فایل از پوشه‌ی داده اپ ممنوع است (W^X)؛
+# راه‌حل: cloudflared به‌صورت libcloudflared.so داخل APK قرار می‌گیرد و از
+# nativeLibraryDir (قابل اجرا) اجرا می‌شود. DNS هم از پایتون گرفته می‌شود چون
+# باینری Go روی اندروید /etc/resolv.conf ندارد.
+
+CF_URLS = {
+    "aarch64": "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64",
+    "armv7l": "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm",
+    "x86_64": "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64",
+}
 
 
-def ensure_cloudflared():
+def ensure_cloudflared(native_dir=None):
+    # ۱) باینری داخل APK — از پوشه کتابخانه‌های native قابل اجراست
+    if native_dir:
+        p = os.path.join(native_dir, "libcloudflared.so")
+        if os.path.exists(p):
+            try:
+                os.chmod(p, 0o755)
+            except Exception:
+                pass
+            return p
+    # ۲) روش قدیمی (فقط برای بیلدهای بدون باینری داخل APK)
     p = os.path.join(FILES_DIR, "cloudflared")
     if os.path.exists(p):
         return p
     log("📦 دانلود cloudflared (اولین بار)...")
     try:
-        urllib.request.urlretrieve(CF_URL, p + ".tmp")
+        url = CF_URLS.get(getattr(os.uname(), "machine", ""))
+        if not url:
+            return None
+        urllib.request.urlretrieve(url, p + ".tmp")
         os.chmod(p + ".tmp", 0o755)
         os.rename(p + ".tmp", p)
-        log("✅ cloudflared آماده شد")
         return p
     except Exception as e:
         log("دانلود cloudflared ناموفق: %s" % e)
         return None
 
 
-def tunnel_loop(port):
+def register_quick_tunnel():
+    req = urllib.request.Request(
+        "https://api.trycloudflare.com/tunnel",
+        data=b"{}",
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "DND-Bot-Android/2.3",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        d = json.loads(r.read().decode("utf-8"))
+    res = d.get("result") or {}
+    if not (res.get("hostname") and res.get("id") and res.get("secret")):
+        raise RuntimeError("پاسخ نامعتبر از trycloudflare: %s" % str(d)[:200])
+    return res
+
+
+def resolve_edge_ips():
+    ips = []
+    for host in ("region1.v2.argotunnel.com", "region2.v2.argotunnel.com"):
+        try:
+            for a in socket.getaddrinfo(host, 7844, socket.AF_INET):
+                ip = a[4][0]
+                if ip not in ips:
+                    ips.append(ip)
+        except Exception:
+            pass
+    return ips
+
+
+def tunnel_loop(port, native_dir=None):
     while not stopped():
-        cf = ensure_cloudflared()
-        if not cf:
-            time.sleep(30)
-            continue
+        proc = None
         log("🌐 شروع تونل امن مینی‌گیم...")
         try:
+            info = register_quick_tunnel()
+            url = "https://" + info["hostname"]
+            creds_path = os.path.join(FILES_DIR, "cf_creds.json")
+            cfg_path = os.path.join(FILES_DIR, "cf_config.yml")
+            with open(creds_path, "w", encoding="utf-8") as f:
+                json.dump({"AccountTag": info["account_tag"],
+                           "TunnelID": info["id"],
+                           "TunnelSecret": info["secret"]}, f)
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                f.write(
+                    "tunnel: %s\n"
+                    "credentials-file: %s\n"
+                    "protocol: http2\n"
+                    "no-autoupdate: true\n"
+                    "ingress:\n"
+                    "  - hostname: %s\n"
+                    "    service: http://127.0.0.1:%d\n"
+                    "  - service: http_status:404\n"
+                    % (info["id"], creds_path, info["hostname"], port)
+                )
+            edges = resolve_edge_ips()
+            if not edges:
+                log("⚠️ DNS در دسترس نیست — اینترنت گوشی را بررسی کن")
+                time.sleep(20)
+                continue
+            cf = ensure_cloudflared(native_dir)
+            if not cf:
+                time.sleep(30)
+                continue
+            cmd = [cf, "tunnel", "--config", cfg_path,
+                   "--edge-ip-version", "4", "--no-autoupdate"]
+            for ip in edges[:4]:
+                cmd += ["--edge", "%s:7844" % ip]
+            cmd += ["run", info["id"]]
             cf_log = open(os.path.join(FILES_DIR, "cf.log"), "ab")
             proc = subprocess.Popen(
-                [cf, "tunnel", "--url", "http://127.0.0.1:%d" % port,
-                 "--protocol", "http2", "--no-autoupdate"],
-                stdout=cf_log, stderr=subprocess.STDOUT)
-            url = None
-            deadline = time.time() + 120
-            while time.time() < deadline and not stopped():
-                try:
-                    txt = open(os.path.join(FILES_DIR, "cf.log"), encoding="utf-8", errors="ignore").read()
-                    m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", txt)
-                    if m:
-                        url = m.group(0)
-                        break
-                except Exception:
-                    pass
-                time.sleep(2)
-            if url:
-                with open(os.path.join(FILES_DIR, "tunnel_url.txt"), "w", encoding="utf-8") as f:
-                    f.write(url)
-                log("✅ آدرس مینی‌گیم: " + url)
-            else:
-                log("⚠️ تونل هنوز آماده نشده — دوباره تلاش می‌کنم...")
+                cmd, stdout=cf_log, stderr=subprocess.STDOUT,
+                env={"HOME": FILES_DIR, "PATH": "/system/bin:/system/xbin"})
+            with open(os.path.join(FILES_DIR, "tunnel_url.txt"), "w", encoding="utf-8") as f:
+                f.write(url)
+            log("✅ آدرس مینی‌گیم: " + url)
             while not stopped() and proc.poll() is None:
                 time.sleep(5)
-            try:
-                proc.terminate()
-            except Exception:
-                pass
-            time.sleep(10)
+            if not stopped():
+                log("⚠️ تونل قطع شد — اتصال مجدد...")
         except Exception as e:
             log("خطای تونل: %s" % e)
-            time.sleep(20)
+        finally:
+            if proc is not None:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+        time.sleep(15)
 
 
 # ==================== نقطه ورود ====================
 
-def main(files_dir):
+def main(files_dir, native_lib_dir=None):
     global FILES_DIR, STOP_FILE
     FILES_DIR = files_dir
     STOP_FILE = os.path.join(files_dir, "stop")
@@ -1048,7 +1142,7 @@ def main(files_dir):
         log("⚠️ کلید AI خالی است — حالت آفلاین (روایت قالب‌بندی‌شده)")
 
     port = int(os.environ.get("PORT", "8080"))
-    threading.Thread(target=tunnel_loop, args=(port,), daemon=True).start()
+    threading.Thread(target=tunnel_loop, args=(port, native_lib_dir), daemon=True).start()
     threading.Thread(target=http_server_loop, args=(store, narrator, port), daemon=True).start()
 
     bot_loop(store)
