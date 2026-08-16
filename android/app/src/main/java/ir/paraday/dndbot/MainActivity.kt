@@ -163,7 +163,22 @@ class MainActivity : Activity() {
             setTextColor(Color.rgb(170, 185, 205))
             setBackgroundColor(Color.rgb(9, 11, 17))
             setPadding(dp(8), dp(8), dp(8), dp(8))
+<<<<<<< HEAD
         }
+=======
+            setTextIsSelectable(true)   // امکان انتخاب و کپی متن با انگشت
+        }
+        val logRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        logRow.addView(Button(this).apply {
+            text = "📋 کپی لاگ"
+            setOnClickListener { copyLog() }
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        logRow.addView(Button(this).apply {
+            text = "📤 ارسال لاگ"
+            setOnClickListener { shareLog() }
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(logRow)
+>>>>>>> 6e11470 (Android: selectable log + copy/share log buttons (v1.1))
         val sc = ScrollView(this).apply { addView(tvLog) }
         root.addView(sc, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
@@ -208,6 +223,38 @@ class MainActivity : Activity() {
         }
     }
 
+<<<<<<< HEAD
+=======
+    private fun logText(): String {
+        val logFile = File(filesDir, "bot.log")
+        return if (logFile.exists()) logFile.readText()
+        else "(لاگی نیست — هنوز سرور را شروع نکرده‌ای)"
+    }
+
+    private fun copyLog() {
+        try {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("dnd_log", logText()))
+            Toast.makeText(this, "📋 لاگ کپی شد", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "کپی ناموفق: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun shareLog() {
+        try {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "D&D Bot Server — لاگ")
+                putExtra(Intent.EXTRA_TEXT, "🐉 D&D Bot Server — لاگ:\n\n" + logText())
+            }
+            startActivity(Intent.createChooser(intent, "ارسال لاگ"))
+        } catch (e: Exception) {
+            Toast.makeText(this, "ارسال ناموفق: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+>>>>>>> 6e11470 (Android: selectable log + copy/share log buttons (v1.1))
     private fun requestExtraPermissions() {
         if (Build.VERSION.SDK_INT >= 33) {
             try {
