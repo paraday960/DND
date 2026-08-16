@@ -187,4 +187,35 @@ MONSTERS = {
     "giant_spider": {"fa": "عنکبوت غول‌پیکر", "ac": 14, "hp": 26, "dmg": "1d8+3", "xp": 200, "cr": 1, "emoji": "🕷️"},
 }
 
+# ---------------- مهارت‌ها و آیتم‌ها ----------------
+SKILLS = {
+    "athletics": {"fa": "ورزش", "ability": "STR"},
+    "acrobatics": {"fa": "آکروباتیک", "ability": "DEX"},
+    "stealth": {"fa": "مخفی‌کاری", "ability": "DEX"},
+    "sleight": {"fa": "دستی‌کاری", "ability": "DEX"},
+    "arcana": {"fa": "دانش جادو", "ability": "INT"},
+    "history": {"fa": "تاریخ", "ability": "INT"},
+    "investigation": {"fa": "تحقیق", "ability": "INT"},
+    "nature": {"fa": "طبیعت", "ability": "INT"},
+    "religion": {"fa": "مذهب", "ability": "INT"},
+    "animal": {"fa": "مراقبت از حیوانات", "ability": "WIS"},
+    "insight": {"fa": "درک نیت", "ability": "WIS"},
+    "medicine": {"fa": "پزشکی", "ability": "WIS"},
+    "perception": {"fa": "ادراک", "ability": "WIS"},
+    "survival": {"fa": "بقا", "ability": "WIS"},
+    "deception": {"fa": "فریب", "ability": "CHA"},
+    "intimidation": {"fa": "ترساندن", "ability": "CHA"},
+    "performance": {"fa": "اجرا", "ability": "CHA"},
+    "persuasion": {"fa": "متقاعدسازی", "ability": "CHA"},
+}
+
+DEFAULT_PROFICIENCIES = {
+    "fighter": ["athletics", "intimidation"], "rogue": ["stealth", "sleight", "investigation"],
+    "wizard": ["arcana", "history"], "cleric": ["medicine", "religion"],
+    "bard": ["performance", "persuasion"], "ranger": ["nature", "survival"],
+    "paladin": ["athletics", "persuasion"], "barbarian": ["athletics", "survival"],
+    "sorcerer": ["arcana", "deception"], "monk": ["acrobatics", "insight"],
+    "druid": ["animal", "nature"], "warlock": ["arcana", "deception"],
+}
+
 DEFAULT_WEAPON = "dagger"

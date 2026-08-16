@@ -387,6 +387,7 @@ async function quickRoll(expr) {
 }
 
 /* ================= نبرد ================= */
+function pAlive(p){ return p && !p.dead && !p.downed && p.hp > 0; }
 function renderCombat() {
   const box = $('#combatBox');
   if (!S.combat) {
@@ -400,20 +401,30 @@ function renderCombat() {
   }
   const c = S.combat;
   const meChar = S.me && S.me.char;
+  const me = c.participants.find(p => p.is_me);
+  const isDown = me && (!pAlive(me));
   const myTurn = c.is_my_turn;
   let parts = '';
   c.participants.forEach(p => {
-    const em = p.kind === 'player' ? '🧙' : '👹';
+    let em;
+    if (p.kind === 'player') em = p.dead ? '💀' : (p.downed ? '😵' : '🧙');
+    else em = p.alive ? '👹' : '💀';
     const hpPct = p.max_hp ? Math.max(0, Math.round(p.hp / p.max_hp * 100)) : 0;
     const sel = selTarget === p.name ? ' sel' : '';
-    const dead = !p.alive ? ' dead' : '';
-    const clickable = (p.kind === 'monster' && p.alive && myTurn) ? `onclick="selTarget='${p.name}';renderCombat()"` : '';
-    parts += `<div class="part${sel}${dead}" ${clickable}>
+    const deadCls = (!p.alive || p.dead) ? ' dead' : '';
+    const clickable = (p.kind === 'monster' && p.alive && myTurn && !isDown)
+      ? `onclick="selTarget='${p.name.replace(/'/g,"\\'")}';renderCombat()"` : '';
+    let status;
+    if (p.dead) status = '💀 مرده';
+    else if (p.downed) status = '😵 زمین‌گیر — death save';
+    else if (p.kind === 'monster' && !p.alive) status = '💀 نابود شد';
+    else status = '❤️ ' + p.hp + '/' + p.max_hp;
+    parts += `<div class="part${sel}${deadCls}" ${clickable}>
       <span class="em">${em}</span>
       <div class="info">
         <div class="nm">${esc(p.name)} <small>AC ${p.ac} • Init ${p.init}</small></div>
         <div class="hpbar"><div class="${hpPct<30?'low':''}" style="width:${hpPct}%"></div></div>
-        <div class="bar-label"><span>${p.alive? '❤️ '+p.hp+'/'+p.max_hp : '💀 از پا درآمد'}</span>${p.turn?'<b style="color:var(--gold)">نوبت فعلی ▶</b>':''}</div>
+        <div class="bar-label"><span>${status}</span>${p.turn?'<b style="color:var(--gold)">نوبت فعلی ▶</b>':''}</div>
       </div>
       ${p.kind==='player'?'<span class="turn-mark">🧙</span>':'<span class="turn-mark">👹</span>'}
     </div>`;
@@ -422,15 +433,24 @@ function renderCombat() {
     ? `<div class="turn-banner me">🎯 نوبت توست! ${meChar?meChar.name:''} — یک دشمن را انتخاب کن</div>`
     : `<div class="turn-banner enemy">⏳ نوبت: ${esc(c.current)} (دور ${c.round})</div>`;
   const targetInfo = selTarget ? `هدف: <b>${esc(selTarget)}</b>` : '';
-  const actions = myTurn ? `
+  let actions = '';
+  if (myTurn && isDown) {
+    actions = `
+      <div class="actions">
+        <button class="btn green" onclick="doDeathSave()">💀 پرتاب نجات از مرگ</button>
+      </div>`;
+  } else if (myTurn) {
+    actions = `
     <div class="actions">
       <button class="btn red" onclick="doAttack()" ${selTarget?'':'disabled'}>⚔️ حمله</button>
+      <button class="btn blue" onclick="doDodge()">🛡️ دفاع</button>
       <button class="btn dark" onclick="doSkip()">⏭️ رد نوبت</button>
     </div>
     <div class="sec-title">✨ طلسم‌ها ${targetInfo?'— '+targetInfo:''}</div>
     <div class="spell-grid">
       ${(META?META.spells:[]).map(sp=>`<button class="spell-btn" onclick="doCast('${sp.key}')"><b>${sp.emoji} ${esc(sp.fa)}</b>${sp.dmg} ${sp.kind==='heal'?'💚':'💥'}</button>`).join('')}
-    </div>` : '';
+    </div>`;
+  }
   const dm = S.room.is_dm ? `<button class="btn dark" style="margin-top:10px" onclick="endCombat()">🏳️ پایان نبرد (DM)</button>` : '';
   box.innerHTML = `<div class="card">${banner}
     <div class="sec-title">شرکت‌کنندگان (${c.participants.length})</div>
@@ -456,6 +476,20 @@ async function doCast(spell) {
   try {
     const d = await api('/api/combat/cast', { room: roomCode, spell, target: selTarget||'' });
     S = d.state; selTarget = null; renderCombat(); renderFeed();
+  } catch(e) { toast(e.message); }
+}
+async function doDodge() {
+  try {
+    const d = await api('/api/combat/dodge', { room: roomCode });
+    S = d.state; renderCombat(); renderFeed();
+    toast('🛡️ حالت دفاعی گرفتی');
+  } catch(e) { toast(e.message); }
+}
+async function doDeathSave() {
+  try {
+    const d = await api('/api/combat/deathsave', { room: roomCode });
+    S = d.state; renderCombat(); renderFeed();
+    (d.messages||[]).forEach(m => toast(m.split('\n')[0].slice(0,90)));
   } catch(e) { toast(e.message); }
 }
 async function doSkip() {

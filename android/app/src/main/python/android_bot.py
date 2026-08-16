@@ -118,7 +118,9 @@ HELP = ("📚 راهنما:\n"
         "🐉 /scenario — سناریوی AI (میزبان)\n"
         "📖 /story <اقدام> — روایت AI\n"
         "🗺️ /where — خلاصه ماجرا\n"
-        "⚔️ /combat — شروع نبرد | /attack <دشمن> | /cast <طلسم> | /skip\n"
+        "⚔️ /combat — شروع نبرد\n"
+        "🎯 /attack <دشمن> | ✨ /cast <طلسم> | 🛡️ /dodge | ⏭️ /skip\n"
+        "💀 /deathsave — نجات از مرگ وقتی زمین‌گیر شدی\n"
         "🎲 /roll 2d6+3 یا d20 یا adv\n"
         "⭐ /levelup | 💠 /xp\n\n"
         "🎮 برای مینی‌گیم گرافیکی: /start و دکمه ورود")
@@ -406,6 +408,41 @@ def cmd_skip(store, chat, uid, uname, args):
     send(chat, t)
 
 
+def cmd_dodge(store, chat, uid, uname, args):
+    from game.combat import dodge, advance
+    s, err = need_room(store, chat)
+    if err:
+        send(chat, err)
+        return
+    if not s.combat:
+        send(chat, "نبردی نیست.")
+        return
+    send(chat, dodge(s, uid))
+    t = advance(s)
+    store.save(s)
+    send(chat, t)
+
+
+def cmd_deathsave(store, chat, uid, uname, args):
+    from game.adventure import death_save
+    from game.combat import advance
+    s, err = need_room(store, chat)
+    if err:
+        send(chat, err)
+        return
+    if not s.combat:
+        send(chat, "نبردی نیست.")
+        return
+    text = death_save(s, uid)
+    store.save(s)
+    send(chat, text)
+    # بعد از مرگ‌سیو نوبت جلو برود (اگر فوت نکرده)
+    ch = user_char(s, uid)
+    if ch and ch.hp > 0 and s.combat:
+        send(chat, advance(s))
+        store.save(s)
+
+
 def cmd_combatend(store, chat, uid, uname, args):
     from game.combat import end_combat
     s, err = need_room(store, chat)
@@ -495,7 +532,8 @@ def on_message(store, msg):
         "sheet": cmd_sheet, "party": cmd_party, "roll": cmd_roll,
         "scenario": cmd_scenario, "story": cmd_story, "where": cmd_where,
         "combat": cmd_combat, "attack": cmd_attack, "cast": cmd_cast,
-        "skip": cmd_skip, "combatend": cmd_combatend,
+        "skip": cmd_skip, "dodge": cmd_dodge, "deathsave": cmd_deathsave,
+        "combatend": cmd_combatend,
         "levelup": cmd_levelup, "xp": cmd_xp, "newchar": cmd_newchar,
     }
     fn = handlers.get(cmd)
@@ -714,10 +752,16 @@ class ApiHandler(BaseHTTPRequestHandler):
         idx = min(c.get("turn", 0), len(parts) - 1)
         out = []
         for i, p in enumerate(parts):
+            is_dead = bool(p.get("dead"))
+            is_downed = bool(p.get("downed"))
             out.append({
-                "name": p["name"], "kind": p["kind"], "hp": p["hp"],
-                "max_hp": p.get("max_hp", p["hp"]), "ac": p["ac"], "alive": p["alive"],
-                "init": p["init"], "turn": i == idx,
+                "name": p["name"], "kind": p["kind"],
+                "hp": p.get("hp", 0),
+                "max_hp": p.get("max_hp", p.get("hp", 0)), "ac": p["ac"],
+                "alive": (not is_dead) and p.get("alive", True) and p.get("hp", 0) > 0,
+                "downed": is_downed, "dead": is_dead,
+                "init": p["init"], "conditions": p.get("conditions", []),
+                "turn": i == idx,
                 "is_player": p["kind"] == "player",
                 "is_me": p["kind"] == "player" and uid is not None and p.get("uid") == str(uid),
             })
@@ -726,7 +770,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             "round": c.get("round", 1),
             "current": cur["name"],
             "current_is_player": cur["kind"] == "player",
-            "is_my_turn": cur["kind"] == "player" and uid is not None and cur.get("uid") == str(uid),
+            "is_my_turn": cur["kind"] == "player" and uid is not None and cur.get("uid") == str(uid)
+                          and not cur.get("dead"),
             "participants": out,
         }
 
@@ -934,8 +979,10 @@ class ApiHandler(BaseHTTPRequestHandler):
             self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(s, user)}})
             return
 
-        if path in ("/api/combat/attack", "/api/combat/cast", "/api/combat/skip"):
-            from game.combat import attack, cast, advance
+        if path in ("/api/combat/attack", "/api/combat/cast", "/api/combat/skip",
+                    "/api/combat/dodge", "/api/combat/deathsave"):
+            from game.combat import attack, cast, advance, dodge
+            from game.adventure import death_save
             if not s.combat:
                 self._json(400, {"ok": False, "error": "نبردی نیست."})
                 return
@@ -944,10 +991,21 @@ class ApiHandler(BaseHTTPRequestHandler):
                 msgs.append(attack(s, user["id"], body.get("target", "")))
             elif path == "/api/combat/cast":
                 msgs.append(cast(s, user["id"], body.get("spell", ""), body.get("target", "")))
-            else:
+            elif path == "/api/combat/dodge":
+                msgs.append(dodge(s, user["id"]))
+            elif path == "/api/combat/deathsave":
+                msgs.append(death_save(s, user["id"]))
+            else:  # skip
+                msgs.append(advance(s))
+            # بعد از هر اقدام (غیر از مرگ‌سیو که نوبت را هم جلو می‌برد) نوبت را جلو ببر
+            if s.combat and path not in ("/api/combat/deathsave",):
                 msgs.append(advance(s))
             if s.combat:
-                msgs.append(advance(s))
+                # پایان خودکار نبرد اگر همه هیولاها مردند
+                monsters = [p for p in s.combat["participants"] if p["kind"] == "monster"]
+                if monsters and all(not m.get("alive", False) for m in monsters):
+                    from game.combat import end_combat
+                    msgs.append(end_combat(s))
             self.store.save(s)
             self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(s, user)}})
             return
@@ -968,7 +1026,8 @@ class ApiHandler(BaseHTTPRequestHandler):
         self._json(404, {"ok": False, "error": "not found"})
 
 
-def http_server_loop(store, narrator, port):
+def http_server_start(store, narrator, port, ready_event=None):
+    """وب‌سرور را راه می‌اندازد و شیء سرور را برمی‌گرداند (یا None در صورت خطا)."""
     ApiHandler.store = store
     ApiHandler.narrator = narrator
     ApiHandler.dev = os.environ.get("WEBAPP_DEV", "0") == "1"
@@ -979,16 +1038,25 @@ def http_server_loop(store, narrator, port):
             log("⚠️ پورت %d اشغال است — نسخه دیگری از ربات هنوز فعال است. دکمه «توقف» را بزن، چند ثانیه صبر کن و دوباره شروع کن" % port)
         else:
             log("خطای سرور وب: %s" % e)
-        return
+        return None
     log("🌐 مینی‌گیم روی پورت %d فعال شد" % port)
 
     def serve():
+        if ready_event is not None:
+            ready_event.set()
         try:
             srv.serve_forever(poll_interval=0.5)
         except Exception:
             pass
 
     threading.Thread(target=serve, daemon=True).start()
+    return srv
+
+
+def http_server_loop(store, narrator, port):
+    srv = http_server_start(store, narrator, port)
+    if srv is None:
+        return
     while not stopped():
         time.sleep(1)
     try:
@@ -1072,7 +1140,27 @@ def resolve_edge_ips():
     return ips
 
 
+def _probe_tunnel(url, timeout=8):
+    """بررسی می‌کند آیا تونل واقعاً به سرور محلی وصل است (برای تشخیص 1033)."""
+    try:
+        with urllib.request.urlopen(url + "/api/meta", timeout=timeout) as r:
+            if r.status == 200:
+                return True
+    except urllib.error.HTTPError as e:
+        # خطای 1033 یعنی کلودفلر سرور محلی را نمی‌بیند؛ بقیه خطاها را هم گزارش می‌دهیم
+        if e.code in (1033, 502, 503, 521, 522, 523, 530):
+            log("⚠️ تونل وصل است اما سرور محلی در دسترس نیست (HTTP %d) — شروع مجدد" % e.code)
+            return False
+        # 4xx/5xx های دیگر یعنی تونل کار می‌کند
+        return True
+    except Exception as e:
+        log("⚠️ بررسی تونل ناموفق: %s" % e)
+        return False
+    return False
+
+
 def tunnel_loop(port, native_dir=None):
+    url = ""
     while not stopped():
         proc = None
         log("🌐 شروع تونل امن مینی‌گیم...")
@@ -1115,12 +1203,43 @@ def tunnel_loop(port, native_dir=None):
             proc = subprocess.Popen(
                 cmd, stdout=cf_log, stderr=subprocess.STDOUT,
                 env={"HOME": FILES_DIR, "PATH": "/system/bin:/system/xbin"})
-            with open(os.path.join(FILES_DIR, "tunnel_url.txt"), "w", encoding="utf-8") as f:
-                f.write(url)
-            log("✅ آدرس مینی‌گیم: " + url)
+
+            # قبل از ذخیره URL، چند ثانیه صبر کن تا تونل واقعاً به سرور وصل شود
+            # این جلوی خطای 1033 در لحظه باز شدن مینی‌گیم را می‌گیرد
+            healthy = False
+            for attempt in range(12):
+                if stopped() or proc.poll() is not None:
+                    break
+                time.sleep(3)
+                if _probe_tunnel(url, timeout=6):
+                    healthy = True
+                    break
+                log("⏳ تونل در حال اتصال... (تلاش %d/12)" % (attempt + 1))
+
+            if healthy:
+                with open(os.path.join(FILES_DIR, "tunnel_url.txt"), "w", encoding="utf-8") as f:
+                    f.write(url)
+                log("✅ تونل سالم و آماده — آدرس مینی‌گیم: " + url)
+            else:
+                log("⚠️ تونل وصل نشد یا سرور محلی پیدا نبود — دوباره امتحان می‌کنم")
+                try: proc.terminate()
+                except Exception: pass
+                proc = None
+                time.sleep(10)
+                continue
+
+            # پایش سلامت در حین کار
+            fail_streak = 0
             while not stopped() and proc.poll() is None:
-                time.sleep(5)
-            if not stopped():
+                time.sleep(15)
+                if _probe_tunnel(url, timeout=8):
+                    fail_streak = 0
+                else:
+                    fail_streak += 1
+                    if fail_streak >= 3:
+                        log("⚠️ تونل ۳ بار پشت سر هم سالم نبود — راه‌اندازی مجدد")
+                        break
+            if not stopped() and proc and proc.poll() is None:
                 log("⚠️ تونل قطع شد — اتصال مجدد...")
         except Exception as e:
             log("خطای تونل: %s" % e)
@@ -1130,6 +1249,11 @@ def tunnel_loop(port, native_dir=None):
                     proc.terminate()
                 except Exception:
                     pass
+            try:
+                if os.path.exists(os.path.join(FILES_DIR, "tunnel_url.txt")):
+                    os.remove(os.path.join(FILES_DIR, "tunnel_url.txt"))
+            except Exception:
+                pass
         time.sleep(15)
 
 
@@ -1180,8 +1304,35 @@ def main(files_dir, native_lib_dir=None):
         log("بررسی وب‌هوک ناموفق: %s" % e)
 
     port = int(os.environ.get("PORT", "8080"))
-    threading.Thread(target=tunnel_loop, args=(port, native_lib_dir), daemon=True).start()
-    threading.Thread(target=http_server_loop, args=(store, narrator, port), daemon=True).start()
+
+    # اول وب‌سرور را کاملاً بالا بیاور و مطمئن شو واقعاً پاسخ می‌دهد
+    # (اگر تونل قبل از آماده شدن سرور وصل شود، کلودفلر خطای 1033 می‌دهد)
+    srv_ready = threading.Event()
+    srv = http_server_start(store, narrator, port, srv_ready)
+    if srv is None:
+        log("❌ وب‌سرور بالا نیامد — تونل را شروع نمی‌کنم")
+        return
+    log("⏳ صبر برای آماده شدن وب‌سرور...")
+    if not srv_ready.wait(timeout=10):
+        log("⚠️ وب‌سرور در زمان مقرر آماده نشد — با این حال تونل را امتحان می‌کنم")
+    else:
+        log("✅ وب‌سرور آماده است — حالا تونل را وصل می‌کنم")
+
+    # تست محلی: مطمئن شو 127.0.0.1:port واقعاً جواب می‌دهد
+    local_ok = False
+    for _ in range(5):
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:%d/api/meta" % port, timeout=3) as r:
+                if r.status == 200:
+                    local_ok = True
+                    break
+        except Exception:
+            time.sleep(1)
+    if not local_ok:
+        log("❌ وب‌سرور از داخل گوشی پاسخ نمی‌دهد — تونل بدون سرور محلی کار نمی‌کند (علت 1033)")
+    else:
+        log("✅ وب‌سرور محلی پاسخ می‌دهد — شروع تونل امن")
+        threading.Thread(target=tunnel_loop, args=(port, native_lib_dir), daemon=True).start()
 
     bot_loop(store)
     log("🛑 سرور متوقف شد")
