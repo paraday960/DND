@@ -13,7 +13,8 @@
         android:icon="@android:drawable/sym_def_app_icon"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:allowBackup="true"
-        android:usesCleartextTraffic="true">
+            android:usesCleartextTraffic="true">
+
 
         <activity
             android:name=".MainActivity"
@@ -26,6 +27,7 @@
 
         <service
             android:name=".BotService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

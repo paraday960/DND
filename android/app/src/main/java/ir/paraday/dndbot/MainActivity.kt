@@ -129,7 +129,12 @@ class MainActivity : Activity() {
             text = "▶️ شروع سرور"
             setOnClickListener {
                 savePrefs()
-                startForegroundService(Intent(this@MainActivity, BotService::class.java))
+                val serviceIntent = Intent(this@MainActivity, BotService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(serviceIntent)
+                } else {
+                    startService(serviceIntent)
+                }
             }
         }
         btnStop = Button(this).apply {

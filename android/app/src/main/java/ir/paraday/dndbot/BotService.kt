@@ -70,7 +70,7 @@ class BotService : Service() {
             put("AI_PROVIDER", p.getString("ai_provider", "mistral") ?: "mistral")
             put("AI_KEY", p.getString("ai_key", "") ?: "")
             put("AI_MODEL", p.getString("ai_model", "mistral-small-latest") ?: "mistral-small-latest")
-            put("PORT", p.getString("port", "8080") ?: "8080".toIntOrNull() ?: 8080)
+            put("PORT", p.getString("port", "8080")?.toIntOrNull() ?: 8080)
             put("DEV", false)
         }
         File(filesDir, "bot_config.json").writeText(cfg.toString())
