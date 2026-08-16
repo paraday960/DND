@@ -6,6 +6,7 @@ import string
 from .rules import (
     ABILITIES, RACES, CLASSES, WEAPONS, SPELLS,
     STANDARD_ARRAY, ability_mod, level_from_xp, proficiency_bonus,
+    DEFAULT_PROFICIENCIES,
 )
 
 
@@ -31,10 +32,19 @@ class Character:
         self.level = level
         self.xp = xp
         self.gold = gold
-        self.abilities = stats or make_stats()
-        # اعمال پاداش نژادی
-        for k, v in RACES[self.race]["bonus"].items():
-            self.abilities[k] += v
+        self.proficiencies = list(DEFAULT_PROFICIENCIES.get(cls, []))
+        self.inventory = {"potion": 2, "torch": 3, "rope": 1}
+        self.conditions = []
+        self.death_saves = {"success": 0, "fail": 0}
+        self.inspiration = False
+        self.spell_slots = self._initial_spell_slots()
+        self.spell_slots_used = {}
+        # هنگام بازیابی از SQLite، امتیازها قبلاً شامل پاداش نژادی هستند؛
+        # اعمال دوبارهٔ bonus باعث می‌شد هر بار load شدن کاراکتر قوی‌تر شود.
+        self.abilities = dict(stats) if stats is not None else make_stats()
+        if stats is None:
+            for k, v in RACES[self.race]["bonus"].items():
+                self.abilities[k] += v
 
         hit_die = CLASSES[cls]["hit_die"]
         con_mod = ability_mod(self.abilities["CON"])
@@ -45,6 +55,24 @@ class Character:
         # زره ساده: کلاس‌های زره‌پوش +۲ AC
         armor_bonus = 2 if CLASSES[cls]["armor"] else 0
         self.ac = 10 + ability_mod(self.abilities["DEX"]) + armor_bonus
+
+    def _initial_spell_slots(self) -> dict:
+        if self.cls not in ("wizard", "cleric", "druid", "bard", "sorcerer", "warlock", "paladin", "ranger"):
+            return {}
+        # مدل ساده‌شدهٔ slotها؛ استراحت طولانی آن‌ها را بازنشانی می‌کند.
+        return {1: max(1, min(4, 2 + self.level // 3)), 2: max(0, min(3, (self.level - 2) // 3))}
+
+    def available_slot(self, level: int = 1) -> bool:
+        return self.spell_slots.get(level, 0) > self.spell_slots_used.get(level, 0)
+
+    def spend_slot(self, level: int = 1) -> bool:
+        if not self.available_slot(level):
+            return False
+        self.spell_slots_used[level] = self.spell_slots_used.get(level, 0) + 1
+        return True
+
+    def reset_spell_slots(self):
+        self.spell_slots_used = {}
 
     # ---------- امکانات ----------
     def stat_mod(self, stat: str) -> int:
@@ -126,6 +154,10 @@ class Character:
             "gold": self.gold, "abilities": self.abilities,
             "hp": self.hp, "max_hp": self.max_hp, "ac": self.ac,
             "hit_die": self.hit_die,
+            "proficiencies": self.proficiencies, "inventory": self.inventory,
+            "conditions": self.conditions, "death_saves": self.death_saves,
+            "inspiration": self.inspiration,
+            "spell_slots": self.spell_slots, "spell_slots_used": self.spell_slots_used,
         }
 
     @classmethod
@@ -136,6 +168,13 @@ class Character:
         ch.max_hp = d.get("max_hp", ch.max_hp)
         ch.ac = d.get("ac", ch.ac)
         ch.hit_die = d.get("hit_die", ch.hit_die)
+        ch.proficiencies = d.get("proficiencies", ch.proficiencies)
+        ch.inventory = d.get("inventory", ch.inventory)
+        ch.conditions = d.get("conditions", [])
+        ch.death_saves = d.get("death_saves", {"success": 0, "fail": 0})
+        ch.inspiration = d.get("inspiration", False)
+        ch.spell_slots = {int(k): v for k, v in d.get("spell_slots", ch.spell_slots).items()}
+        ch.spell_slots_used = {int(k): v for k, v in d.get("spell_slots_used", {}).items()}
         return ch
 
 

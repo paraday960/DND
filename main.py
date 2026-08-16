@@ -144,9 +144,15 @@ COMMANDS = [
     BotCommand("attack", "🎯 حمله: /attack <دشمن>"),
     BotCommand("cast", "✨ طلسم: /cast <طلسم> <هدف>"),
     BotCommand("skip", "⏭️ رد نوبت"),
+    BotCommand("dodge", "🛡️ دفاع در نبرد"),
+    BotCommand("deathsave", "💀 نجات از مرگ"),
     BotCommand("combatend", "🏁 پایان نبرد"),
     BotCommand("levelup", "⭐ ارتقای سطح"),
     BotCommand("xp", "💠 وضعیت تجربه"),
+    BotCommand("check", "🎲 آزمایش مهارت: /check stealth 15"),
+    BotCommand("rest", "🔥 استراحت: /rest short|long"),
+    BotCommand("inventory", "🎒 موجودی"),
+    BotCommand("use", "🧪 استفاده از آیتم: /use potion"),
     BotCommand("help", "📚 راهنما"),
 ]
 
@@ -193,9 +199,15 @@ def build_app(store=None, narrator=None) -> Application:
     app.add_handler(CommandHandler("attack", handlers.attack_cmd))
     app.add_handler(CommandHandler("cast", handlers.cast_cmd))
     app.add_handler(CommandHandler("skip", handlers.skip_cmd))
+    app.add_handler(CommandHandler("dodge", handlers.dodge_cmd))
+    app.add_handler(CommandHandler("deathsave", handlers.deathsave_cmd))
     app.add_handler(CommandHandler("combatend", handlers.combatend_cmd))
     app.add_handler(CommandHandler("levelup", handlers.levelup_cmd))
     app.add_handler(CommandHandler("xp", handlers.xp_cmd))
+    app.add_handler(CommandHandler("check", handlers.check_cmd))
+    app.add_handler(CommandHandler("rest", handlers.rest_cmd))
+    app.add_handler(CommandHandler("inventory", handlers.inventory_cmd))
+    app.add_handler(CommandHandler("use", handlers.use_cmd))
 
     # ساخت کاراکتر (گفت‌وگو) — در گروه جداگانه تا دستورهای دیگر را مسدود نکند
     app.add_handler(conv.conv_character, group=1)

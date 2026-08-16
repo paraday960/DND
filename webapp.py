@@ -14,7 +14,8 @@ from urllib.parse import parse_qsl
 from flask import Flask, jsonify, request, send_from_directory
 
 import config
-from game.combat import advance, attack, cast, end_combat, start_combat
+from game.combat import advance, attack, cast, dodge, end_combat, is_player_turn, start_combat
+from game.adventure import death_save, inventory_text, rest, skill_check, use_item
 from game.dice import (
     DiceError, roll_advantage, roll_disadvantage, roll_expression,
 )
@@ -131,6 +132,10 @@ def build_app(store, narrator, telegram_app=None, loop=None):
             "abilities": [{"key": a, "fa": ABILITIES_FA[a], "value": ch.abilities[a],
                            "mod": ch.stat_mod(a)} for a in ABILITIES],
             "features": ch.features(),
+            "proficiencies": ch.proficiencies,
+            "inventory": ch.inventory,
+            "conditions": ch.conditions,
+            "inspiration": ch.inspiration,
         }
 
     from game.rules import ABILITY_FA as ABILITIES_FA
@@ -146,7 +151,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
             out_parts.append({
                 "name": p["name"], "kind": p["kind"], "hp": p["hp"],
                 "max_hp": p.get("max_hp", p["hp"]), "ac": p["ac"],
-                "alive": p["alive"], "init": p["init"], "turn": i == idx,
+                "alive": p["alive"], "init": p["init"], "conditions": p.get("conditions", []), "turn": i == idx,
                 "is_player": p["kind"] == "player",
                 "is_me": p["kind"] == "player" and uid is not None and p.get("uid") == str(uid),
             })
@@ -397,6 +402,46 @@ def build_app(store, narrator, telegram_app=None, loop=None):
             crit = " 🔥 بحرانی!" if r["total"] == 20 else (" 💔 شکست بحرانی!" if r["total"] == 1 else "")
         return api_ok({"result": r["total"], "breakdown": r["breakdown"], "crit": crit})
 
+    # ---------- ماجراجویی خارج از نبرد ----------
+    @app.post("/api/check")
+    def api_check():
+        user, err = need_user()
+        if err: return err
+        d = request.json or {}; room = room_of(d.get("room", ""))
+        if not room: return api_err("اتاق پیدا نشد!")
+        if str(user["id"]) not in room.players: return api_err("تو عضو این اتاق نیستی.")
+        try: dc = int(d.get("dc", 10))
+        except (TypeError, ValueError): dc = 10
+        text = skill_check(room, user["id"], d.get("skill", "perception"), dc, d.get("mode", "normal"))
+        persist(room); return api_ok({"text": text, "state": build_state(room, user)})
+
+    @app.post("/api/rest")
+    def api_rest():
+        user, err = need_user()
+        if err: return err
+        d = request.json or {}; room = room_of(d.get("room", ""))
+        if not room: return api_err("اتاق پیدا نشد!")
+        text = rest(room, user["id"], d.get("kind", "short"))
+        persist(room); return api_ok({"text": text, "state": build_state(room, user)})
+
+    @app.post("/api/combat/deathsave")
+    def api_deathsave():
+        user, err = need_user()
+        if err: return err
+        d = request.json or {}; room = room_of(d.get("room", ""))
+        if not room: return api_err("اتاق پیدا نشد!")
+        text = death_save(room, user["id"])
+        persist(room); return api_ok({"text": text, "state": build_state(room, user)})
+
+    @app.post("/api/inventory/use")
+    def api_use_item():
+        user, err = need_user()
+        if err: return err
+        d = request.json or {}; room = room_of(d.get("room", ""))
+        if not room: return api_err("اتاق پیدا نشد!")
+        text = use_item(room, user["id"], d.get("item", ""))
+        persist(room); return api_ok({"text": text, "state": build_state(room, user)})
+
     # ---------- نبرد ----------
     @app.post("/api/combat/start")
     def api_combat_start():
@@ -427,8 +472,11 @@ def build_app(store, narrator, telegram_app=None, loop=None):
             return api_err("اتاق پیدا نشد!")
         if not room.combat:
             return api_err("نبردی در جریان نیست.")
+        before = len(room.log)
         msgs = [action_fn(room, user["id"])]
-        msgs += do_advance(room)
+        # حمله/طلسم ناموفق نباید نوبت بازیکن را بسوزاند.
+        if len(room.log) > before:
+            msgs += do_advance(room)
         persist(room)
         return api_ok({"messages": msgs, "state": build_state(room, user)})
 
@@ -443,9 +491,24 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         return _combat_action(lambda room, uid: cast(
             room, uid, d.get("spell", ""), d.get("target", "")))
 
+    @app.post("/api/combat/dodge")
+    def api_combat_dodge():
+        return _combat_action(lambda room, uid: dodge(room, uid))
+
     @app.post("/api/combat/skip")
     def api_combat_skip():
-        return _combat_action(lambda room, uid: advance(room))
+        user, err = need_user()
+        if err:
+            return err
+        d = request.json or {}
+        room = room_of(d.get("room", ""))
+        if not room:
+            return api_err("اتاق پیدا نشد!")
+        if not is_player_turn(room, user["id"]):
+            return api_err("هنوز نوبت تو نیست.")
+        msgs = do_advance(room)
+        persist(room)
+        return api_ok({"messages": msgs, "state": build_state(room, user)})
 
     @app.post("/api/combat/end")
     def api_combat_end():

@@ -2,7 +2,7 @@
 """موتور نبرد — نوبت‌بندی، حمله، طلسم، دشمنان هوشمند و توزیع XP."""
 import random
 
-from .dice import roll_dice, roll_d20
+from .dice import DiceError, parse_dice, roll_dice, roll_d20
 from .models import Session
 from .rules import MONSTERS, SPELLS, ability_mod
 
@@ -11,6 +11,27 @@ def _combat(session: Session) -> dict:
     if session.combat is None:
         session.combat = {"participants": [], "turn": 0, "round": 1, "xp_pool": 0}
     return session.combat
+
+
+def is_player_turn(session: Session, uid: int) -> bool:
+    """بررسی می‌کند که کاربر واقعاً نوبت اقدام دارد."""
+    combat = session.combat
+    if not combat or not combat.get("participants"):
+        return False
+    turn = combat.get("turn", 0)
+    if turn >= len(combat["participants"]):
+        return False
+    current = combat["participants"][turn]
+    return current.get("kind") == "player" and current.get("uid") == str(uid) and current.get("alive", False)
+
+
+def _roll_damage(expr: str) -> int:
+    """پرتاب آسیب با پشتیبانی از d6، 2d8+3 و mod منفی."""
+    try:
+        count, sides, mod = parse_dice(str(expr))
+    except DiceError:
+        count, sides, mod = 1, 1, 0
+    return sum(roll_dice(count, sides)) + mod if sides >= 2 else count + mod
 
 
 def start_combat(session: Session) -> str:
@@ -31,7 +52,7 @@ def start_combat(session: Session) -> str:
         combat["participants"].append({
             "kind": "player", "uid": uid, "name": ch.name,
             "init": init, "hp": ch.hp, "max_hp": ch.max_hp,
-            "ac": ch.ac, "alive": True,
+            "ac": ch.ac, "alive": True, "conditions": list(ch.conditions),
         })
 
     # دشمنان از سناریو
@@ -51,7 +72,7 @@ def start_combat(session: Session) -> str:
                     "ac": int(e.get("ac", base.get("ac", 12))),
                     "dmg": e.get("dmg", base.get("dmg", "1d6+2")),
                     "xp": int(e.get("xp", base.get("xp", 50))),
-                    "alive": True,
+                    "alive": True, "conditions": [],
                 })
     if not monsters:
         # نبرد پیش‌فرض برای وقتی سناریویی نیست
@@ -59,7 +80,7 @@ def start_combat(session: Session) -> str:
             monsters.append({
                 "kind": "monster", "name": f"گابلین {i + 1}",
                 "init": roll_d20() + 2, "hp": 7, "max_hp": 7, "ac": 15,
-                "dmg": "1d6+2", "xp": 50, "alive": True,
+                "dmg": "1d6+2", "xp": 50, "alive": True, "conditions": [],
             })
     combat["participants"].extend(monsters)
 
@@ -141,12 +162,7 @@ def auto_act(session: Session, mon: dict) -> str:
     hit = atk >= target["ac"]
     crit = atk == 20
     if hit:
-        dmg_rolls = roll_dice(1, int(mon["dmg"].split("d")[1].split("+")[0])) \
-            if "d" in mon["dmg"] else [1]
-        mod = 0
-        if "+" in mon["dmg"]:
-            mod = int(mon["dmg"].split("+")[1])
-        dmg = sum(dmg_rolls) + mod
+        dmg = _roll_damage(mon.get("dmg", "1d6+0"))
         if crit:
             dmg *= 2
         target["hp"] = max(0, target["hp"] - dmg)
@@ -154,6 +170,10 @@ def auto_act(session: Session, mon: dict) -> str:
                   f"(AC {target['ac']}) {'— 💥 اصابت! ' + str(dmg) + ' آسیب' if hit else '— خطا!'}")
         if target["hp"] <= 0:
             target["alive"] = False
+            real_char = session.get_char(int(target["uid"]))
+            if real_char:
+                real_char.hp = 0
+                real_char.death_saves = {"success": 0, "fail": 0}
             result += f"\n💀 **{target['name']} از پا درآمد!**"
     else:
         result = f"🎲 {mon['name']} به {target['name']} حمله کرد: {atk} (AC {target['ac']}) — بی‌اثر!"
@@ -188,17 +208,14 @@ def attack(session: Session, uid: int, target_name: str) -> str:
 
     from .rules import WEAPONS
     weapon = WEAPONS[ch.weapon]
-    atk = roll_d20() + ch.attack_bonus()
+    rolls = [roll_d20(), roll_d20()] if "dodge" in target.get("conditions", []) else [roll_d20()]
+    atk = (min(rolls) if len(rolls) == 2 else rolls[0]) + ch.attack_bonus()
     crit = atk == 20
     hit = crit or atk >= target["ac"]
     if hit:
-        dmg = 0
-        dmg_str = weapon["dmg"]
-        count = int(dmg_str.split("d")[0])
-        sides = int(dmg_str.split("d")[1])
-        dmg = sum(roll_dice(count, sides)) + ch.stat_mod(weapon["stat"])
+        dmg = _roll_damage(weapon["dmg"]) + ch.stat_mod(weapon["stat"])
         if crit:
-            dmg += sum(roll_dice(count, sides)) + ch.stat_mod(weapon["stat"])
+            dmg += _roll_damage(weapon["dmg"]) + ch.stat_mod(weapon["stat"])
         target["hp"] = max(0, target["hp"] - dmg)
         result = (f"🎲 {ch.name} با {weapon['fa']} به {target['name']}: {atk} "
                   f"(AC {target['ac']}) {'— 💥 اصابت! ' + str(dmg) + ' آسیب' if hit else ''}")
@@ -212,6 +229,17 @@ def attack(session: Session, uid: int, target_name: str) -> str:
         result = f"🎲 {ch.name} با {weapon['fa']} به {target['name']}: {atk} (AC {target['ac']}) — خطا!"
     session.add_log(ch.name, result.replace("\n", " "))
     return result
+
+
+def dodge(session: Session, uid: int) -> str:
+    """اقدام دفاعی: حمله‌ها علیه بازیکن تا نوبت بعدی با ضعف انجام می‌شوند."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    if "dodge" not in cur.setdefault("conditions", []):
+        cur["conditions"].append("dodge")
+    session.add_log(cur["name"], "حالت دفاعی گرفت (Dodge)")
+    return f"🛡️ {cur['name']} دفاع کرد؛ حمله‌ها علیه او با ضعف خواهند بود."
 
 
 def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> str:
@@ -233,7 +261,9 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
     castable = ch.cls in ("wizard", "sorcerer", "bard", "warlock", "cleric", "druid", "paladin", "ranger", "monk")
     if not castable and spell_key.lower() != "curewounds":
         return f"کلاس {ch.cls} اهل جادو نیست! 🥊"
-
+    cantrips = {"firebolt", "eldritchblast", "sacredflame"}
+    if spell_key.lower() not in cantrips and not ch.spend_slot(1):
+        return "🪄 جایگاه طلسم سطح ۱ نداری؛ استراحت طولانی کن."
     if spell["kind"] == "heal":
         target = None
         if target_name:
@@ -260,10 +290,7 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
         return f"هدف پیدا نشد. دشمنان: {names}"
 
     if spell["kind"] == "auto":
-        count = int(spell["dmg"].split("d")[0])
-        sides = int(spell["dmg"].split("d")[1].split("+")[0])
-        mod = int(spell["dmg"].split("+")[1]) if "+" in spell["dmg"] else 0
-        dmg = sum(roll_dice(count, sides)) + mod
+        dmg = _roll_damage(spell["dmg"])
         target["hp"] = max(0, target["hp"] - dmg)
         result = f"✨ {ch.name} «{spell['fa']}» می‌اندازد: {dmg} آسیب به {target['name']}!"
     else:  # attack roll
@@ -271,12 +298,9 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
         crit = atk == 20
         hit = crit or atk >= target["ac"]
         if hit:
-            count = int(spell["dmg"].split("d")[0])
-            sides = int(spell["dmg"].split("d")[1].split("+")[0])
-            mod = int(spell["dmg"].split("+")[1]) if "+" in spell["dmg"] else 0
-            dmg = sum(roll_dice(count, sides)) + mod
+            dmg = _roll_damage(spell["dmg"])
             if crit:
-                dmg += sum(roll_dice(count, sides))
+                dmg += _roll_damage(spell["dmg"])
             target["hp"] = max(0, target["hp"] - dmg)
             result = f"✨ {ch.name} «{spell['fa']}» می‌اندازد: {atk} (AC {target['ac']}) — 💥 {dmg} آسیب!"
             if crit:

@@ -6,7 +6,8 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 import config
-from game.combat import attack, cast, end_combat, start_combat, advance
+from game.combat import attack, cast, dodge, end_combat, start_combat, advance, is_player_turn
+from game.adventure import death_save, inventory_text, rest, skill_check, use_item
 from game.dice import DiceError, roll_disadvantage, roll_expression, roll_advantage, roll_d20
 from game.models import Session
 from game.rules import ABILITIES, ability_mod, level_from_xp
@@ -51,11 +52,19 @@ HELP = """📚 **راهنمای کامل دستورات**
 • `/attack <دشمن>` — حمله با سلاح
 • `/cast <طلسم> <هدف>` — طلسم (firebolt, magicmissile, curewounds, ...)
 • `/skip` — رد کردن نوبت
+• `/dodge` — دفاع؛ حمله بعدی دشمن با ضعف
+• `/deathsave` — نجات از مرگ هنگام زمین‌گیر شدن
 • `/combatend` — پایان نبرد و توزیع XP
 
 🎲 **تاس:**
 • `/roll 2d6+3` — هر ترکیبی: `d20`، `2d8`، `1d20+5`
 • `/roll adv` یا `/roll dis` — با برتری / ضعف
+
+🧭 **ماجراجویی عمیق‌تر:**
+• `/check stealth 15` — آزمایش مهارت؛ برتری/ضعف با `adv` یا `dis`
+• `/rest short` و `/rest long` — استراحت کوتاه/طولانی
+• `/inventory` — موجودی، مشعل و طناب
+• `/use potion` — استفاده از معجون شفا
 
 💡 نکته: دشمن‌ها هوشمندند و در نوبت خودشون حمله می‌کنن!
 """
@@ -379,10 +388,12 @@ async def attack_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not target:
         await update.message.reply_text("🎯 مثل: `/attack گابلین`")
         return
+    before = len(session.log)
     result = attack(session, update.effective_user.id, target)
     _save(update, context, session)
     await update.message.reply_text(result)
-    await _maybe_advance(update, context, session)
+    if len(session.log) > before:
+        await _maybe_advance(update, context, session)
 
 
 async def cast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -402,10 +413,30 @@ async def cast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     spell_key = args[0].lower()
     target = " ".join(args[1:])
+    before = len(session.log)
     result = cast(session, update.effective_user.id, spell_key, target)
     _save(update, context, session)
     await update.message.reply_text(result)
-    await _maybe_advance(update, context, session)
+    if len(session.log) > before:
+        await _maybe_advance(update, context, session)
+
+
+async def deathsave_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    text = death_save(session, update.effective_user.id)
+    _save(update, context, session); await update.message.reply_text(text)
+
+
+async def dodge_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    text = dodge(session, update.effective_user.id)
+    _save(update, context, session); await update.message.reply_text(text)
+    if "دفاع کرد" in text:
+        await _maybe_advance(update, context, session)
 
 
 async def skip_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -416,18 +447,25 @@ async def skip_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not session.combat:
         await update.message.reply_text("⚔️ نبردی در جریان نیست.")
         return
+    if not is_player_turn(session, update.effective_user.id):
+        await update.message.reply_text("هنوز نوبت تو نیست.")
+        return
     text = advance(session)
     _save(update, context, session)
     await update.message.reply_text(text)
 
 
 async def _maybe_advance(update: Update, context: ContextTypes.DEFAULT_TYPE, session: Session):
-    """بعد از هر اقدام بازیکن، نوبت به بعدی می‌رود؛ دشمن‌ها خودکار عمل می‌کنند."""
+    """بعد از هر اقدام معتبر بازیکن، نوبت را جلو می‌برد و پیروزی را خودکار ثبت می‌کند."""
     if not session.combat:
         return
     text = advance(session)
-    _save(update, context, session)
     await update.message.reply_text(text)
+    monsters = [p for p in session.combat["participants"] if p["kind"] == "monster"]
+    if monsters and all(not m["alive"] for m in monsters):
+        result = end_combat(session)
+        await update.message.reply_text(result)
+    _save(update, context, session)
 
 
 async def combatend_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -482,6 +520,45 @@ async def levelup_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🎉 **{ch.name} به سطح {info['new']} رسید!**\n"
         f"❤️ HP: +{info['hp_gain']}\n"
         f"✨ ویژگی‌ها: {', '.join(info['features'])}")
+
+
+async def check_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    args = context.args or []
+    if not args:
+        await update.message.reply_text("🎲 مثال: `/check stealth 15` یا `/check perception 12 adv`"); return
+    try: dc = int(args[1]) if len(args) > 1 else 10
+    except ValueError: dc = 10
+    mode = args[2].lower() if len(args) > 2 else "normal"
+    text = skill_check(session, update.effective_user.id, args[0], dc, mode)
+    _save(update, context, session); await update.message.reply_text(text)
+
+
+async def rest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    kind = (context.args[0] if context.args else "short")
+    text = rest(session, update.effective_user.id, kind)
+    _save(update, context, session); await update.message.reply_text(text)
+
+
+async def inventory_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    ch = _user_char(session, update)
+    await update.message.reply_text("🎒 موجودی: " + (inventory_text(ch) if ch else "کاراکتر نداری"))
+
+
+async def use_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    text = use_item(session, update.effective_user.id, " ".join(context.args or []))
+    _save(update, context, session); await update.message.reply_text(text)
 
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
