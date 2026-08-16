@@ -195,20 +195,24 @@ def advance(session: Session) -> str:
 
 
 def run_initial_monsters(session: Session) -> str:
-    """در شروع نبرد، اگر اولین نوبت هیولا بود، نوبت‌های هیولاها را تا رسیدن به بازیکن اجرا می‌کند."""
+    """در شروع نبرد، همه نوبت‌های پشت‌سرهم هیولاها را از نقطه شروع اجرا می‌کند
+    تا نوبت به بازیکن برسد. اگر اولین نوبت خود بازیکن بود، هیچ کاری نمی‌کند."""
     combat = session.combat
     if not combat or not combat.get("participants"):
         return ""
     messages = []
     first = combat["participants"][combat["turn"]]
     if first["kind"] == "monster":
+        # از مکان فعلی شروع کن (بدون جلو رفتن اولیه)، تا نوبت به بازیکن برسد
         _run_pending_monsters(session, messages, advance_first=False)
     if not messages:
         return ""
     cur = combat["participants"][combat["turn"]]
     messages.append(f"— نوبت **{cur['name']}** (دور {combat['round']})")
-    if cur["kind"] == "player" and cur.get("alive", True) and cur.get("hp", 1) > 0:
+    if cur["kind"] == "player" and not cur.get("dead") and not cur.get("downed"):
         messages.append("🎯 `/attack <دشمن>` | ✨ `/cast <طلسم> <هدف>` | 🛡️ `/dodge` | ⏭️ `/skip`")
+    elif cur["kind"] == "player":
+        messages.append("💀 نوبت توست اما زمین‌گیر شدی: `/deathsave`")
     return "\n\n".join(messages)
 
 
@@ -224,8 +228,10 @@ def auto_act(session: Session, mon: dict) -> str:
         return f"☠️ {mon['name']} به دنبال هدف می‌گردد اما همه نابود شده‌اند..."
     target = random.choice(players)
     raw = roll_d20()
-    atk = raw + 2
-    hit = raw == 20 or atk >= target["ac"]
+    # پاداش حمله هیولا: بر اساس CR/نوع (پیش‌فرض +۲)
+    atk_bonus = int(mon.get("atk_bonus", 2))
+    atk = raw + atk_bonus
+    hit = (raw == 20) or (raw != 1 and atk >= target["ac"])
     crit = raw == 20
     if hit:
         dmg = _roll_damage(mon.get("dmg", "1d6+0"))
@@ -233,7 +239,8 @@ def auto_act(session: Session, mon: dict) -> str:
             dmg *= 2
         target["hp"] = max(0, target["hp"] - dmg)
         result = (f"🎲 {mon['name']} به {target['name']} حمله کرد: {atk} "
-                  f"(AC {target['ac']}) {'— 💥 اصابت! ' + str(dmg) + ' آسیب' if hit else '— خطا!'}")
+                  f"(رول {raw}{'+' + str(atk_bonus) if atk_bonus else ''}) "
+                  f"(AC {target['ac']}) — 💥 اصابت! {dmg} آسیب")
         if target["hp"] <= 0:
             # بازیکن زمین‌گیر (downed) هنوز در گردش نوبت می‌ماند تا death_save بدهد
             # فقط وقتی فلگ dead=True شد کاملاً خارج می‌شود

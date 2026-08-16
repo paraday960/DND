@@ -157,7 +157,7 @@ class Narrator:
                 return data
         except Exception:
             pass
-        return self._fallback_scenario()
+        return self._fallback_scenario(session)
 
     def recap(self, session: Session) -> str:
         """خلاصه وضعیت فعلی ماجرا."""
@@ -200,18 +200,58 @@ class Narrator:
             f"(راهنما: README.md — بخش هوش مصنوعی رایگان)."
         )
 
-    def _fallback_scenario(self) -> dict:
+    def _fallback_scenario(self, session=None) -> dict:
+        # مقیاس دشمنان متناسب با گروه (سطح و تعداد) تا نبرد اول قابل باخت نباشد
+        players = 1
+        avg_level = 1
+        if session is not None:
+            chars = [p["char"] for p in session.players.values() if p.get("char")]
+            players = max(1, len(chars))
+            avg_level = max(1, sum(c.level for c in chars) // max(1, len(chars)))
+
+        # بودجه XP ساده: تقریباً 100 * تعداد * سطح (متوسط)
+        budget = 100 * players * avg_level
+
+        def pick(monster_key, max_count):
+            from .rules import MONSTERS
+            m = MONSTERS[monster_key]
+            per = m.get("xp", 50)
+            n = max(1, min(max_count, budget // max(per, 1)))
+            return {"name": monster_key, "count": n, "ac": m["ac"],
+                    "hp": m["hp"], "dmg": m["dmg"], "xp": per, "cr": m.get("cr", 0.25)}
+
+        if avg_level <= 2:
+            enc = [pick("goblin", max(2, players)), pick("wolf", players)]
+            title = "کمینگاه گابلین‌ها در جنگل کهن"
+            hook = "کاروانی در دل جنگل گم شده و دود آتش گابلین‌ها از میان درختان دیده می‌شود."
+            goal = "کاروانیان را نجات دهید و کمینگاه گابلین‌ها را در هم بشکنید."
+            locations = ["دهکده", "جاده جنگلی", "کمینگاه گابلین‌ها"]
+            treasure = "۲۰۰ سکه و یک خنجر جادویی"
+        elif avg_level <= 4:
+            enc = [pick("bandit", players + 1), pick("wolf", 2), pick("skeleton", 2)]
+            title = "معبد فراموش‌شده"
+            hook = "زمزمه‌هایی از یک معبد متروک به گوش می‌رسد — راهزنان و اسکلت‌ها آنجا لانه کرده‌اند."
+            goal = "معبد را پاکسازی کنید و اثر باستانی را بازیابید."
+            locations = ["روستای پای کوه", "پل ویرانه", "تالار اصلی معبد"]
+            treasure = "۶۰۰ سکه، طومار طلسم، زره سبک +۱"
+        elif avg_level <= 7:
+            enc = [pick("orc", players), pick("harpy", 2), pick("giant_spider", 2)]
+            title = "برج هارپی‌ها"
+            hook = "هارپی‌ها مسافران هوایی را می‌ربایند و در برج بلند زندانی کرده‌اند."
+            goal = "به بالای برج صعود کنید، هارپی‌ها را شکست دهید و اسیران را نجات دهید."
+            locations = ["پای برج", "پلکان مارپیچ", "آشیانه هارپی"]
+            treasure = "۱۵۰۰ سکه، کمان +۱"
+        else:
+            enc = [pick("troll", 2), pick("orc", players), pick("dragon_young", 1)]
+            title = "خزانه اژدهای مه‌آلود"
+            hook = "پیکرهای نیمه‌جان در مسیر دهکده پیدا شده؛ اژدهایی در کوهستان لانه کرده."
+            goal = "وارد کوهستان شوید، با ترول‌ها و اژدها روبه‌رو شوید و گنج را بازگردانید."
+            locations = ["دهکده سوخته", "تنگه استخوان‌ها", "لانه اژدها"]
+            treasure = "۵۰۰۰ سکه، شمشیر +۱، طومار باستانی"
+
+        npcs = ["پیرمرد فال‌گیر", "نگهبان مضطرب", "بازمانده کاروان"]
         return {
-            "title": "خزانه اژدهای مه‌آلود",
-            "hook": "پیکرهای نیمه‌جان در مسیر دهکده پیدا شده؛ همه درباره گنجینه‌ای در کوهستان مه‌آلود نجوا می‌کنند.",
-            "goal": "وارد سیاهچال کوهستان شوید، راز اژدهای مه‌آلود را کشف کنید و گنج را بیاورید.",
-            "locations": ["دهکده سوخته", "تنگه استخوان‌ها", "سیاهچال کوهستان", "لانه اژدها"],
-            "npcs": ["پیرمرد فال‌گیر", "مسافر زخمی", "نگهبانان دهکده"],
-            "encounters": [
-                {"name": "goblin", "count": 3, "ac": 15, "hp": 7, "dmg": "1d6+2", "xp": 50, "cr": 0.25},
-                {"name": "skeleton", "count": 2, "ac": 13, "hp": 13, "dmg": "1d6+2", "xp": 50, "cr": 0.25},
-                {"name": "orc", "count": 2, "ac": 13, "hp": 15, "dmg": "1d12+3", "xp": 100, "cr": 0.5},
-                {"name": "dragon_young", "count": 1, "ac": 18, "hp": 110, "dmg": "2d10+4", "xp": 2900, "cr": 6},
-            ],
-            "treasure": "گنجینه اژدها: ۵۰۰۰ سکه طلا، شمشیر بلند +۱ و یک طومار باستانی",
+            "title": title, "hook": hook, "goal": goal,
+            "locations": locations, "npcs": npcs,
+            "encounters": enc, "treasure": treasure,
         }

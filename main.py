@@ -72,6 +72,14 @@ async def _activate_webhook(app: Application, url: str) -> bool:
         allowed_updates=Update.ALL_TYPES,
         max_connections=40,
     )
+    # دکمه منوی کنار باکس پیام را همیشه به مینی‌گیم وصل کن
+    try:
+        await app.bot.set_chat_menu_button(
+            menu_button={"type": "web_app", "text": "🎮 مینی‌گیم D&D",
+                         "web_app": {"url": url.rstrip('/') + "/"}}
+        )
+    except Exception as e:
+        logger.warning("set_chat_menu_button failed: %s", e)
     await app.start()
     return bool(ok)
 
@@ -227,6 +235,16 @@ async def _post_init(app: Application):
         await app.bot.set_my_commands(COMMANDS)
     except Exception as e:
         logger.warning("set_my_commands failed: %s", e)
+    # اگر مینی‌گیم آدرس دارد، دکمه منو را هم وصل کن
+    url = config.webapp_url()
+    if url:
+        try:
+            await app.bot.set_chat_menu_button(
+                menu_button={"type": "web_app", "text": "🎮 مینی‌گیم D&D",
+                             "web_app": {"url": url.rstrip('/') + "/"}}
+            )
+        except Exception as e:
+            logger.warning("set_chat_menu_button failed: %s", e)
 
 
 def main():
