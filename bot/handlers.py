@@ -748,3 +748,34 @@ async def natural_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await story_cmd(update, context)
     elif a == "wait":
         await update.message.reply_text("⏳ چند لحظه صبر می‌کنی... هوا سنگین‌تر می‌شود.")
+    elif a == "move":
+        from game.map import move_to
+        result = move_to(session, act.get("text", "جلو"))
+        _save(update, context, session)
+        await update.message.reply_text(result)
+    elif a == "where":
+        from game.map import describe
+        await update.message.reply_text(describe(session))
+    elif a == "equip":
+        from game.equipment import equip_weapon, equip_armor
+        ch = _user_char(session, update)
+        if not ch:
+            await update.message.reply_text("اول کاراکتر بساز.")
+            return
+        if act.get("kind") == "armor":
+            result = equip_armor(ch, act.get("item"))
+        else:
+            # برای تجهیز سلاح، باید سلاح در موجودی باشد
+            wkey = act.get("item", "")
+            if wkey not in ch.inventory or ch.inventory.get(wkey, 0) <= 0:
+                # برای راحتی، اگر سلاح انتخابیِ کلاس است اضافه کن
+                from game.rules import WEAPONS, CLASSES
+                if wkey in WEAPONS and wkey in CLASSES.get(ch.cls, {}).get("weapons", []):
+                    ch.inventory[wkey] = 1
+                    result = equip_weapon(ch, wkey)
+                else:
+                    result = f"سلاح {wkey} را نداری."
+            else:
+                result = equip_weapon(ch, wkey)
+        _save(update, context, session)
+        await update.message.reply_text("🗡️ " + result)

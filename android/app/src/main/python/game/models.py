@@ -59,7 +59,9 @@ class Character:
             self.max_hp = hit_die + (level - 1) * avg + con_mod * level
         self.max_hp = max(self.max_hp, level)
         self.hp = self.max_hp
-        # زره ساده: کلاس‌های زره‌پوش +۲ AC
+        # زره پیش‌فرض (بعداً با equipment.eqip_armor به‌روز می‌شود)
+        self.armor = "medium" if CLASSES[cls].get("armor") else "none"
+        # محاسبه اولیه AC
         armor_bonus = 2 if CLASSES[cls]["armor"] else 0
         self.ac = 10 + ability_mod(self.abilities["DEX"]) + armor_bonus
 
@@ -190,6 +192,7 @@ class Session:
 
     def __init__(self, chat_id: int, name: str, dm_id: int, dm_name: str):
         self.chat_id = chat_id
+        self.host_chat_id = chat_id  # چتی که نبرد در آن اجرا می‌شود
         self.name = name
         self.code = gen_code()
         self.dm_id = dm_id
@@ -207,13 +210,15 @@ class Session:
         self.add_player(dm_id, dm_name)
 
     # ---------- بازیکن‌ها ----------
-    def add_player(self, uid: int, uname: str) -> str:
-        """بازیکن اضافه می‌کند؛ اگر ظرفیت پر باشد خطا برمی‌گرداند."""
+    def add_player(self, uid: int, uname: str, chat_id: int = None) -> str:
+        """بازیکن اضافه می‌کند؛ اگر ظرفیت پر باشد خطا برمی‌گرداند.
+        chat_id اولین چتی است که بازیکن از آن وارد شده (برای یادآوری)."""
         if str(uid) in self.players:
             return "already"
         if len(self.players) >= 8:
             return "full"
-        self.players[str(uid)] = {"user": uname, "char": None}
+        self.players[str(uid)] = {"user": uname, "char": None,
+                                  "chat_id": chat_id or self.host_chat_id}
         return "ok"
 
     def get_char(self, uid: int):
@@ -228,6 +233,19 @@ class Session:
         return sum(1 for p in self.players.values() if p["char"])
 
     # ---------- لاگ ----------
+    def alive_players(self) -> list:
+        """لیست uid بازیکنان زنده و آگاه در نبرد."""
+        if not self.combat:
+            return []
+        out = []
+        for p in self.combat.get("participants", []):
+            if p.get("kind") != "player":
+                continue
+            if p.get("dead") or p.get("downed") or p.get("hp", 0) <= 0:
+                continue
+            out.append(p)
+        return out
+
     def add_log(self, who: str, what: str):
         self.log.append({"who": who, "what": what})
         if len(self.log) > 60:
