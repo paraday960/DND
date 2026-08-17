@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""اکشن‌های محیطی — تعامل بازیکن با دنیا (مشعل، در، صندوق، گوش دادن و...)."""
+"""اکشن‌های محیطی — تعامل بازیکن با دنیا (مشعل، در، صندوق، گوش دادن، تله، جستجو و...)."""
 import random
 import re
 
-from .dice import roll_d20, DiceError
+from .dice import roll_d20, roll_dice, DiceError, parse_dice
 
 _LIGHT_PATTERNS = [
     r"مشعل\S* (روشن|آتش|افروختن|بزن|درست)",
@@ -108,4 +108,125 @@ def try_environment_action(session, ch, action: str):
             return f"👁️ در «{loc}». سنگفرش غبارآلود، دیوارهای نمدار..."
         return "👁️ چیز خاصی به چشم نمی‌خورد."
 
+    # ---- بررسی و فعال‌سازی تله‌ها ----
+    trap_msg = _check_trap_trigger(session, ch, action)
+    if trap_msg:
+        return trap_msg
+
     return None
+
+
+def _lead_character(session):
+    """اولین کاراکتر زنده در گروه را برمی‌گرداند (برای اعلان‌های عمومی)."""
+    for p in (session.players or {}).values():
+        ch = p.get("char")
+        if ch and ch.hp > 0:
+            return ch
+    return None
+
+
+def _check_trap_trigger(session, ch, action: str, here_override: str = None) -> str:
+    """اگر اکشن بازیکن باعث فعال شدن تله این مکان شد، نتیجه را برمی‌گرداند.
+    در غیر این صورت None برمی‌گرداند تا AI روایت کند."""
+    if not session.scenario:
+        return None
+    traps = session.scenario.get("traps") or []
+    here = here_override or session.world.get("location", "")
+    if ch is None:
+        ch = _lead_character(session)
+    if ch is None:
+        return None
+    for t in traps:
+        if t.get("triggered") or t.get("disarmed"):
+            continue
+        t_loc = t.get("location", "")
+        trigger = str(t.get("trigger", ""))
+        # تطابق مکان
+        if t_loc and here:
+            if t_loc not in here and here not in t_loc:
+                continue
+        # بررسی اکشن‌های خطرناک (عمومی + کلمات تریگر خود تله)
+        danger_actions = ["باز", "جلو", "ورود", "قدم", "حرکت", "برو", "رد", "فشار",
+                          "در رو", "صندوق", "پا", "پیش", "باز کردن"]
+        trigger_words = [w for w in trigger.split() if len(w) > 2]
+        triggered = (any(w in action for w in danger_actions) or
+                     any(w in action for w in trigger_words))
+        if not triggered:
+            continue
+        # شانس تشخیص با perception
+        roll = roll_d20()
+        mod = ability_mod_for(ch, "WIS")
+        if ch.cls in ("ranger", "rogue", "monk"):
+            mod += 2  # مهارت
+        detect_roll = roll + mod
+        if detect_roll >= t.get("detect_dc", 13):
+            # تله را دید اما هنوز فعال نشده
+            return (f"👁️ هشدار! متوجه تله‌ای شدی — «{t['name']}»! "
+                    f"عاملش «{t.get('trigger','؟')}» است. "
+                    f"برای خنثی کردنش (DC {t.get('disarm_dc',12)}) از مهارت استفاده کن "
+                    f"یا با `/check sleight {t.get('disarm_dc',12)}` اقدام کن. "
+                    f"اگر رد شوی: {t.get('damage','1d6')} آسیب — {t.get('effect','')}.")
+        else:
+            # فعال شد! — آسیب به کاراکتر پیشگام
+            t["triggered"] = True
+            try:
+                cnt, sides, dmod = parse_dice(t.get("damage", "1d6"))
+                dmg = sum(roll_dice(cnt, sides)) + dmod
+            except DiceError:
+                dmg = random.randint(1, 6)
+            ch.hp = max(0, ch.hp - dmg)
+            msg = (f"🪤 **تله!** {t['name']} فعال شد — {t.get('effect','')}! "
+                   f"🎲 {ch.name} {dmg} آسیب خورد. (HP: {ch.hp}/{ch.max_hp})")
+            if ch.hp <= 0:
+                msg += f"\n💀 {ch.name} از پا درآمد!"
+            session.add_log(ch.name, f"در تله {t['name']} افتاد و {dmg} آسیب خورد")
+            return msg
+    return None
+
+
+def try_disarm_trap(session, ch, trap_name: str = "", dc_override: int = None) -> str:
+    """تلاش برای خنثی‌سازی تله در مکان فعلی."""
+    if not session.scenario:
+        return "اینجا تله‌ای نیست."
+    here = session.world.get("location", "")
+    for t in (session.scenario.get("traps") or []):
+        if t.get("triggered") or t.get("disarmed"):
+            continue
+        t_loc = t.get("location", "")
+        if t_loc and here and t_loc not in here and here not in t_loc:
+            continue
+        if trap_name and trap_name not in t.get("name", "") and t.get("name", "") not in trap_name:
+            continue
+        # تلاش خنثی‌سازی
+        dc = dc_override or t.get("disarm_dc", 12)
+        roll = roll_d20()
+        mod = ability_mod_for(ch, "DEX")
+        if ch.cls in ("rogue", "ranger", "monk", "fighter"):
+            mod += 2  # مهارت Slight of Man / Tools
+        total = roll + mod
+        if total >= dc:
+            t["disarmed"] = True
+            session.add_log(ch.name, f"تله {t['name']} را خنثی کرد")
+            return (f"🔧 {ch.name} با ظرافت تله «{t['name']}» را خنثی کرد! "
+                    f"(🎲 {roll}+{mod}={total} ≥ DC {dc})")
+        else:
+            # شکست — تله فعال می‌شود
+            t["triggered"] = True
+            try:
+                cnt, sides, dmod = parse_dice(t.get("damage", "1d6"))
+                dmg = sum(roll_dice(cnt, sides)) + dmod
+            except DiceError:
+                dmg = random.randint(1, 6)
+            ch.hp = max(0, ch.hp - dmg)
+            msg = (f"💥 تلاش ناموفق! تله «{t['name']}» فعال شد! "
+                   f"{ch.name} {dmg} آسیب خورد (🎲 {roll}+{mod}={total} < DC {dc}). "
+                   f"HP: {ch.hp}/{ch.max_hp}")
+            session.add_log(ch.name, f"در خنثی‌سازی تله {t['name']} شکست خورد و {dmg} آسیب خورد")
+            return msg
+    return "اینجا تله‌ای برای خنثی‌سازی پیدا نکردی."
+
+
+def ability_mod_for(ch, ability: str) -> int:
+    """پاداش توانایی را برمی‌گرداند (برای چک تله/ادراک)."""
+    from .rules import ability_mod
+    return ability_mod(ch.abilities.get(ability, 10))

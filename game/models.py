@@ -285,6 +285,27 @@ class Session:
         return "\n".join(parts) or "(هنوز اتفاقی نیفتاده)"
 
     # ---------- سناریو ----------
+    @staticmethod
+    def _loc_name(l):
+        if isinstance(l, dict):
+            return l.get("name", str(l))
+        return str(l)
+
+    @staticmethod
+    def _npc_name(n):
+        if isinstance(n, dict):
+            role = f" ({n.get('role','')})" if n.get("role") else ""
+            return f"{n.get('name','؟')}{role}"
+        return str(n)
+
+    @staticmethod
+    def _tres_text(t):
+        if isinstance(t, dict):
+            qty = t.get("qty", "")
+            q = f" ×{qty}" if qty else ""
+            return f"{t.get('item','؟')}{q}"
+        return str(t)
+
     def scenario_text(self) -> str:
         if not self.scenario:
             return "(هنوز سناریویی ساخته نشده — DM با /scenario بسازد)"
@@ -293,16 +314,46 @@ class Session:
                f"\n🎯 **هدف:** {s.get('goal', '—')}",
                f"💡 **شروع:** {s.get('hook', '—')}"]
         if s.get("locations"):
-            out.append("\n🗺️ **مکان‌ها:** " + ", ".join(s["locations"]))
+            locs = []
+            for l in s["locations"]:
+                if isinstance(l, dict):
+                    hint = f" — {l.get('encounter_hint','')}" if l.get("encounter_hint") else ""
+                    locs.append(f"📍 {l.get('name','؟')}{hint}")
+                else:
+                    locs.append(f"📍 {l}")
+            out.append("\n🗺️ **مکان‌ها:**\n" + "\n".join(locs))
         if s.get("npcs"):
-            out.append("👥 **NPCها:** " + ", ".join(s["npcs"]))
+            out.append("👥 **شخصیت‌ها:** " + "، ".join(self._npc_name(n) for n in s["npcs"]))
         if s.get("encounters"):
             enc = []
             for e in s["encounters"]:
-                enc.append(f"{e.get('count', 1)}× {e.get('name', '؟')}")
-            out.append("⚔️ **رویارویی‌ها:** " + ", ".join(enc))
+                mark = " 👑" if e.get("is_boss") else ""
+                loc = f" ({e['location']})" if e.get("location") else ""
+                enc.append(f"{e.get('count', 1)}× {e.get('name', '؟')}{mark}{loc}")
+            out.append("⚔️ **رویارویی‌ها:**\n  • " + "\n  • ".join(enc))
+        if s.get("traps"):
+            tr = []
+            for t in s["traps"]:
+                if isinstance(t, dict):
+                    tr.append(f"🪤 {t.get('name','تله')} در {t.get('location','؟')} — DC {t.get('detect_dc','?')}")
+            if tr:
+                out.append("🪤 **تله‌های احتمالی:**\n  • " + "\n  • ".join(tr))
+        if s.get("branches"):
+            br = []
+            for b in s["branches"]:
+                if isinstance(b, dict):
+                    br.append(f"🔀 {b.get('text','؟')}")
+            if br:
+                out.append("🔀 **انتخاب‌ها:**\n  • " + "\n  • ".join(br[:4]))
+        if s.get("twist"):
+            out.append(f"🌀 **پیچ داستانی (برای DM):** ||{s['twist']}||")
         if s.get("treasure"):
-            out.append(f"💎 **گنج:** {s['treasure']}")
+            tlist = s["treasure"]
+            if isinstance(tlist, list):
+                out.append("💎 **گنج:** " + "، ".join(self._tres_text(t) for t in tlist))
+            else:
+                out.append(f"💎 **گنج:** {tlist}")
+        out.append("\n💬 حالا با `/story` یا نوشتن توصیف اکشن، ماجرا را شروع کنید!")
         return "\n".join(out)
 
     # ---------- سریال‌سازی ----------

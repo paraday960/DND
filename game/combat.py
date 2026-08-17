@@ -386,13 +386,20 @@ def auto_act(session: Session, mon: dict) -> str:
         return f"☠️ {mon['name']} به دنبال هدف می‌گردد اما همه نابود شده‌اند..."
     atk_bonus = int(mon.get("atk_bonus", 2))
     n_atks = _MULTIATTACK.get(_monster_key(mon), 1)
+    # باس‌ها چند حمله بیشتر دارند
+    if mon.get("is_boss"):
+        n_atks = max(n_atks, 2)
     parts = []
+    # قابلیت ویژه باس در اولین نوبت
+    boss_ability_used = mon.get("_ability_used", False)
+    if mon.get("is_boss") and not boss_ability_used and mon.get("ability"):
+        mon["_ability_used"] = True
+        parts.append(f"👑 **{mon['name']}** از قابلیت ویژه استفاده می‌کند: {mon['ability']}!")
     target = random.choice(players)
     for _i in range(n_atks):
         hit_msg, downed = _resolve_one_attack(session, mon, target, atk_bonus)
         parts.append(hit_msg)
         if downed or target.get("hp", 0) <= 0:
-            # بعد از زمین‌گیر کردن هدف، به سراغ هدف بعدی برو
             new_players = [p for p in session.combat["participants"]
                            if p["kind"] == "player"
                            and not p.get("dead")
@@ -404,7 +411,7 @@ def auto_act(session: Session, mon: dict) -> str:
             else:
                 break
     result = "\n".join(parts)
-    if n_atks > 1:
+    if n_atks > 1 and not mon.get("is_boss"):
         result = f"👹 {mon['name']} **{n_atks} حمله** می‌زند!\n" + result
     session.add_log(mon["name"], result.replace("\n", " ")[:400])
     return result

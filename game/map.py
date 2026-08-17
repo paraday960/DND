@@ -15,15 +15,29 @@ OPPOSITE = {"شمال": "جنوب", "جنوب": "شمال", "شرق": "غرب", 
             "جلو": "عقب", "عقب": "جلو", "بالا": "پایین", "پایین": "بالا"}
 
 
+def _loc_name(loc):
+    """نام مکان را از dict یا str استخراج می‌کند."""
+    if isinstance(loc, dict):
+        return loc.get("name", str(loc))
+    return str(loc)
+
+
+def _loc_list(raw):
+    """لیست نام مکان‌ها (رشته) را از ورودی dict یا str برمی‌گرداند."""
+    if not raw:
+        return list(DEFAULT_LOCATIONS)
+    return [_loc_name(l) for l in raw]
+
+
 def init_world(session):
     """موقعیت شروع را در دنیا ثبت می‌کند."""
     if not hasattr(session, "world") or session.world is None:
         session.world = {"light": "dark", "location": "", "flags": {}}
-    locs = DEFAULT_LOCATIONS
-    if session.scenario and session.scenario.get("locations"):
-        locs = session.scenario["locations"]
+    locs = _loc_list((session.scenario or {}).get("locations")) if session.scenario else list(DEFAULT_LOCATIONS)
     if not session.world.get("location"):
         session.world["location"] = locs[0] if locs else "ورودی"
+    # اگر location یک dict ذخیره شده بود به str تبدیل کن
+    session.world["location"] = _loc_name(session.world["location"])
     session.world["locations"] = locs
     session.world["visited"] = list(set([session.world["location"]]))
 
@@ -62,18 +76,55 @@ def move_to(session, direction_or_place: str) -> str:
         return f"در «{cur}» هستی. راه دیگری نیست."
     session.world["location"] = new_loc
     session.world.setdefault("visited", [])
-    if new_loc not in session.world["visited"]:
+    is_new = new_loc not in session.world["visited"]
+    if is_new:
         session.world["visited"].append(new_loc)
     session.add_log("سیستم", f"به {new_loc} رفت")
-    # اگر این مکان یک رویارویی است نبرد را آماده کن
-    encounter_here = any(
-        new_loc in str(e.get("name", "")) for e in
-        (session.scenario or {}).get("encounters", [])
-    )
+
+    # توصیف مکان از سناریو
+    loc_desc = ""
+    loc_hint = ""
+    if session.scenario:
+        for l in (session.scenario.get("locations") or []):
+            if _loc_name(l) == new_loc and isinstance(l, dict):
+                loc_desc = l.get("description", "")
+                loc_hint = l.get("encounter_hint", "")
+                break
+
+    # بررسی تله در مکان جدید
+    trap_msg = _check_move_trap(session, new_loc)
+
+    # بررسی رویارویی در این مکان
+    enc_here = [e for e in ((session.scenario or {}).get("encounters") or [])
+                if _loc_matches(e.get("location", ""), new_loc) and not e.get("defeated")]
+
     msg = f"🚶 به «{new_loc}» می‌روی."
-    if encounter_here:
-        msg += "\nبوی خطر می‌آید..."
+    if loc_desc and is_new:
+        msg += f"\n_{loc_desc}_"
+    if trap_msg:
+        msg += "\n\n" + trap_msg
+    if enc_here:
+        total = sum(e.get("count", 1) for e in enc_here)
+        b = any(e.get("is_boss") for e in enc_here)
+        msg += f"\n⚠️ {'باس فایت!' if b else 'کمین!'} حدود {total} دشمن در اینجا حضور دارند! با «شروع نبرد» یا «حمله» وارد شوید."
+    elif loc_hint and is_new:
+        msg += f"\n👁 {loc_hint}"
     return msg
+
+
+def _loc_matches(loc_field: str, target: str) -> bool:
+    """آیا لوکیشن یک encounter با مکان فعلی می‌خواند؟"""
+    if not loc_field:
+        return False
+    return target in loc_field or loc_field in target
+
+
+def _check_move_trap(session, new_loc: str) -> str:
+    """هنگام ورود به مکان جدید، تله‌های آن مکان را بررسی می‌کند (اولین قدم = تریگر)."""
+    from .world import _check_trap_trigger  # واردکردن تأخیری برای جلوگیری از circular
+    fake_action = f"ورود به {new_loc}"
+    msg = _check_trap_trigger(session, None, fake_action, here_override=new_loc)
+    return msg or ""
 
 
 def describe(session) -> str:

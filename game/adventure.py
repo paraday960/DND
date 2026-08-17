@@ -10,8 +10,23 @@ def skill_check(session, uid: int, skill: str, dc: int = 10, mode: str = "normal
     key = (skill or "").strip().lower()
     if not ch:
         return "کاراکترت را بساز."
+    # دستورات کوتاه فارسی
+    key_aliases = {
+        "ساخت": "sleight", "ظرافت": "sleight", "دست": "sleight",
+        "خنثی": "sleight", "تله": "sleight",
+        "ادراک": "perception", "بینایی": "perception",
+        "پنهان": "stealth", "دزدکی": "stealth",
+        "ورزش": "athletics", "قدرت": "athletics",
+    }
+    if key in key_aliases:
+        key = key_aliases[key]
     if key not in SKILLS:
         return "مهارت نامعتبر است: " + ", ".join(SKILLS)
+    # اگر مهارت sleight بود و تله‌ای در مکان بود، خنثی‌سازی تله انجام شود
+    if key in ("sleight", "thieves_tools"):
+        from .world import try_disarm_trap
+        trap_msg = try_disarm_trap(session, ch, "", int(dc) if dc else None)
+        return trap_msg
     ability = SKILLS[key]["ability"]
     bonus = ability_mod(ch.abilities[ability]) + (proficiency_bonus(ch.level) if key in ch.proficiencies else 0)
     r1, r2 = roll_d20(), roll_d20()
@@ -21,6 +36,12 @@ def skill_check(session, uid: int, skill: str, dc: int = 10, mode: str = "normal
     text = f"🎲 آزمایش {SKILLS[key]['fa']} (DC {dc}): {raw} {bonus:+d} = **{total}** — " + ("✅ موفق" if success else "❌ ناموفق")
     if mode != "normal":
         text += f" (تاس‌ها: {r1} و {r2})"
+    # اگر perception موفق بود، هشدار تله هم بده
+    if key == "perception" and success:
+        from .world import _check_trap_trigger
+        tm = _check_trap_trigger(session, ch, "بررسی")
+        if tm:
+            text += "\n" + tm
     session.add_log(ch.name, text)
     return text
 
