@@ -47,9 +47,17 @@ COMBAT_WORDS = ["نبرد", "نبرد شروع", "بجنگ", "درگیری", "ش
                 "بکششون", "حمله‌کن", "حمله ور"]
 HELP_WORDS = ["راهنما", "کمک", "چی‌کار", "دستور", "چیکار کنم", "کمکم کن"]
 SHEET_WORDS = ["وضعیتم", "کاراکترم", "مشخصاتم", "شیت", "برگه", "خودم",
-               "چی دارم", "وضعیت من"]
+               "چی دارم", "وضعیت من", "موجودی", "کیفم", "کوله‌ام", "کوله ام",
+               "اینونتوری", "inventory"]
 PARTY_WORDS = ["گروه", "تیم", "پارتی", "دیگه کیه", "بازیکنا", "همه",
                "گروه ما", "تیم ما"]
+POTION_WORDS = ["معجون", "درمان", "دارو", "پادزهر", "شربت", "بنوش",
+                "می‌نوشم", "مینوشم", "بخورمش", "بخورش", "استفاده کنم از معجون"]
+ROLL_WORDS = ["تاس", "تاس بریز", "تاس بنداز", "رول", "رول بزن", "d20",
+              "شانس", "آزمون شانس"]
+PICKUP_WORDS = ["بردار", "برمی‌دارم", "بگیر", "جمع کن", "بردارم", "بردارش"]
+WAIT_WORDS = ["صبر", "منتظر", "درنگ", "توقف کوتاه", "نگه دار"]
+TALK_WORDS = ["حرف", "صحبت", "بگو", "بپرس", "گفتگو", "حرف بزن", "صحبت کن"]
 
 
 def _normalize(text: str) -> str:
@@ -136,10 +144,18 @@ def parse_action(text: str, in_combat: bool = False, has_char: bool = True,
     # ۲) کمک و وضعیت
     if _contains_any(t, HELP_WORDS) and len(t) < 30:
         return {"action": "help"}
+    if _contains_any(t, POTION_WORDS):
+        return {"action": "potion"}
+    if _contains_any(t, ROLL_WORDS) and len(t) < 30:
+        return {"action": "roll", "expr": _extract_dice_expr(t)}
     if _contains_any(t, SHEET_WORDS) and len(t) < 30:
         return {"action": "sheet"}
     if _contains_any(t, PARTY_WORDS) and len(t) < 30:
         return {"action": "party"}
+    if _contains_any(t, TALK_WORDS) and len(t) < 60:
+        return {"action": "talk", "text": t}
+    if _contains_any(t, WAIT_WORDS) and len(t) < 25:
+        return {"action": "wait"}
 
     # ۳) ساخت سناریو توسط DM
     if is_dm and (_contains_any(t, SCENARIO_WORDS) or
@@ -208,6 +224,18 @@ def _detect_spell(text: str) -> str:
     if any(w in text for w in ["ستاره", "هدایت"]):
         return "guidingbolt"
     return "firebolt"  # پیش‌فرض
+
+
+def _extract_dice_expr(text: str) -> str:
+    """عبارت تاس مثل d20 یا 2d6 را استخراج می‌کند."""
+    m = re.search(r"(\d+)?\s*[dD]\s*(\d+)(?:\s*([+-])\s*(\d+))?", text)
+    if m:
+        n = m.group(1) or "1"
+        sides = m.group(2)
+        sign = m.group(3) or ""
+        mod = m.group(4) or ""
+        return f"{n}d{sides}{sign}{mod}".strip()
+    return "d20"
 
 
 # فرهنگ نام هیولاها: فارسی → کلید

@@ -465,6 +465,121 @@ def cmd_newchar(store, chat, uid, uname, args):
     send(chat, "🧙 **ساخت کاراکتر**\nاسم شخصیتت رو بفرست (مثلاً: آرین)\nلغو: /cancel")
 
 
+def _handle_natural(store, chat, uid, uname, text):
+    """متن طبیعی فارسی را به اکشن بازی تبدیل می‌کند."""
+    from game.nlp import parse_action
+    from game.dice import roll_expression, DiceError
+    s = room_of(store, chat)
+    ch = user_char(s, uid) if s else None
+    in_combat = bool(s and s.combat)
+    mobs = []
+    if in_combat:
+        mobs = [p["name"] for p in s.combat["participants"]
+                if p.get("kind") == "monster" and p.get("alive")]
+    act = parse_action(text, in_combat=in_combat, has_char=bool(ch),
+                        valid_monsters=mobs, is_dm=(s and is_dm(s, uid)))
+    a = act.get("action")
+
+    if a == "attack":
+        if not in_combat:
+            send(chat, "نبردی در جریان نیست. اول بگو «شروع نبرد».")
+            return
+        tgt = act.get("target") or (mobs[0] if mobs else "")
+        from game.combat import attack, advance
+        send(chat, attack(s, uid, tgt))
+        store.save(s)
+        t = advance(s)
+        store.save(s)
+        if t: send(chat, t)
+        return
+    if a == "cast":
+        from game.combat import cast, advance
+        send(chat, cast(s, uid, act.get("spell", "firebolt"), act.get("target", "")))
+        store.save(s)
+        t = advance(s)
+        store.save(s)
+        if t: send(chat, t)
+        return
+    if a == "dodge":
+        from game.combat import dodge, advance
+        send(chat, dodge(s, uid))
+        store.save(s)
+        t = advance(s)
+        store.save(s)
+        if t: send(chat, t)
+        return
+    if a == "skip":
+        from game.combat import advance
+        send(chat, advance(s))
+        store.save(s)
+        return
+    if a == "deathsave":
+        from game.adventure import death_save
+        from game.combat import advance
+        send(chat, death_save(s, uid))
+        store.save(s)
+        if s.combat:
+            t = advance(s)
+            store.save(s)
+            if t: send(chat, t)
+        return
+    if a == "potion":
+        from game.adventure import use_item
+        send(chat, use_item(s, uid, "potion"))
+        store.save(s)
+        return
+    if a == "roll":
+        try:
+            r = roll_expression(act.get("expr", "d20"))
+            send(chat, "🎲 نتیجه %s: **%s** (%s)" % (act.get("expr"), r["total"], r["breakdown"]))
+        except DiceError as e:
+            send(chat, "❌ " + str(e))
+        return
+    if a == "rest":
+        from game.adventure import rest
+        send(chat, rest(s, uid, act.get("kind", "short")))
+        store.save(s)
+        return
+    if a == "torch":
+        from game.world import try_environment_action
+        r = try_environment_action(s, ch, "مشعل روشن می‌کنم")
+        if r:
+            send(chat, r)
+            store.save(s)
+        else:
+            cmd_story(store, chat, uid, uname, [text])
+        return
+    if a == "look":
+        if in_combat:
+            from game.combat import order_text
+            send(chat, order_text(s))
+        else:
+            cmd_where(store, chat, uid, uname, [])
+        return
+    if a == "sheet":
+        cmd_sheet(store, chat, uid, uname, [])
+        return
+    if a == "party":
+        cmd_party(store, chat, uid, uname, [])
+        return
+    if a == "scenario":
+        cmd_scenario(store, chat, uid, uname, [])
+        return
+    if a == "combat":
+        cmd_combat(store, chat, uid, uname, [])
+        return
+    if a == "help":
+        send(chat, HELP)
+        return
+    if a == "wait":
+        send(chat, "⏳ چند لحظه صبر می‌کنی...")
+        return
+    if a == "talk":
+        cmd_story(store, chat, uid, uname, [text])
+        return
+    cmd_story(store, chat, uid, uname, [act.get("text", text)])
+
+
 def on_message(store, msg):
     chat = msg["chat"]["id"]
     uid = msg["from"]["id"]
@@ -481,9 +596,15 @@ def on_message(store, msg):
         send(chat, "خوش اومدی **%s**! نژادت رو انتخاب کن:" % text.strip()[:30], kb(rows))
         return
 
-    if not text.startswith("/"):
-        send(chat, "🤔 دستور نمی‌شناسم. /help")
-        return
+    # متن طبیعی فارسی
+    if text and not text.startswith("/"):
+        try:
+            _handle_natural(store, chat, uid, uname, text)
+            return
+        except Exception as e:
+            log("natural handler: %s" % e)
+            send(chat, "🤔 منظورت رو نفهمیدم. /help")
+            return
 
     parts = text[1:].split()
     cmd = parts[0].lower()
