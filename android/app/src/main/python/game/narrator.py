@@ -136,11 +136,40 @@ class Narrator:
     # ---------- عملیات عمومی ----------
     def narrate(self, session: Session, action: str) -> str:
         """پاسخ دانجن‌مستر به یک اقدام بازیکن."""
+        # اول چک کن یک اکشن محیطی ساده است (مشعل و ...)
+        from .world import try_environment_action
+        # فقط برای اقدامات کوتاه و غیردرخواستی از راوی
+        if action and len(action) < 80:
+            # اکشن را برای هر بازیکن (اولین بازیکن) امتحان می‌کنیم
+            for p in session.players.values():
+                ch = p.get("char")
+                if ch:
+                    env = try_environment_action(session, ch, action)
+                    if env:
+                        session.add_log(ch.name, action)
+                        session.add_log("DM", env)
+                        return env
+                    break
         context = self._context(session)
-        user_msg = f"بافت بازی:\n{context}\n\nاقدام بازیکن: {action}\n\nحالا روایت کن."
+        user_msg = (
+            f"بافت بازی:\n{context}\n\n"
+            f"اقدام بازیکن: {action}\n\n"
+            "حالا روایت کن. اگر این اقدام وضعیت دنیا را تغییر می‌دهد (مثل روشن کردن مشعل، "
+            "باز کردن در، جابجایی مکان، برداشتن آیتم) در روایتت به‌وضوح آن تغییر را منعکس کن و "
+            "همان وضعیت جدید را در ادامه داستان در نظر بگیر."
+        )
         try:
             text = self._call(SYSTEM_PROMPT, user_msg)
             if text:
+                # به‌روزرسانی خودکار وضعیت نور بر اساس متن روایت
+                low = text.lower()
+                if "مشعل" in action or "روشن" in action or "افروز" in action or "آتش" in action:
+                    if any(w in text for w in ["روشن", "شعله", "نور", "آتش", "افروخت"]):
+                        if hasattr(session, "world"):
+                            session.world["light"] = "torch"
+                if "تاریک" in text and "تاریکی" in text and hasattr(session, "world"):
+                    if session.world.get("light") != "torch":
+                        session.world["light"] = "dark"
                 session.add_log("DM", text.replace("\n", " ")[:400])
                 return text.strip()
         except Exception:
@@ -180,10 +209,15 @@ class Narrator:
                                   "cr": base.get("cr", 0.25)})
                 if clean:
                     data["encounters"] = clean
+                    # روی خود session هم ست کنیم تا هر جایی که scenario() صدا زده
+                    # شود دشمنان درست در دسترس start_combat باشند
+                    session.scenario = data
                     return data
         except Exception:
             pass
-        return self._fallback_scenario(session)
+        fb = self._fallback_scenario(session)
+        session.scenario = fb
+        return fb
 
     def recap(self, session: Session) -> str:
         """خلاصه وضعیت فعلی ماجرا."""
@@ -205,11 +239,25 @@ class Narrator:
         if session.scenario:
             lines.append(f"سناریو: {session.scenario.get('title')} — هدف: {session.scenario.get('goal')}")
             lines.append(f"مکان‌ها: {', '.join(session.scenario.get('locations', []))}")
+            if session.scenario.get('encounters'):
+                enc = ", ".join(f"{e.get('count',1)}× {e.get('name')}" for e in session.scenario['encounters'])
+                lines.append(f"دشمنان سناریو: {enc}")
+        # وضعیت فعلی دنیا
+        w = getattr(session, 'world', None) or {}
+        if w:
+            light_fa = {"dark": "تاریک", "torch": "روشن با مشعل", "bright": "روشن"}.get(w.get("light"), w.get("light", ""))
+            if light_fa:
+                lines.append(f"نور محیط: {light_fa}")
+            if w.get("location"):
+                lines.append(f"مکان فعلی: {w['location']}")
+            if w.get("flags"):
+                lines.append("وضعیت‌ها: " + ", ".join(f"{k}={v}" for k, v in w["flags"].items()))
         chars = []
         for p in session.players.values():
             ch = p["char"]
             if ch:
-                chars.append(f"{ch.name} ({ch.race}, {ch.cls} سطح {ch.level}, HP {ch.hp}/{ch.max_hp})")
+                inv = ", ".join(f"{k}:{v}" for k, v in ch.inventory.items() if v > 0) or "خالی"
+                chars.append(f"{ch.name} ({ch.race}, {ch.cls} سطح {ch.level}, HP {ch.hp}/{ch.max_hp}, موجودی: {inv})")
         if chars:
             lines.append("گروه: " + ", ".join(chars))
         lines.append("رویدادهای اخیر:")

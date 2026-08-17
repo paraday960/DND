@@ -200,6 +200,9 @@ class Session:
         self.log = []                 # رویدادهای بازی برای حافظه AI
         self.combat = None            # dict وضعیت نبرد
         self.combat_xp = 0
+        # وضعیت پویای دنیا (توسط AI یا دستورات تغییر می‌کند)
+        # مثلاً {"light": "torch", "location": "تالار ورودی", "flags": {...}}
+        self.world = {"light": "dark", "location": "", "flags": {}}
         self.add_player(dm_id, dm_name)
 
     # ---------- بازیکن‌ها ----------
@@ -267,6 +270,7 @@ class Session:
             "dm_id": self.dm_id, "dm_name": self.dm_name, "state": self.state,
             "players": players, "scenario": self.scenario, "log": self.log,
             "combat": self.combat, "combat_xp": self.combat_xp,
+            "world": self.world,
         }
 
     @classmethod
@@ -278,6 +282,7 @@ class Session:
         s.log = d.get("log", [])
         s.combat = d.get("combat")
         s.combat_xp = d.get("combat_xp", 0)
+        s.world = d.get("world") or {"light": "dark", "location": "", "flags": {}}
         s.players = {}
         for uid, p in (d.get("players") or {}).items():
             char = Character.from_dict(p["char"]) if p.get("char") else None
