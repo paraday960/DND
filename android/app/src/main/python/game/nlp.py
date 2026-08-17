@@ -38,8 +38,7 @@ LOOK_WORDS = ["نگاه", "بررسی", "جستجو", "ببین", "بنگر", "�
 TORCH_WORDS = ["مشعل", "چراغ", "فانوس", "روشن", "افروز", "آتش روشن", "آتیش روشن",
                "مشعل روشن", "نور انداز", "نور بنداز"]
 MOVE_WORDS = ["برو", "حرکت", "ادامه", "پیش", "جلو", "وارد", "خروج", "فرار",
-              "بیا بریم", "راه بیفت", "بریم", "برم", "برویم", "برو به"]
-WHERE_WORDS = ["کجا", "کجایم", "موقعیت", "مکان", "نقشه", "کجا هستم", "اینجا کجاست"]
+              "بیا بریم", "راه بیفت", "بریم"]
 REST_WORDS = ["استراحت", "کمپ", "استراحت‌کن", "چادر", "بخواب", "نفس", "استراحت کن",
               "کمپ بزن"]
 SCENARIO_WORDS = ["سناریو", "ماجرا بساز", "شروع ماجرا", "سناریو بساز",
@@ -56,12 +55,9 @@ POTION_WORDS = ["معجون", "درمان", "دارو", "پادزهر", "شرب�
                 "می‌نوشم", "مینوشم", "بخورمش", "بخورش", "استفاده کنم از معجون"]
 BUY_WORDS = ["بخر", "می‌خرم", "خرید", "بخرم"]
 SELL_WORDS = ["بفروش", "می‌فروشم", "فروش", "بفروشم"]
-EQUIP_WORDS = ["تجهیز کن", "بپوش", "بپوشون", "به دست بگیر", "مسلح", "تعویض سلاح", "سلاح جدید", "زره جدید"]
-UNEQUIP_WORDS = ["در بیار", "درآر", "خلع سلاح"]
 SHOP_WORDS = ["مغازه", "فروشگاه", "دکان", "مغازه", "خرید کنم", "چی می‌فروشی"]
 CAMP_WORDS = ["کمپین", "داستان", "ادامه داستان", "فصل بعد", "شروع فصل", "ماموریت"]
 NPC_WORDS = ["سلام", "درود", "صحبت", "حرف بزن", "بپرس", "نزدیک شو"]
-LEVEL_WORDS = ["ارتقا", "سطح", "لول", "level up", "برو بالا", "levelup"]
 ROLL_WORDS = ["تاس", "تاس بریز", "تاس بنداز", "رول", "رول بزن", "d20",
               "شانس", "آزمون شانس"]
 PICKUP_WORDS = ["بردار", "برمی‌دارم", "بگیر", "جمع کن", "بردارم", "بردارش"]
@@ -181,22 +177,8 @@ def parse_action(text: str, in_combat: bool = False, has_char: bool = True,
     # کمپین و گفتگو با NPC
     if is_dm and _contains_any(t, CAMP_WORDS) and any(w in t for w in ["شروع", "جدید", "ادامه", "فصل بعد"]):
         return {"action": "campaign"}
-    if _contains_any(t, EQUIP_WORDS):
-        w = _extract_weapon(t)
-        if w:
-            return {"action": "equip", "item": w, "kind": "weapon"}
-        if "زره" in t:
-            for key in ["heavy", "medium", "light", "robe", "none"]:
-                if key in t.lower() or {
-                    "سنگین": "heavy", "متوسط": "medium", "سبک": "light", "ردا": "robe"
-                }.get(key, "") in t:
-                    return {"action": "equip", "item": key, "kind": "armor"}
-        return {"action": "equip", "item": _extract_weapon(t), "kind": "weapon"}
-
     if _contains_any(t, NPC_WORDS) and len(t) < 50:
         return {"action": "talk", "text": t}
-    if _contains_any(t, LEVEL_WORDS) and len(t) < 30:
-        return {"action": "levelup"}
 
     # ۴) در نبرد
     if in_combat:
@@ -238,10 +220,8 @@ def parse_action(text: str, in_combat: bool = False, has_char: bool = True,
         return {"action": "look"}
 
     # ۸) حرکت/ادامه
-    if _contains_any(t, MOVE_WORDS) and len(t) < 40:
-        return {"action": "move", "text": t}
-    if _contains_any(t, WHERE_WORDS) and len(t) < 30:
-        return {"action": "where"}
+    if _contains_any(t, MOVE_WORDS) and len(t) < 30:
+        return {"action": "narrate", "text": t}
 
     # ۹) هر چیز دیگر → روایت توسط AI
     return {"action": "narrate", "text": t}
@@ -262,25 +242,7 @@ def _extract_shop_item(text: str) -> str:
     return ""
 
 
-WEAPON_FA = {
-    "شمشیر": "longsword", "شمشیر بلند": "longsword",
-    "تبر": "greataxe", "تبر بزرگ": "greataxe",
-    "رپیر": "rapier", "خنجر": "dagger",
-    "کمان": "shortbow", "کمان کوتاه": "shortbow",
-    "کمان بلند": "longbow", "چوب دستی": "staff", "عصا": "staff",
-    "گرز": "mace", "چکش": "warhammer",
-    "تبر دستی": "handaxe", "سپر": "shield",
-}
-
-
-def _extract_weapon(text: str) -> str:
-    for fa, key in WEAPON_FA.items():
-        if fa in text:
-            return key
-    return ""
-
-
-def _extract_spell(text: str) -> str:
+def _detect_spell(text: str) -> str:
     """طلسم را از متن تشخیص می‌دهد."""
     if any(w in text for w in ["شفا", "مداوا", "درمان", "معالج"]):
         return "curewounds"
