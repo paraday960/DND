@@ -618,3 +618,86 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "⚠️ خطای غیرمنتظره‌ای رخ داد. دوباره تلاش کن.")
     except Exception:
         pass
+
+
+# ==================== دستورات طبیعی فارسی ====================
+
+async def natural_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """متن فارسی بدون اسلش را به اکشن بازی تبدیل می‌کند."""
+    from game.nlp import parse_action
+    session = _session(update, context)
+    text = (update.message.text or "").strip()
+    if not text or len(text) > 300:
+        return
+    ch = _user_char(session, update) if session else None
+    in_combat = bool(session and session.combat)
+    mobs = []
+    if in_combat:
+        mobs = [p["name"] for p in session.combat["participants"]
+                if p.get("kind") == "monster"]
+    is_dm = bool(session and _is_dm(session, update))
+    downed = False
+    if in_combat and ch:
+        me = next((p for p in session.combat["participants"]
+                   if p.get("kind") == "player" and p.get("uid") == str(update.effective_user.id)), None)
+        downed = bool(me and (me.get("downed") or me.get("hp", 1) <= 0))
+
+    act = parse_action(text, in_combat=in_combat, has_char=bool(ch),
+                       valid_monsters=mobs, is_dm=is_dm, downed=downed)
+    a = act.get("action")
+
+    if a == "attack":
+        target = act.get("target") or ""
+        if not target:
+            await update.message.reply_text("🎯 به چی حمله کنم؟ مثلاً: «حمله به گابلین»")
+            return
+        context.args = [target]
+        await attack_cmd(update, context)
+    elif a == "cast":
+        context.args = [act.get("spell", "firebolt"), act.get("target", "")]
+        await cast_cmd(update, context)
+    elif a == "dodge":
+        await dodge_cmd(update, context)
+    elif a == "skip":
+        await skip_cmd(update, context)
+    elif a == "deathsave":
+        await deathsave_cmd(update, context)
+    elif a == "rest":
+        context.args = [act.get("kind", "short")]
+        await rest_cmd(update, context)
+    elif a == "torch":
+        if not ch:
+            await update.message.reply_text("اول کاراکترت رو بساز.")
+            return
+        from game.world import try_environment_action
+        env = try_environment_action(session, ch, "مشعل روشن می‌کنم")
+        if env:
+            _save(update, context, session)
+            await update.message.reply_text(env)
+        else:
+            context.args = [text]
+            await story_cmd(update, context)
+    elif a == "look":
+        if in_combat:
+            from game.combat import order_text
+            await update.message.reply_text(order_text(session))
+        else:
+            await where_cmd(update, context)
+    elif a == "sheet":
+        await sheet_cmd(update, context)
+    elif a == "party":
+        await party_cmd(update, context)
+    elif a == "scenario":
+        if not is_dm:
+            await update.message.reply_text("فقط میزبان می‌تونه سناریو بسازه.")
+            return
+        context.args = []
+        await scenario_cmd(update, context)
+    elif a == "combat":
+        context.args = []
+        await combat_cmd(update, context)
+    elif a == "help":
+        await help_cmd(update, context)
+    elif a == "narrate":
+        context.args = [act.get("text", text)]
+        await story_cmd(update, context)

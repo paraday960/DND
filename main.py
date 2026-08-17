@@ -225,6 +225,8 @@ def build_app(store=None, narrator=None) -> Application:
 
     # منوی شیشه‌ای و دستورات ناشناخته
     app.add_handler(CallbackQueryHandler(handlers.menu_callback, pattern=r"^menu:"))
+    # متن فارسی طبیعی (بدون اسلش) → پارسر زبان طبیعی
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.natural_text), group=2)
     app.add_handler(MessageHandler(filters.COMMAND, handlers.unknown_cmd))
     app.add_error_handler(handlers.error_handler)
     return app
