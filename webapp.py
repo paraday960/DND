@@ -59,9 +59,15 @@ def validate_init_data(init_data: str):
         dcs = "\n".join(f"{k}={fields[k]}" for k in sorted(fields))
         calc = hmac.new(secret, dcs.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(calc, received):
+            import logging
+            logging.getLogger("webapp").warning(
+                "initData hash mismatch (token len=%d, fields=%s, recv=%s, calc=%s)",
+                len(config.BOT_TOKEN), ",".join(sorted(fields)), received[:12], calc[:12])
             return None
         return json.loads(urllib.parse.unquote(fields.get("user", "{}")))
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger("webapp").warning("validate_init_data error: %s", e)
         return None
 
 
@@ -234,6 +240,12 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         if monsters and all(not m.get("alive", False) for m in monsters):
             msgs.append(end_combat(room))
         return msgs
+
+    # ---------- سلامت سرور (بدون احراز هویت — برای تونل و عیب‌یابی) ----------
+    @app.get("/healthz")
+    def healthz():
+        return jsonify({"ok": True, "bot_token_set": bool(config.BOT_TOKEN),
+                        "dev": config.WEBAPP_DEV, "rooms": len(_rooms)})
 
     # ---------- متادیتا ----------
     @app.get("/api/meta")

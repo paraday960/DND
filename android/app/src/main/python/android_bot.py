@@ -602,6 +602,8 @@ def validate_init_data(init_data, bot_token):
     try:
         if not init_data or not bot_token:
             return None
+        # strip توکن (کاربر ممکن است موقع کپی فاصله/خط جدید اضافه کند)
+        bot_token = bot_token.strip()
         received = None
         fields = {}
         for part in init_data.split("&"):
@@ -618,9 +620,12 @@ def validate_init_data(init_data, bot_token):
         dcs = "\n".join("%s=%s" % (k, fields[k]) for k in sorted(fields))
         calc = hmac.new(secret, dcs.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(calc, received):
+            log("initData hash mismatch (token_len=%d, fields=%s, recv=%s calc=%s)" %
+                (len(bot_token), ",".join(sorted(fields)), str(received)[:12], calc[:12]))
             return None
         return json.loads(urllib.parse.unquote(fields.get("user", "{}")))
-    except Exception:
+    except Exception as e:
+        log("validate_init_data error: %s" % e)
         return None
 
 
@@ -765,6 +770,11 @@ class ApiHandler(BaseHTTPRequestHandler):
     # ---------- روتر ----------
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
+        if path == "/healthz":
+            self._json(200, {"ok": True,
+                              "bot_token_set": bool(os.environ.get("BOT_TOKEN", "").strip()),
+                              "dev": self.dev})
+            return
         if path == "/":
             try:
                 with open(os.path.join(FILES_DIR, "web", "index.html"), "rb") as f:
