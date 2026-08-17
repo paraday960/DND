@@ -446,6 +446,10 @@ function renderCombat() {
       <button class="btn blue" onclick="doDodge()">🛡️ دفاع</button>
       <button class="btn dark" onclick="doSkip()">⏭️ رد نوبت</button>
     </div>
+    <div class="actions" style="margin-top:6px">
+      <button class="btn gold" onclick="quickPotion()">🧪 معجون</button>
+      <button class="btn green" onclick="doCast('curewounds')">💚 شفا</button>
+    </div>
     <div class="sec-title">✨ طلسم‌ها ${targetInfo?'— '+targetInfo:''}</div>
     <div class="spell-grid">
       ${(META?META.spells:[]).map(sp=>`<button class="spell-btn" onclick="doCast('${sp.key}')"><b>${sp.emoji} ${esc(sp.fa)}</b>${sp.dmg} ${sp.kind==='heal'?'💚':'💥'}</button>`).join('')}
@@ -502,6 +506,12 @@ async function endCombat() {
   try {
     const d = await api('/api/combat/end', { room: roomCode });
     S = d.state; renderCombat(); renderFeed();
+  } catch(e) { toast(e.message); }
+}
+async function quickPotion() {
+  try {
+    const d = await api('/api/inventory/use', { room: roomCode, item: 'potion' });
+    S = d.state; render(); toast((d.text||'استفاده شد').slice(0,80));
   } catch(e) { toast(e.message); }
 }
 

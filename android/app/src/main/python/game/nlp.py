@@ -61,6 +61,7 @@ UNEQUIP_WORDS = ["در بیار", "درآر", "خلع سلاح"]
 SHOP_WORDS = ["مغازه", "فروشگاه", "دکان", "مغازه", "خرید کنم", "چی می‌فروشی"]
 CAMP_WORDS = ["کمپین", "داستان", "ادامه داستان", "فصل بعد", "شروع فصل", "ماموریت"]
 NPC_WORDS = ["سلام", "درود", "صحبت", "حرف بزن", "بپرس", "نزدیک شو"]
+LEVEL_WORDS = ["ارتقا", "سطح", "لول", "level up", "برو بالا", "levelup"]
 ROLL_WORDS = ["تاس", "تاس بریز", "تاس بنداز", "رول", "رول بزن", "d20",
               "شانس", "آزمون شانس"]
 PICKUP_WORDS = ["بردار", "برمی‌دارم", "بگیر", "جمع کن", "بردارم", "بردارش"]
@@ -194,6 +195,8 @@ def parse_action(text: str, in_combat: bool = False, has_char: bool = True,
 
     if _contains_any(t, NPC_WORDS) and len(t) < 50:
         return {"action": "talk", "text": t}
+    if _contains_any(t, LEVEL_WORDS) and len(t) < 30:
+        return {"action": "levelup"}
 
     # ۴) در نبرد
     if in_combat:

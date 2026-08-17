@@ -114,15 +114,41 @@ class Character:
         gain = self.hit_die + con_mod
         self.max_hp += max(gain, 1)
         self.hp = self.max_hp
+        # ارتقای طلسم‌ها
+        if self.cls in ("wizard", "cleric", "druid", "bard", "sorcerer", "warlock", "paladin", "ranger"):
+            self.spell_slots = self._initial_spell_slots()
+            self.spell_slots_used = {}
+        # یادگیری فیچر جدید بر اساس سطح
+        gained = []
+        new_features = self.features()
+        if hasattr(self, "_known_features"):
+            for f in new_features:
+                if f not in self._known_features:
+                    gained.append(f)
+        self._known_features = list(new_features)
         return {"old": old_level, "new": self.level, "hp_gain": max(gain, 1),
-                "features": self.features()}
+                "features": new_features, "gained_features": gained}
 
     def features(self) -> list:
         f = list(CLASSES[self.cls]["features"])
+        if self.level >= 2:
+            f.append("واکنش (Reaction)")
+        if self.level >= 3:
+            f.append("مسیر تخصصی (Subclass)")
         if self.level >= 5:
             f.append("حمله اضافه (Extra Attack)")
         if self.level >= 3 and self.cls in ("wizard", "sorcerer", "bard", "warlock", "druid", "cleric"):
             f.append("طلسم سطح ۲")
+        if self.level >= 6 and self.cls in ("wizard", "sorcerer", "bard", "warlock", "druid", "cleric"):
+            f.append("طلسم سطح ۳")
+        if self.level >= 9 and self.cls in ("wizard", "sorcerer", "cleric", "druid"):
+            f.append("طلسم سطح ۵")
+        if self.level >= 10:
+            f.append("بهبود ability score (+2)")
+        if self.level >= 15:
+            f.append("ویژگی پیشرفته کلاس")
+        if self.level >= 20:
+            f.append("قابلیت نهایی (Capstone)")
         return f
 
     def heal(self, amount: int) -> int:
@@ -207,6 +233,7 @@ class Session:
         # مثلاً {"light": "torch", "location": "تالار ورودی", "flags": {...}}
         self.world = {"light": "dark", "location": "", "flags": {}}
         self.campaign = None  # dict کمپین چندفصلی
+        self.npc_memory = {}  # حافظه گفتگو با NPCها
         self.add_player(dm_id, dm_name)
 
     # ---------- بازیکن‌ها ----------
@@ -290,6 +317,7 @@ class Session:
             "players": players, "scenario": self.scenario, "log": self.log,
             "combat": self.combat, "combat_xp": self.combat_xp,
             "world": self.world, "campaign": self.campaign,
+            "npc_memory": self.npc_memory,
         }
 
     @classmethod
@@ -303,6 +331,7 @@ class Session:
         s.combat_xp = d.get("combat_xp", 0)
         s.world = d.get("world") or {"light": "dark", "location": "", "flags": {}}
         s.campaign = d.get("campaign")
+        s.npc_memory = d.get("npc_memory", {})
         s.players = {}
         for uid, p in (d.get("players") or {}).items():
             char = Character.from_dict(p["char"]) if p.get("char") else None
