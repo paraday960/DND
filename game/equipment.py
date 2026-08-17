@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """سیستم تجهیزات — تعویض سلاح/زره/سپر در جریان بازی."""
-from .rules import WEAPONS, CLASSES
+from .rules import WEAPONS, CLASSES, ability_mod
 
 # زره‌های ساده
 ARMORS = {
@@ -53,18 +53,23 @@ def equip_armor(ch, armor_key: str) -> str:
         return f"کلاس {CLASSES[ch.cls]['fa']} نمی‌تواند {ARMORS[armor_key]['fa']} بپوشد."
     old_ac = ch.ac
     ch.armor = armor_key
-    from .rules import ability_mod
-    dex_bonus = max(2, ability_mod(ch.abilities["DEX"])) if armor_key in ("light", "medium") else ability_mod(ch.abilities["DEX"]) if armor_key == "none" else 0
-    base = 10
+    dex_mod = ability_mod(ch.abilities["DEX"])
     if armor_key == "heavy":
         base = 16  # plate-like
+        dex_bonus = 0
     elif armor_key == "medium":
-        base = 14 + min(2, ability_mod(ch.abilities["DEX"]))
+        base = 14
+        dex_bonus = min(2, dex_mod)
     elif armor_key == "light":
-        base = 11 + ability_mod(ch.abilities["DEX"])
+        base = 11
+        dex_bonus = dex_mod
     elif armor_key == "robe":
-        base = 10 + ability_mod(ch.abilities["DEX"])
-    ch.ac = base + (2 if ch.inventory.get("shield", 0) > 0 else 0)
+        base = 10
+        dex_bonus = dex_mod
+    else:  # none / unarmed
+        base = 10
+        dex_bonus = dex_mod
+    ch.ac = base + dex_bonus + (2 if ch.inventory.get("shield", 0) > 0 else 0)
     return f"🛡️ زره به {ARMORS[armor_key]['fa']} تغییر کرد (AC: {old_ac} → {ch.ac})."
 
 

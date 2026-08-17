@@ -89,19 +89,32 @@ def _contains_any(text: str, words) -> bool:
     return any(_normalize(w) in text for w in words)
 
 
+# کلماتی که نباید به عنوان هدف هیولا در نظر گرفته شوند
+_TARGET_STOPWORDS = {
+    "آتیش", "آتش", "اتش", "آتیشش", "اتشش", "طلسم", "جادو", "ضربه", "حمله",
+    "بزن", "بکوب", "بکش", "می‌زنم", "میزنم", "کنم", "بنداز", "بندازم",
+    "خودم", "خودت", "اون", "او", "من", "تو", "ما", "شما", "ایشون",
+    "همین", "همون", "ان", "آن", "را", "رو", "به", "با", "برای", "سوی",
+    "سریع", "سخت", "محکم", "قوی", "ضعیف", "کم", "زیاد",
+}
+
+
 def _extract_target(text: str, valid_monsters=None) -> str:
     """نام هدف را از جمله استخراج می‌کند — نام را قبل از فعل/حرف اضافه پیدا می‌کند."""
     if not text:
         return ""
-    # اگر نام هیولا مستقیم در متن هست، همان را برگردان
+    # اگر نام هیولا مستقیم در متن هست، همان را برگردان (اولویت بالا)
     if valid_monsters:
         for m in valid_monsters:
             if m in text:
                 return m
         # تطابق فازی
         for token in text.split():
+            t = token.strip("،.()!?")
+            if not t or t in _TARGET_STOPWORDS or len(t) < 3:
+                continue
             for m in valid_monsters:
-                if token and len(token) >= 3 and (token in m or m in token):
+                if t in m or m in t:
                     return m
     # استخراج بر اساس الگو: «... رو/را ...» یا «به ...»
     patterns = [
@@ -205,7 +218,7 @@ def parse_action(text: str, in_combat: bool = False, has_char: bool = True,
         if _contains_any(t, SKIP_WORDS) and len(t) < 25:
             return {"action": "skip"}
         if _contains_any(t, CAST_WORDS):
-            spell = _detect_spell(t)
+            spell = _extract_spell(t)
             target = _extract_target(t, valid_monsters)
             return {"action": "cast", "spell": spell, "target": target}
         if _contains_any(t, ATTACK_WORDS):

@@ -48,13 +48,41 @@ def use_item(session, uid: int, item: str) -> str:
     key = (item or "").strip().lower()
     if not ch:
         return "کاراکترت را بساز."
-    if key not in ch.inventory or ch.inventory[key] <= 0:
+    # تطبیق نام (مثلاً «معجون بزرگ» یا «potion of healing»)
+    if "great" in key or "بزرگ" in key or "قوی" in key:
+        key = "great_potion"
+    elif "potion" in key or "معجون" in key or "شربت" in key:
+        key = "potion"
+    elif "antidote" in key or "پادزهر" in key:
+        key = "antidote"
+    if key not in ch.inventory or ch.inventory.get(key, 0) <= 0:
         return f"این آیتم را نداری. موجودی: {inventory_text(ch)}"
     if key == "potion":
         before = ch.hp
         ch.hp = min(ch.max_hp, ch.hp + random.randint(2, 10) + 2)
         ch.inventory[key] -= 1
-        return f"🧪 معجون شفا نوشیدی: +{ch.hp-before} HP (موجودی: {ch.inventory[key]})"
+        if ch.inventory[key] <= 0:
+            ch.inventory.pop(key, None)
+        return f"🧪 معجون شفا نوشیدی: +{ch.hp-before} HP (اکنون {ch.hp}/{ch.max_hp})"
+    if key == "great_potion":
+        before = ch.hp
+        ch.hp = min(ch.max_hp, ch.hp + random.randint(8, 20) + 4)
+        ch.inventory[key] -= 1
+        if ch.inventory[key] <= 0:
+            ch.inventory.pop(key, None)
+        return f"🧪 معجون بزرگ شفا نوشیدی: +{ch.hp-before} HP (اکنون {ch.hp}/{ch.max_hp})"
+    if key == "antidote":
+        ch.conditions = [c for c in ch.conditions if c not in ("poisoned", "poison")]
+        ch.inventory[key] -= 1
+        if ch.inventory[key] <= 0:
+            ch.inventory.pop(key, None)
+        return "💚 پادزهر خوردی؛ وضعیت مسمومیت برطرف شد."
+    if key == "torch":
+        session.world["light"] = "torch"
+        ch.inventory[key] -= 1
+        if ch.inventory[key] <= 0:
+            ch.inventory.pop(key, None)
+        return "🔥 مشعل روشن کردی!"
     return "این آیتم هنوز کاربردی ندارد."
 
 
