@@ -53,6 +53,11 @@ PARTY_WORDS = ["گروه", "تیم", "پارتی", "دیگه کیه", "بازی�
                "گروه ما", "تیم ما"]
 POTION_WORDS = ["معجون", "درمان", "دارو", "پادزهر", "شربت", "بنوش",
                 "می‌نوشم", "مینوشم", "بخورمش", "بخورش", "استفاده کنم از معجون"]
+BUY_WORDS = ["بخر", "می‌خرم", "خرید", "بخرم"]
+SELL_WORDS = ["بفروش", "می‌فروشم", "فروش", "بفروشم"]
+SHOP_WORDS = ["مغازه", "فروشگاه", "دکان", "مغازه", "خرید کنم", "چی می‌فروشی"]
+CAMP_WORDS = ["کمپین", "داستان", "ادامه داستان", "فصل بعد", "شروع فصل", "ماموریت"]
+NPC_WORDS = ["سلام", "درود", "صحبت", "حرف بزن", "بپرس", "نزدیک شو"]
 ROLL_WORDS = ["تاس", "تاس بریز", "تاس بنداز", "رول", "رول بزن", "d20",
               "شانس", "آزمون شانس"]
 PICKUP_WORDS = ["بردار", "برمی‌دارم", "بگیر", "جمع کن", "بردارم", "بردارش"]
@@ -144,7 +149,14 @@ def parse_action(text: str, in_combat: bool = False, has_char: bool = True,
     # ۲) کمک و وضعیت
     if _contains_any(t, HELP_WORDS) and len(t) < 30:
         return {"action": "help"}
-    if _contains_any(t, POTION_WORDS):
+    # خرید/فروش باید قبل از معجون تشخیص داده شود
+    if _contains_any(t, BUY_WORDS):
+        return {"action": "buy", "item": _extract_shop_item(t)}
+    if _contains_any(t, SELL_WORDS):
+        return {"action": "sell", "item": _extract_shop_item(t)}
+    if _contains_any(t, SHOP_WORDS) and len(t) < 30:
+        return {"action": "shop"}
+    if _contains_any(t, POTION_WORDS) and not _contains_any(t, BUY_WORDS + SELL_WORDS):
         return {"action": "potion"}
     if _contains_any(t, ROLL_WORDS) and len(t) < 30:
         return {"action": "roll", "expr": _extract_dice_expr(t)}
@@ -161,6 +173,12 @@ def parse_action(text: str, in_combat: bool = False, has_char: bool = True,
     if is_dm and (_contains_any(t, SCENARIO_WORDS) or
                   ("سناریو" in t and ("بساز" in t or "جدید" in t or "می‌خوام" in t))):
         return {"action": "scenario"}
+
+    # کمپین و گفتگو با NPC
+    if is_dm and _contains_any(t, CAMP_WORDS) and any(w in t for w in ["شروع", "جدید", "ادامه", "فصل بعد"]):
+        return {"action": "campaign"}
+    if _contains_any(t, NPC_WORDS) and len(t) < 50:
+        return {"action": "talk", "text": t}
 
     # ۴) در نبرد
     if in_combat:
@@ -207,6 +225,21 @@ def parse_action(text: str, in_combat: bool = False, has_char: bool = True,
 
     # ۹) هر چیز دیگر → روایت توسط AI
     return {"action": "narrate", "text": t}
+
+
+def _extract_shop_item(text: str) -> str:
+    """نام آیتم مغازه را از متن پیدا می‌کند."""
+    if "معجون بزرگ" in text or "معجون قوی" in text:
+        return "great_potion"
+    if "پادزهر" in text:
+        return "antidote"
+    if "مشعل" in text:
+        return "torch"
+    if "طناب" in text or "ریسمان" in text:
+        return "rope"
+    if "معجون" in text or "دارو" in text or "شربت" in text:
+        return "potion"
+    return ""
 
 
 def _detect_spell(text: str) -> str:

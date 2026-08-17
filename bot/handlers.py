@@ -701,3 +701,50 @@ async def natural_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif a == "narrate":
         context.args = [act.get("text", text)]
         await story_cmd(update, context)
+    elif a == "potion":
+        context.args = ["potion"]
+        await use_cmd(update, context)
+    elif a == "roll":
+        context.args = [act.get("expr", "d20")]
+        await roll_cmd(update, context)
+    elif a == "shop":
+        from game.shop import shop_text
+        await update.message.reply_text(shop_text(session))
+    elif a == "buy":
+        item = act.get("item", "")
+        if not item:
+            await update.message.reply_text("چی بخرم؟ مثلاً «بخر معجون»")
+            return
+        from game.shop import buy
+        ch = _user_char(session, update)
+        result = buy(ch, item)
+        _save(update, context, session)
+        await update.message.reply_text(result)
+    elif a == "sell":
+        item = act.get("item", "")
+        if not item:
+            await update.message.reply_text("چی بفروشم؟ مثلاً «بفروش طناب»")
+            return
+        from game.shop import sell
+        ch = _user_char(session, update)
+        result = sell(ch, item)
+        _save(update, context, session)
+        await update.message.reply_text(result)
+    elif a == "campaign":
+        from game.campaign import make_campaign, start_chapter, advance_chapter
+        if not session.campaign:
+            session.campaign = make_campaign()
+        if session.combat:
+            await update.message.reply_text("اول نبرد فعلی رو تمام کن.")
+            return
+        sc = start_chapter(session.campaign, session, context.bot_data["narrator"])
+        session.scenario = sc
+        _save(update, context, session)
+        await update.message.reply_text(
+            f"📖 **{sc.get('chapter_title', 'فصل جدید')}**\n\n{sc.get('title')}\n_{sc.get('hook')}_\n\nبرای نبرد: «شروع نبرد»"
+        )
+    elif a == "talk":
+        context.args = [text]
+        await story_cmd(update, context)
+    elif a == "wait":
+        await update.message.reply_text("⏳ چند لحظه صبر می‌کنی... هوا سنگین‌تر می‌شود.")
