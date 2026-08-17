@@ -465,105 +465,6 @@ def cmd_newchar(store, chat, uid, uname, args):
     send(chat, "🧙 **ساخت کاراکتر**\nاسم شخصیتت رو بفرست (مثلاً: آرین)\nلغو: /cancel")
 
 
-def _valid_monsters_fa(session):
-    """اسامی فارسی هیولاهای فعلی نبرد."""
-    if not session or not session.combat:
-        return []
-    out = []
-    for p in session.combat.get("participants", []):
-        if p.get("kind") == "monster":
-            out.append(p["name"])
-    return out
-
-
-def handle_natural(store, chat, uid, uname, text):
-    """یک متن فارسی طبیعی را به اکشن بازی تبدیل و اجرا می‌کند.
-    خروجی: True اگر متن را فهمید و اجرا کرد، False اگر باید به AI داده شود."""
-    from game.nlp import parse_action
-    s = store.load(chat)
-    if not s:
-        return False
-    ch = s.get_char(uid)
-    in_combat = bool(s.combat)
-    downed = False
-    if in_combat and ch:
-        me = next((p for p in s.combat["participants"]
-                   if p.get("kind") == "player" and p.get("uid") == str(uid)), None)
-        downed = bool(me and (me.get("downed") or me.get("hp", 1) <= 0))
-    mobs = _valid_monsters_fa(s)
-    act = parse_action(text, in_combat=in_combat, has_char=bool(ch),
-                       valid_monsters=mobs, is_dm=(s.dm_id == uid), downed=downed)
-    a = act.get("action")
-
-    if a == "attack":
-        target = act.get("target") or ""
-        if not target:
-            send(chat, "🎯 به چی حمله کنم؟ اسم هدف رو بگو، مثلاً: «حمله به گابلین»")
-            return True
-        r = cmd_attack(store, chat, uid, uname, [target])
-        return True
-    if a == "cast":
-        spell = act.get("spell", "firebolt")
-        target = act.get("target") or ""
-        cmd_cast(store, chat, uid, uname, [spell, target])
-        return True
-    if a == "dodge":
-        cmd_dodge(store, chat, uid, uname, [])
-        return True
-    if a == "skip":
-        cmd_skip(store, chat, uid, uname, [])
-        return True
-    if a == "deathsave":
-        cmd_deathsave(store, chat, uid, uname, [])
-        return True
-    if a == "rest":
-        send(chat, rest(s, uid, act.get("kind", "short")))
-        store.save(s)
-        return True
-    if a == "torch":
-        if not ch:
-            send(chat, "اول کاراکترت رو بساز.")
-            return True
-        from game.world import try_environment_action
-        env = try_environment_action(s, ch, "مشعل روشن می‌کنم")
-        if env:
-            send(chat, env)
-            store.save(s)
-        else:
-            cmd_story(store, chat, uid, uname, [text])
-        return True
-    if a == "look":
-        if in_combat:
-            from game.combat import order_text
-            send(chat, order_text(s))
-        else:
-            cmd_where(store, chat, uid, uname, [])
-        return True
-    if a == "sheet":
-        cmd_sheet(store, chat, uid, uname, [])
-        return True
-    if a == "party":
-        cmd_party(store, chat, uid, uname, [])
-        return True
-    if a == "scenario":
-        if s.dm_id != uid:
-            send(chat, "فقط میزبان می‌تونه سناریو بسازه.")
-            return True
-        cmd_scenario(store, chat, uid, uname, [])
-        return True
-    if a == "combat":
-        cmd_combat(store, chat, uid, uname, [])
-        return True
-    if a == "help":
-        cmd_help(store, chat, uid, uname, [])
-        return True
-    if a == "narrate":
-        # هر چیز دیگر: به راوی AI بده
-        cmd_story(store, chat, uid, uname, [act.get("text", text)])
-        return True
-    return False
-
-
 def on_message(store, msg):
     chat = msg["chat"]["id"]
     uid = msg["from"]["id"]
@@ -580,14 +481,8 @@ def on_message(store, msg):
         send(chat, "خوش اومدی **%s**! نژادت رو انتخاب کن:" % text.strip()[:30], kb(rows))
         return
 
-    # دستور طبیعی فارسی
-    if text and not text.startswith("/"):
-        try:
-            if handle_natural(store, chat, uid, uname, text):
-                return
-        except Exception as e:
-            log("natural handler: %s" % e)
-        send(chat, "🤔 منظورت رو نفهمیدم. /help رو بزن یا طبیعی‌تر بنویس.")
+    if not text.startswith("/"):
+        send(chat, "🤔 دستور نمی‌شناسم. /help")
         return
 
     parts = text[1:].split()

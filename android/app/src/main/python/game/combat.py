@@ -180,13 +180,22 @@ def advance(session: Session) -> str:
         return "هیچ‌کس در میدان نیست!"
 
     messages = []
-    # پایان خودکار نبرد اگر همه بازیکن‌ها زمین‌گیر/مرده باشند
+    # پایان خودکار نبرد اگر همه دشمنان مرده باشند (پیروزی)
+    monsters = [p for p in combat["participants"] if p["kind"] == "monster"]
+    if monsters and all(not m.get("alive", False) for m in monsters):
+        messages.append(end_combat(session))
+        return "\n\n".join(messages)
+    # پایان خودکار نبرد اگر همه بازیکن‌ها زمین‌گیر/مرده باشند (شکست)
     if _all_players_incapacitated(session):
         messages.append(end_combat(session))
         return "\n\n".join(messages)
     _run_pending_monsters(session, messages, advance_first=True)
-    # بعد از اجرای هیولاها هم چک کن
     if not session.combat:
+        return "\n\n".join(messages)
+    # بعد از اجرای هیولاها هم چک کن
+    monsters2 = [p for p in session.combat["participants"] if p["kind"] == "monster"]
+    if monsters2 and all(not m.get("alive", False) for m in monsters2):
+        messages.append(end_combat(session))
         return "\n\n".join(messages)
     if _all_players_incapacitated(session):
         messages.append(end_combat(session))
@@ -419,13 +428,19 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
 
 
 def _all_players_incapacitated(session) -> bool:
-    """True اگر هیچ بازیکن آگاهی در نبرد باقی نمانده باشد (همه مرده یا زمین‌گیر)."""
+    """اگر بازیکنی نمرده/زمین‌گیر نشده، False. در غیر این صورت True.
+    این فقط برای پایان **زودهنگام** نبرد استفاده می‌شود (شکست قبل از کشتن دشمن)."""
     combat = session.combat
     if not combat:
         return False
     players = [p for p in combat["participants"] if p["kind"] == "player" and not p.get("dead")]
     if not players:
         return True
+    # اگر همه بازیکن‌ها زمین‌گیر شده‌اند، بسته به وضعیت نبرد تصمیم می‌گیریم:
+    # - اگر هیچ هیولایی کشته نشده → شکست زودهنگام
+    # - اگر همه هیولاها مرده‌اند → پیروزی (پایان خودکار در advance چک می‌شود)
+    # - در حالت میانه (چند کشته ولی هنوز دشمن هست) → نبرد ادامه می‌یابد تا
+    #   بازیکن در نوبتش death_save بزند و شانس به هوش آمدن داشته باشد
     return all(p.get("downed") or p.get("hp", 0) <= 0 for p in players)
 
 
@@ -436,17 +451,16 @@ def end_combat(session: Session) -> str:
     alive_players = [p for p in combat["participants"]
                      if p["kind"] == "player" and not p.get("dead")
                      and not p.get("downed") and p.get("hp", 0) > 0]
-    all_monsters_dead = bool(monsters) and all(not m["alive"] for m in monsters)
-    total_party_kill = not alive_players  # همه مرده یا زمین‌گیر
+    all_monsters_dead = bool(monsters) and all(not m.get("alive", False) for m in monsters)
+    total_party_kill = not alive_players  # همه بازیکن‌ها زمین‌گیر یا مرده
 
     if all_monsters_dead:
+        # پیروزی: حتی اگر یک یا چند بازیکن زمین‌گیر شده باشند
         victory = True
     elif total_party_kill:
-        # وقتی همه بازیکن‌ها زمین‌گیر/مرده باشند نبرد با شکست تمام می‌شود
-        # (هیولاها در غیر این صورت حلقه بی‌نهایت می‌سازند)
+        # شکست: همه بازیکن‌ها زمین‌گیر شده‌اند
         for p in combat["participants"]:
             if p["kind"] == "player" and p.get("downed"):
-                # بازیکنان زمین‌گیر پس از پایان نبرد پایدار در نظر گرفته می‌شوند
                 p["downed"] = False
                 p["alive"] = True
                 ch = session.get_char(int(p["uid"]))
@@ -454,13 +468,31 @@ def end_combat(session: Session) -> str:
                     ch.hp = max(1, ch.hp)
         victory = False
     else:
+        # حالت میانه: نه همه هیولاها مرده و نه همه بازیکن‌ها.
+        # این یعنی مثلاً یک هیولا زنده مانده و یک بازیکن در نوبت مرگ‌سیو است.
+        # برای جلوگیری از حلقه بی‌نهایت، نبرد را با شکست تمام می‌کنیم.
+        for p in combat["participants"]:
+            if p["kind"] == "player" and p.get("downed"):
+                p["downed"] = False
+                p["alive"] = True
+                ch = session.get_char(int(p["uid"]))
+                if ch:
+                    ch.hp = max(1, ch.hp)
         victory = False
 
-    xp_pool = combat.get("xp_pool", 0)
-    share = xp_pool // len(alive_players) if alive_players else 0
+    # XP را از هیولاهایی که واقعاً کشته شده‌اند محاسبه کن
+    killed = [p for p in combat.get("participants", [])
+              if p.get("kind") == "monster" and not p.get("alive", True)]
+    xp_pool = int(combat.get("xp_pool", 0)) + sum(int(p.get("xp", 0)) for p in killed)
+    # XP بین همه بازیکنانی که نمرده‌اند تقسیم می‌شود (شامل کسانی که در پایان زنده شدند)
+    recipients = [p for p in combat["participants"]
+                  if p.get("kind") == "player" and not p.get("dead")]
+    # پیروزی کامل → تمام XP. در غیر این صورت نصف XP برای شرکت‌کنندگان
+    factor = 1.0 if victory else 0.5
+    share = int(xp_pool * factor) // max(1, len(recipients))
     leveled = []
-    if victory and share > 0:
-        for p in alive_players:
+    if share > 0:
+        for p in recipients:
             ch = session.get_char(int(p["uid"]))
             if ch:
                 ch.xp += share
@@ -470,11 +502,11 @@ def end_combat(session: Session) -> str:
     session.combat = None
     session.state = "playing"
     if victory:
-        msg = f"🏆 **پیروزی!** همه دشمنان نابود شدند. هر بازیکن زنده {share} XP گرفت."
+        msg = f"🏆 **پیروزی!** همه دشمنان نابود شدند. هر بازیکن {share} XP گرفت."
     elif total_party_kill:
-        msg = "🏳️ **شکست!** همه اعضای گروه زمین‌گیر شدند. دشمنان پراکنده می‌شوند و شما بعداً با ۱ HP به هوش می‌آیید."
+        msg = f"🏳️ **شکست!** همه اعضای گروه زمین‌گیر شدند. دشمنان پراکنده می‌شوند و شما بعداً با ۱ HP به هوش می‌آیید. ({share} XP بابت تلفات وارده)"
     else:
-        msg = f"🏳️ نبرد پایان یافت. گروه عقب‌نشینی کرد. (XP توزیع نشد)"
+        msg = f"🏳️ نبرد پایان یافت. ({share} XP باطر نبرد)"
     if leveled:
         msg += "\n" + "\n".join(leveled)
     session.add_log("سیستم", msg.replace("\n", " "))
