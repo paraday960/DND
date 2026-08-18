@@ -14,33 +14,50 @@ os.environ["MISTRAL_API_KEY"] = "offline-test"
 os.environ["WEBAPP_DEV"] = "1"
 
 
-def _post(url, body, timeout=60):
-    req = urllib.request.Request(
-        url, data=json.dumps(body).encode() if body is not None else b"",
-        headers={"Content-Type": "application/json"})
-    try:
-        r = urllib.request.urlopen(req, timeout=timeout)
-        return r.status, json.loads(r.read())
-    except urllib.error.HTTPError as e:
+def _post(url, body, timeout=60, retries=4):
+    for attempt in range(retries):
+        req = urllib.request.Request(
+            url, data=json.dumps(body).encode() if body is not None else b"",
+            headers={"Content-Type": "application/json"})
         try:
-            return e.code, json.loads(e.read())
+            r = urllib.request.urlopen(req, timeout=timeout)
+            return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            try:
+                return e.code, json.loads(e.read())
+            except Exception:
+                return e.code, {"error": "non-json"}
+        except (ConnectionError, ConnectionResetError, BrokenPipeError, TimeoutError):
+            if attempt + 1 < retries:
+                time.sleep(0.5)
+                continue
+            return 0, {"error": "conn"}
+        except Exception as e:
+            if attempt + 1 < retries:
+                time.sleep(0.5)
+                continue
+            return 0, {"error": str(e)[:80]}
+
+
+def _get(url, timeout=10, retries=2):
+    for attempt in range(retries):
+        try:
+            r = urllib.request.urlopen(url, timeout=timeout)
+            return r.status, r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read()
         except Exception:
-            return e.code, {"error": "non-json"}
-
-
-def _get(url, timeout=10):
-    try:
-        r = urllib.request.urlopen(url, timeout=timeout)
-        return r.status, r.read()
-    except urllib.error.HTTPError as e:
-        return e.code, e.read()
+            if attempt + 1 < retries:
+                time.sleep(0.4)
+                continue
+            return 0, b""
 
 
 def run_full_suite(server_factory, label):
     """server_factory(port) -> shutdown_fn; starts server on port."""
     port = 19000 + (hash(label) % 1000)
     shutdown = server_factory(port)
-    time.sleep(1)
+    time.sleep(1.5)
     base = f"http://127.0.0.1:{port}"
     results = []
 

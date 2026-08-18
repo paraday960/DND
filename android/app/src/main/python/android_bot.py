@@ -1085,15 +1085,22 @@ class ApiHandler(BaseHTTPRequestHandler):
             if not s.combat:
                 self._json(400, {"ok": False, "error": "نبردی نیست."})
                 return
+            def _s2(v, default=""):
+                try: return str(v).strip() if v is not None else default
+                except Exception: return default
             msgs = []
-            if path == "/api/combat/attack":
-                msgs.append(attack(s, user["id"], body.get("target", "")))
-            elif path == "/api/combat/cast":
-                msgs.append(cast(s, user["id"], _s(body.get("spell")), body.get("target", "")))
-            else:
-                msgs.append(advance(s))
-                self.store.save(s)
-                self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(s, user)}})
+            try:
+                if path == "/api/combat/attack":
+                    msgs.append(attack(s, user["id"], _s2(body.get("target"))))
+                elif path == "/api/combat/cast":
+                    msgs.append(cast(s, user["id"], _s2(body.get("spell")), _s2(body.get("target"))))
+                else:
+                    msgs.append(advance(s))
+                    self.store.save(s)
+                    self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(s, user)}})
+                    return
+            except Exception as e:
+                self._json(400, {"ok": False, "error": str(e)[:120]})
                 return
             # بعد از اکشن اصلی (attack/cast) نوبت را جلو ببر — فقط اگر نبرد هنوز جاری است
             if s.combat:
