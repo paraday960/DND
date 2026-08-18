@@ -9,7 +9,8 @@ import config
 from game.combat import (
     attack, cast, dodge, dash, disengage, help_action, hide, shove,
     second_wind, action_surge, rage, bardic_inspiration, move_action,
-    offhand_attack, divine_smite,
+    offhand_attack, divine_smite, jump_action, help_up, throw_action,
+    dip_weapon, cunning_action, hellish_rebuke,
     end_combat, start_combat, advance, is_player_turn,
 )
 from game.adventure import death_save, inventory_text, rest, skill_check, use_item
@@ -36,82 +37,83 @@ WELCOME = """🐉 **به دانجن‌مستر هوشمند خوش اومدی!**
 راهنمای کامل دستورات: `/help`
 """
 
-HELP = """📚 **راهنمای کامل دستورات — قوانین رسمی D&D 5e**
+HELP = """📚 **راهنمای کامل دستورات — قوانین D&D 5e با الهام از Baldur's Gate 3**
 
 🎮 **جلسه و بازیکن‌ها:**
 • `/newgame` — ساختن اتاق بازی (میزبان)
 • `/join <کد>` — پیوستن به اتاق با کد
 • `/newchar` — ساخت کاراکتر جدید (۱۲ کلاس، ۸ نژاد)
-• `/sheet` — نمایش کاراکتر (توانایی‌ها، مهارت‌ها، منابع)
+• `/sheet` — نمایش کاراکتر
 • `/party` — لیست گروه
-• `/levelup` — ارتقای سطح (وقتی XP کافی داری)
-• `/xp` — وضعیت تجربه
 
 🐉 **دانجن‌مستر هوشمند:**
-• `/scenario <توضیح>` — ساخت سناریو کامل با AI (فقط میزبان)
-• `/story <اقدام>` — هر اقدامت رو بگو تا AI روایت کنه
-• `/where` — خلاصه وضعیت فعلی ماجرا
+• `/scenario` — ساخت سناریو با AI (میزبان)
+• `/story <اقدام>` — روایت اکشن با AI
+• `/where` — خلاصه وضعیت ماجرا
 
 ⚔️ **اکشن‌های اصلی نبرد (هر نوبت ۱ اکشن اصلی):**
 • `/combat` — شروع نبرد (initiative خودکار)
-• `/attack <دشمن>` — حمله با سلاح (شامل کریت، اسنک اتک، خشم، مزیت/ضعف)
+• `/attack <دشمن>` — حمله با سلاح (Extra Attack، Sneak Attack، Smite، خشم، کریت، پوشش، ارتفاع)
 • `/cast <طلسم> <هدف>` — انداختن طلسم
-• `/dash` — 🏃 دویدن، حرکت اضافه
+• `/dash` — 🏃 دویدن (حرکت مضاعف، بدون حمله فرصت)
 • `/disengage` — 🚪 عقب‌نشینی امن (بدون حمله فرصت)
-• `/help <هم‌گروهی>` — 🤝 کمک کردن (حمله بعدی هدف مزیت می‌گیرد)
+• `/dodge` — 🛡️ دفاع فعال (حملات به تو با ضعف)
+• `/help_act <هم‌گروهی>` — 🤝 کمک (حمله بعدی هدف مزیت می‌گیرد)
 • `/hide` — 🙈 پنهان شدن (حمله بعدی با مزیت)
-• `/shove <دشمن>` — 💪 هل دادن و انداختن روی زمین
-• `/dodge` — 🛡️ دفاع فعال (همه حملات به تو با ضعف)
-• `/skip` — ⏭️ رد کردن نوبت
-
-⚡ **بونس‌اکشن‌ها (هر نوبت حداکثر ۱ بونس‌اکشن):**
-• `/rage` — 🪓 خشم بربر (مقاومت فیزیکی + آسیب اضافه)
-• `/inspire <هم‌گروهی>` — 🎻 الهام بَرد (یک دی الهام به رول بعدی)
-• `/cast healingword <هدف>` — 💚 کلمه شفا (شفا دوری به عنوان بونس)
-• `/bonus offhand` — 🗡️ حمله با دست دوم
-
-🛡️ **واکنش‌ها (Reaction):**
-• حمله فرصت هنگام دور شدن دشمن بدون disengage **خودکار** است!
-• `/cast shield` — 🛡️ سپر جادویی (+5 AC به عنوان ری‌اکشن)
-
-💀 **وضعیت‌های بحرانی:**
-• `/deathsave` — نجات از مرگ (۳ موفق/۳ شکست)
+• `/shove <دشمن>` — 💪 هل دادن (انداختن به زمین/پرتگاه/آتش!)
+• `/secondwind` — 💨 نفس دوم جنگجو (التیم نفس، یک‌بار در استراحت کوتاه)
+• `/actionsurge` — ⚡ اکشن اضافه جنگجو
 • `/combatend` — پایان دستی نبرد
 
-✨ **طلسم‌ها:**
-آتش‌پایه، موشک جادویی، مرهم زخم، کلمه شفا، تیر هدایت‌گر، انفجار باستانی،
-شعله مقدس، سپر جادویی، زره جادویی، خواب، نگه داشتن شخص، گوی آتش، نامرئی،
-گام مه، سلاح روحانی، نشان شکارچی، نفرین، دستان سوزان، آتش پری، گیر انداختن
+✨ **بونس‌اکشن‌ها:**
+• `/rage` — 🪓 خشم بربر (مقاومت فیزیکی + آسیب اضافه)
+• `/inspire <هم‌گروهی>` — 🎻 الهام بَرد (یک دی الهام به رول دوست)
+• `/offhand <هدف>` — 🗡️ حمله دست دوم با سلاح سبک
+• `/jump [high/far]` — 🦘 پرش (بدون حمله فرصت، پرش به بلندی)
+• `/throw <item> [هدف]` — 🧪 پرتاب آیتم (معجون شفا، مشعل، روغن)
+• `/dip [fire/poison]` — 🔥 فرو کردن سلاح در آتش/سم (1d4 آسیب اضافه)
+• `/cunning [dash/hide/disengage]` — 🗡️ Cunning Action راگ
+• `/cast healingword <هدف>` — 💚 شفا به عنوان بونس‌اکشن
+• `/smite [level]` — ✨ Divine Smite پالادین
 
-🎲 **تاس:**
-• `/roll 2d6+3` — هر ترکیبی: `d20`، `2d8`، `1d20+5`
-• `/roll adv` یا `/roll dis` — با برتری / ضعف
+🛡️ **واکنش‌ها (Reaction):**
+• حمله فرصت — وقتی کسی بدون Disengage از کنارت دور شود، **خودکار** حمله می‌زنی!
+• `/cast shield` — 🛡️ سپر جادویی (۵+ AC)
+• `/rebuke` — 😈 Hellish Rebuke تیفلینگ (2d10 آتش در پاسخ)
 
-🔥 **استراحت:**
-• `/rest short` — استراحت کوتاه (۱ ساعت): مصرف Hit Die برای التیام، بازیابی منابع کوتاه
-• `/rest long` — استراحت طولانی (۸ ساعت): HP کامل، ریست کامل اسلات/منابع
+🗺️ **حرکت و موقعیت (الهام از BG3):**
+• `/move near` — جلو به خط مقدم
+• `/move far` — عقب (برای کمان/طلسم)
+• `/move flee` — فرار
+• `/move high` — ⛰️ بلندی (High Ground: +2 به حمله)
+• `/move low` — پایین آمدن
+• `/move cover` — 🛡️ نیم‌پوشش (+2 AC)
+• `/move full` — 🧱 پوشش کامل (حملات اصابت نمی‌کنند)
+• `/move open` — خروج از پوشش
 
-🧭 **ماجراجویی:**
-• `/check <skill> <dc>` — آزمایش مهارت (ادراک، مخفی‌کاری، ورزش و...)
-• `/move near|far|flee` — حرکت در میدان نبرد (نزدیک/دور/فرار)
-• `/secondwind` — 💨 نفس دوم جنگجو (1d10+level التیام، یک‌بار در استراحت کوتاه)
-• `/actionsurge` — ⚡ اکشن اضافه جنگجو
+💀 **وضعیت‌های بحرانی:**
+• `/deathsave` — نجات از مرگ
+• `/helpup <هم‌گروهی>` — 🤝 بلند کردن دوست از زمین (1 HP)
+
+🏅 **قابلیت‌های نژادی:**
+• 🍀 شانس هالفلینگ: رول ۱ دوباره می‌افتد
+• 💪 پافشاری نیمه‌اورک: یک‌بار از مرگ با ۱ HP برمی‌گردی
+• 🐲 نفس اژدها (اژدهازاده): `/cast dragonbreath`
+• 😈 سرزنش جهنمی (تیفلینگ): `/rebuke`
+
+🎲 **متفرقه:**
+• `/roll 2d6+3` — تاس
+• `/roll adv|dis` — با برتری/ضعف
+• `/check <skill> <dc>` — آزمون مهارت
+• `/rest short|long` — استراحت کوتاه/طولانی
 • `/inventory` — موجودی
-• `/use <item>` — استفاده از آیتم (معجون، مشعل، ...)
+• `/use <item>` — استفاده از آیتم
 
-🏅 **ویژگی‌های نژادی فعال:**
-• نفس اژدها (Dragonborn): `/cast dragonbreath`
-• شانس هالفلینگ: رول ۱ خودکار دوباره انداخته می‌شود
-• پافشاری نیمه‌اورک: هنگام down شدن یک‌بار با ۱ HP برمی‌گردد
-
-💡 دشمنان هوشمند هستند، حمله فرصت می‌زنند، و باس‌ها قابلیت ویژه دارند!
+💬 متن‌های فارسی طبیعی هم پشتیبانی می‌شوند (مثلاً «حمله به گابلین» یا «دفاع کن»)
 """
 
 
 # ---------- ابزارهای کمکی ----------
-def _session(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return context.bot_data["store"].load(update.effective_chat.id)
-
 
 def _save(update: Update, context: ContextTypes.DEFAULT_TYPE, session: Session):
     context.bot_data["store"].save(session)
@@ -710,6 +712,75 @@ async def smite_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             slot = 1
     text = divine_smite(session, update.effective_user.id, slot)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+    if "نابود شد" in text:
+        await _maybe_advance(update, context, session)
+
+
+async def jump_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    where = context.args[0] if context.args else "near"
+    text = jump_action(session, update.effective_user.id, where)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+
+
+async def help_up_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    target = " ".join(context.args or [])
+    text = help_up(session, update.effective_user.id, target)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+    await _maybe_advance(update, context, session)
+
+
+async def throw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    args = context.args or []
+    if not args:
+        await update.message.reply_text("مثل: `/throw potion` یا `/throw torch گابلین`")
+        return
+    item = args[0]
+    target = " ".join(args[1:])
+    text = throw_action(session, update.effective_user.id, item, target)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+    if "نابود شد" in text:
+        await _maybe_advance(update, context, session)
+
+
+async def dip_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    elem = context.args[0] if context.args else "fire"
+    text = dip_weapon(session, update.effective_user.id, elem)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+
+
+async def cunning_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    what = context.args[0] if context.args else "disengage"
+    text = cunning_action(session, update.effective_user.id, what)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+
+
+async def rebuke_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    text = hellish_rebuke(session, update.effective_user.id)
     _save(update, context, session)
     await update.message.reply_text(text)
     if "نابود شد" in text:

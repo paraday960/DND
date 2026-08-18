@@ -6,6 +6,7 @@ from .dice import DiceError, parse_dice, roll_dice, roll_d20
 from .models import Session
 from .rules import (
     CLASSES, MONSTERS, SPELLS, WEAPONS, WEAPON_RANGES, CONDITIONS,
+    COVER_TYPES, SURFACE_TYPES,
     ability_mod, proficiency_bonus,
 )
 
@@ -108,6 +109,64 @@ def _default_atk_bonus(mkey: str, base: dict) -> int:
     return 2
 
 
+# ----------------- مکانیک‌های پیشرفته BG3 -----------------
+
+def _apply_cover_ac(p, base_ac: int) -> int:
+    """اعمال پوشش به AC. نیم‌پوشش +2، سه‌چهارم +5."""
+    cover = COVER_TYPES.get(p.get("cover", "none"), COVER_TYPES["none"])
+    return base_ac + cover.get("ac_bonus", 0)
+
+
+def _calc_height_mods(attacker, target):
+    """محاسبه مزیت/ضعف ناشی از ارتفاع (بلندتر = مزیت در 5e/Tasha؛ BG3 +2)."""
+    atk_bonus = 0
+    adv_h, dis_h = False, False
+    if attacker.get("height", 0) > target.get("height", 0):
+        # High Ground در BG3 +2 به حمله
+        atk_bonus = 2
+    elif attacker.get("height", 0) < target.get("height", 0):
+        # Low Ground در BG3 ضعف می‌گیرد
+        dis_h = True
+    return atk_bonus, adv_h, dis_h
+
+
+def _surface_effects_start_turn(p, session=None, lines=None) -> list:
+    """در شروع نوبت اگر روی سطح خطرناک ایستاده بودی آسیب/افکت می‌خوری."""
+    if lines is None:
+        lines = []
+    surf = p.get("surface", "none")
+    if surf == "none":
+        return lines
+    info = SURFACE_TYPES.get(surf)
+    if not info:
+        return lines
+    ch = get_participant_ch(session, p) if (session and p.get("kind") == "player") else None
+    if info.get("turn_dmg") and p.get("hp", 0) > 0 and not p.get("downed"):
+        dmg = _roll_damage(info["dmg"])
+        p["hp"] = max(0, p.get("hp", 1) - dmg)
+        type_fa = {"fire": "آتش", "acid": "اسید", "poison": "سم", "cold": "سرما"}.get(info.get("dmg_type", ""), "")
+        lines.append(f"🔥 {p['name']} روی سطح {info['fa']} ایستاده و {dmg} آسیب {type_fa} می‌خورد!")
+        if p["hp"] <= 0:
+            p["downed"] = True
+            p["hp"] = 0
+            if ch:
+                ch.hp = 0
+            lines.append(f"💀 {p['name']} از {type_fa} سطح زمین‌گیر شد!")
+    if info.get("fail_prone") and not p.get("downed"):
+        # چک DEX برای نیفتادن
+        mod = ch.stat_mod("DEX") if ch else 1
+        roll = roll_d20() + mod
+        if roll < info["save_dc"]:
+            p.setdefault("conditions", []).append("prone")
+            lines.append(f"🧊 {p['name']} روی سطح لغزنده {info['fa']} لیز خورد و روی زمین افتاد!")
+    return lines
+
+
+def _check_push_off_edge(pusher, target) -> bool:
+    """آیا این هدف در لبه پرتگاه است و هل دادنش می‌کشد؟ (ساده‌سازی: در صورتی که target در حالت distance=2 flee می‌کند و ما در shove به این هندل می‌رسیم، کشنده تلقی می‌کنیم)"""
+    return target.get("distance", 0) == 2 and target.get("height", 0) > 0
+
+
 # تعداد حمله هر دشمن (multiattack) بر اساس کلید هیولا
 _MULTIATTACK = {
     "troll": 2,
@@ -136,14 +195,28 @@ def _monster_key(mon: dict) -> str:
 
 
 def _calc_attack_adv_dis(attacker, target, is_ranged=False):
-    """محاسبه مزیت و ضعف برای حمله attacker به target."""
+    """محاسبه مزیت و ضعف برای حمله attacker به target (با پوشش، ارتفاع، غافل‌گیری، وضعیت‌ها)."""
     adv = False
     dis = False
     reasons = []
+    atk_bonus = 0
+    # تعجب (Surprise)
+    if target.get("surprised") and not attacker.get("surprised"):
+        adv = True
+        reasons.append("هدف غافلگیر شده")
+    # ارتفاع (BG3)
+    h_bonus, h_adv, h_dis = _calc_height_mods(attacker, target)
+    atk_bonus += h_bonus
+    if h_adv:
+        adv = True
+        reasons.append("در ارتفاع بالاتر")
+    if h_dis:
+        dis = True
+        reasons.append("در ارتفاع پایین‌تر")
     # وضعیت‌های حمله‌کننده
     if has_condition(attacker, "blinded") or has_condition(attacker, "poisoned") or \
        has_condition(attacker, "frightened") or has_condition(attacker, "restrained") or \
-       has_condition(attacker, "prone") and not is_ranged:
+       (has_condition(attacker, "prone") and not is_ranged):
         dis = True
         reasons.append("در وضعیت نامناسب")
     if has_condition(attacker, "invisible") or has_condition(attacker, "hidden"):
@@ -152,7 +225,8 @@ def _calc_attack_adv_dis(attacker, target, is_ranged=False):
     # وضعیت‌های هدف
     if has_condition(target, "blinded") or has_condition(target, "restrained") or \
        has_condition(target, "stunned") or has_condition(target, "unconscious") or \
-       has_condition(target, "paralyzed") or has_condition(target, "prone") and not is_ranged:
+       has_condition(target, "paralyzed") or \
+       (has_condition(target, "prone") and not is_ranged):
         adv = True
         reasons.append("هدف در وضعیت آسیب‌پذیر")
     if has_condition(target, "dodge"):
@@ -164,15 +238,23 @@ def _calc_attack_adv_dis(attacker, target, is_ranged=False):
     if has_condition(target, "prone") and is_ranged:
         dis = True
         reasons.append("هدف روی زمین و حمله دوربرد")
-    # اگر هدف paralyzed/unconscious باشد و حمله نزدیک، کریت روی ۵ فوت اتوماتیک است
-    auto_crit_melee = (has_condition(target, "paralyzed") or has_condition(target, "unconscious")) and not is_ranged
-    if auto_crit_melee:
-        adv = True
+    # پوشش هدف
+    cover_key = target.get("cover", "none")
+    cover = COVER_TYPES.get(cover_key, COVER_TYPES["none"])
+    if cover.get("blocks_attacks"):
+        dis = True
+        adv = False  # پوشش کامل باعث می‌شود اصلاً نخوری!
+        reasons.append("هدف در پوشش کامل")
+        # در حالت پوشش کامل AC عملاً غیرقابل اصابت است؛ auto miss
     # کمک هم‌گروهی
     if attacker.get("helped_by"):
         adv = True
         reasons.append("هم‌گروهی کمک کرده")
-    return adv, dis, reasons, auto_crit_melee
+    # اگر هدف paralyzed/unconscious باشد و حمله نزدیک، کریت روی ۵ فوت اتوماتیک است
+    auto_crit_melee = (has_condition(target, "paralyzed") or has_condition(target, "unconscious")) and not is_ranged
+    if auto_crit_melee:
+        adv = True
+    return adv, dis, reasons, auto_crit_melee, atk_bonus, cover
 
 
 def _apply_damage_resistance(session, target, dmg, dmg_type="bludgeoning"):
@@ -196,11 +278,16 @@ def _resolve_one_attack(session, attacker, target, atk_bonus, dmg_expr=None,
     
     نکته مهم قانون D&D: در کریت فقط **تاس‌های آسیب** دو برابر می‌شوند، modifier عدد ثابت اضافه نمی‌شود.
     """
-    adv, dis, reasons, auto_crit = _calc_attack_adv_dis(attacker, target, is_ranged)
+    adv, dis, reasons, auto_crit, height_bonus, cover = _calc_attack_adv_dis(attacker, target, is_ranged)
     if adv_override:
         adv = True
     if dis_override:
         dis = True
+    # پوشش کامل: خطای خودکار
+    if cover.get("blocks_attacks", False) and not critical:
+        return f"🛡️ {target['name']} در پوشش کامل است — حمله اصابت نمی‌کند!", False
+    # AC هدف با پوشش تنظیم شود
+    target_ac = target.get("ac", 10) + cover.get("ac_bonus", 0)
     # حمله دوربرد در ۵ فوت دشمن، با ضعف
     if is_ranged and not has_condition(target, "prone"):
         if target.get("distance", 0) == 0:
@@ -222,10 +309,10 @@ def _resolve_one_attack(session, attacker, target, atk_bonus, dmg_expr=None,
         sides = int(die[1:]) if die.startswith("d") else 6
         insp_bonus = random.randint(1, sides)
         reasons.append(f"الهام بارد +{insp_bonus}")
-    atk = raw + atk_bonus + insp_bonus
+    atk = raw + atk_bonus + insp_bonus + height_bonus
     crit = (raw == 20) or auto_crit or critical
     fumble = (raw == 1)
-    hit = (crit or (raw != 1 and atk >= target.get("ac", 10))) and not fumble
+    hit = (crit or (raw != 1 and atk >= target_ac)) and not fumble
     lines = []
     adv_tag = ""
     if mode == "adv":
@@ -264,8 +351,8 @@ def _resolve_one_attack(session, attacker, target, atk_bonus, dmg_expr=None,
                     real_char.conditions.remove("concentrating")
                     lines.append(f"⚠️ تمرکز {target['name']} شکست! (رول {save} در برابر DC {dc})")
         line = f"🎲 {attacker['name']} به {target['name']} حمله کرد: {atk} "
-        line += f"(رول {raw}{'+' + str(atk_bonus + insp_bonus) if (atk_bonus + insp_bonus) else ''}) "
-        line += f"(AC {target.get('ac', 10)}){adv_tag} — 💥 اصابت! {dmg} آسیب"
+        line += f"(رول {raw}{'+' + str(atk_bonus + insp_bonus + height_bonus) if (atk_bonus + insp_bonus + height_bonus) else ''}) "
+        line += f"(AC {target_ac}){adv_tag} — 💥 اصابت! {dmg} آسیب"
         if dmg_type != "bludgeoning":
             type_fa = {"fire": "آتش", "cold": "سرما", "lightning": "برق", "acid": "اسید",
                        "poison": "سم", "necrotic": "نکروز", "radiant": "تابشی", "force": "نیرو",
@@ -299,8 +386,11 @@ def _resolve_one_attack(session, attacker, target, atk_bonus, dmg_expr=None,
         return "\n".join(lines), downed
     else:
         miss_tag = " — لغزش دست!" if fumble else " — خطا!"
+        cover_tag = ""
+        if cover.get("ac_bonus", 0) > 0:
+            cover_tag = f" (پوشش +{cover['ac_bonus']})"
         line = f"🎲 {attacker['name']} به {target['name']} حمله کرد: {atk} "
-        line += f"(AC {target.get('ac', 10)}){adv_tag}{miss_tag}"
+        line += f"(AC {target_ac}){adv_tag}{cover_tag}{miss_tag}"
         return line, False
 
 
@@ -370,6 +460,9 @@ def start_combat(session: Session) -> str:
             "ac": ch.ac, "alive": True, "downed": not alive,
             "conditions": list(ch.conditions),
             "distance": 0,  # 0: نزدیک، 1: متوسط، 2: دور
+            "height": 0,    # -1 پایین‌تر، 0 هم‌سطح، 1 بالاتر، 2 بلندی کامل
+            "cover": "none",  # none/half/three_quarters/full
+            "surface": "none", # سطحی که روش ایستاده
             "acted": False,
             "bonus_acted": False,
             "reaction_available": True,
@@ -377,6 +470,10 @@ def start_combat(session: Session) -> str:
             "helped_by": None,
             "hidden": False,
             "_attacks_this_turn": 0,
+            "surprised": False,
+            "_main_attack_done": False,
+            "temp_ac_boost": 0,
+            "concentrating_on": None,
         })
 
     # دشمنان از سناریو
@@ -408,11 +505,18 @@ def start_combat(session: Session) -> str:
                     "is_boss": is_boss,
                     "ability": e.get("ability", ""),
                     "distance": 0,
+                    "height": 0,
+                    "cover": "none",
+                    "surface": "none",
                     "acted": False,
                     "bonus_acted": False,
                     "reaction_available": True,
                     "disengage_active": False,
                     "_attacks_this_turn": 0,
+                    "surprised": False,
+                    "_main_attack_done": False,
+                    "temp_ac_boost": 0,
+                    "marked_by": None,
                 })
     if not monsters:
         # نبرد پیش‌فرض برای وقتی سناریویی نیست
@@ -423,9 +527,11 @@ def start_combat(session: Session) -> str:
                 "init": roll_d20() + 2, "hp": 7, "max_hp": 7, "ac": 15,
                 "dmg": "1d6+2", "atk_bonus": 2, "xp": 50,
                 "alive": True, "conditions": [], "is_boss": False,
-                "distance": 0, "acted": False, "bonus_acted": False,
+                "distance": 0, "height": 0, "cover": "none", "surface": "none",
+                "acted": False, "bonus_acted": False,
                 "reaction_available": True, "disengage_active": False,
-                "_attacks_this_turn": 0,
+                "_attacks_this_turn": 0, "surprised": False,
+                "_main_attack_done": False, "temp_ac_boost": 0,
             })
     combat["participants"].extend(monsters)
 
@@ -723,10 +829,29 @@ def auto_act(session: Session, mon: dict) -> str:
                 hit_msg, _ = _resolve_one_attack(session, mon, target, atk_bonus + 2)
                 parts.append("⚡ حمله قدرتمند اضافی!\n" + hit_msg)
 
-    target = random.choice(players)
+    # هدف‌گیری هوشمند: اول سراغ بازیکنی که پایین‌ترین HP را دارد (بکشد)، مگر در ۳۰٪ مواقع سراغ جادوگر/نزدیک‌ترین
+    if players:
+        alive_players = [p for p in players if p.get("hp", 0) > 0]
+        if alive_players:
+            # ۶۰٪ ضعیف‌ترین، ۲۰٪ اولین، ۲۰٪ تصادفی
+            r = random.random()
+            if r < 0.6:
+                target = min(alive_players, key=lambda p: p.get("hp", 999))
+            elif r < 0.8:
+                target = alive_players[0]
+            else:
+                target = random.choice(alive_players)
     for _i in range(n_atks):
-        hit_msg, downed = _resolve_one_attack(session, mon, target, atk_bonus)
+        if not target or target.get("hp", 0) <= 0:
+            alive_players = [p for p in players if p.get("hp", 0) > 0]
+            if not alive_players:
+                break
+            target = min(alive_players, key=lambda p: p.get("hp", 999))
+        hit_msg, downed = _resolve_one_attack(session, mon, target, atk_bonus,
+                                              extra_dmg_dice=["1d6"] if mon.get("_boss_extra_dmg") else None)
         parts.append(hit_msg)
+        if target.get("kind") == "player":
+            target["last_attacker"] = mon["name"]
         if downed or target.get("hp", 0) <= 0:
             new_players = [p for p in session.combat["participants"]
                            if p["kind"] == "player"
@@ -810,7 +935,7 @@ def attack(session: Session, uid: int, target_name: str, is_bonus_offhand=False)
            and p.get("hp", 0) > 0 and p.get("distance", 0) == target.get("distance", 0):
             has_ally_adjacent = True
             break
-    has_adv, has_dis, _, _ = _calc_attack_adv_dis(cur, target, is_ranged)
+    has_adv, has_dis, _, _, _, _ = _calc_attack_adv_dis(cur, target, is_ranged)
 
     parts = []
     killed = False
@@ -845,6 +970,12 @@ def attack(session: Session, uid: int, target_name: str, is_bonus_offhand=False)
             extra_dice.append(f"{sa_dice_count}d6")
             parts.append(f"🗡️ **حمله غافلگیرانه!**")
         extra_dice.extend(marked_dice)
+        # بونس دیپ آتش/سم
+        dip_dice = None
+        if cur.get("dipped"):
+            dip_dice = ["1d4"]
+            extra_dice.append("1d4")
+            cur.pop("dipped", None)
         hit_msg, downed = _resolve_one_attack(
             session, cur, target, atk_bonus,
             dmg_expr=weapon["dmg"], dmg_type=dmg_type,
@@ -853,6 +984,7 @@ def attack(session: Session, uid: int, target_name: str, is_bonus_offhand=False)
             dmg_modifier=static_dmg_mod + rage_dmg,
         )
         parts.append(hit_msg)
+        target["last_attacker"] = cur["name"]
         if target.get("hp", 0) <= 0:
             target["alive"] = False
             combat["xp_pool"] += target["xp"]
@@ -964,15 +1096,327 @@ def move_action(session: Session, uid: int, where: str) -> str:
 
 
 def dash(session: Session, uid: int) -> str:
-    """اکشن Dash: حرکت اضافه — در مدل ساده ما باعث می‌شود می‌توانی دو مرحله دور شوی/نزدیک شوی و حمله فرصت را نادیده می‌گیری اگر disengage نگرفتی."""
+    """اکشن Dash: حرکت اضافه — دو برابر حرکت، در ساده‌سازی disengage فعال می‌کند تا حمله فرصت نخوری."""
     if not is_player_turn(session, uid):
         return "هنوز نوبت تو نیست."
     cur = session.combat["participants"][session.combat["turn"]]
     if cur.get("downed") or cur.get("dead"):
         return "نمی‌توانی حرکت کنی."
     cur["acted"] = True
+    cur["dashing"] = True
+    cur["disengage_active"] = True  # با سرعت عبور می‌کنی، حمله فرصت نمی‌دهی
     session.add_log(cur["name"], "اکشن دویدن (Dash) گرفت")
-    return f"🏃 {cur['name']} دوید! حالا می‌توانی به `/move near|far|flee` حرکت کنی، حمله فرصت یک بار کمتر است."
+    return f"🏃 {cur['name']} دوید! حالا می‌توانی `/move` کنی — بدون حمله فرصت و به فاصله دورتر."
+
+
+def move_action(session: Session, uid: int, where: str) -> str:
+    """حرکت در نبرد: near/far/flee/high/low/cover/full/open."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    ch = get_participant_ch(session, cur)
+    if cur.get("downed") or cur.get("dead"):
+        return "نمی‌توانی حرکت کنی."
+    cur_dist = cur.get("distance", 0)
+    cur_h = cur.get("height", 0)
+    msgs = []
+    # شروع نوبت: اثرات سطح
+    msgs.extend(_surface_effects_start_turn(cur, session))
+    if cur.get("downed"):
+        # اثر سطح تو را از پای در آورد
+        return "\n".join(msgs)
+    w = where.strip().lower()
+    if w in ("near", "جلو", "نزدیک"):
+        if cur_dist == 0:
+            return "همین الان در نزدیکی هستی!"
+        opp = []
+        if not cur.get("disengage_active", False):
+            opp = _trigger_opportunity_attacks(session, cur, cur_dist, 0)
+        msgs.extend(opp)
+        cur["distance"] = 0
+        msgs.append(f"🏃 {cur['name']} به خط مقدم دوید!")
+    elif w in ("far", "عقب", "دور"):
+        if cur_dist > 0:
+            return "همین الان دور هستی!"
+        opp = []
+        if not cur.get("disengage_active", False):
+            opp = _trigger_opportunity_attacks(session, cur, cur_dist, 1)
+        msgs.extend(opp)
+        cur["distance"] = 1
+        msgs.append(f"🏹 {cur['name']} عقب رفت و در فاصله دور ایستاد (کمان/طلسم).")
+    elif w in ("flee", "فرار"):
+        opp = []
+        if not cur.get("disengage_active", False):
+            opp = _trigger_opportunity_attacks(session, cur, cur_dist, 2)
+        msgs.extend(opp)
+        cur["distance"] = 2
+        msgs.append(f"🏃💨 {cur['name']} در حال فرار است!")
+    elif w in ("high", "بالا", "highground"):
+        if cur_h >= 2:
+            return "همین الان در بلندترین نقطه هستی!"
+        cur["height"] = cur_h + 1
+        if cur["distance"] == 0:
+            cur["distance"] = 1
+        msgs.append(f"⛰️ {cur['name']} به بلندی صعود کرد! High Ground: +۲ به حمله.")
+    elif w in ("low", "پایین", "lowground"):
+        if cur_h <= -1:
+            return "در پایین‌ترین نقطه هستی."
+        cur["height"] = cur_h - 1
+        msgs.append(f"⬇️ {cur['name']} از بلندی پایین آمد.")
+    elif w in ("cover", "half", "پوشش", "نیم"):
+        cur["cover"] = "half"
+        msgs.append(f"🛡️ نیم‌پوشش! {cur['name']} پوشید، +2 AC.")
+    elif w in ("full_cover", "full", "کامل"):
+        cur["cover"] = "full"
+        msgs.append(f"🧱 پوشش کامل! {cur['name']} در پناه کامل قرار گرفت — حملات مستقیم اصابت نمی‌کنند.")
+    elif w in ("open", "باز", "بدون"):
+        cur["cover"] = "none"
+        msgs.append(f"🎯 {cur['name']} از پوشش بیرون آمد.")
+    else:
+        return "نوع حرکت نامعتبر: near | far | flee | high | low | cover | full | open"
+    return "\n".join(msgs)
+
+
+def jump_action(session: Session, uid: int, where: str = "near") -> str:
+    """پرش (بونس‌اکشن) BG3 — بدون حمله فرصت می‌پرد."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    ch = get_participant_ch(session, cur)
+    if cur.get("downed") or cur.get("dead"):
+        return "نمی‌توانی بپری."
+    if cur.get("bonus_acted"):
+        return "بونس‌اکشنت را قبلاً استفاده کردی!"
+    cur["bonus_acted"] = True
+    if ch:
+        ch.bonus_action_available = False
+    cur["disengage_active"] = True
+    w = (where or "near").lower()
+    if w in ("far", "high"):
+        cur["height"] = min(2, cur.get("height", 0) + 1)
+        cur["distance"] = max(1, cur.get("distance", 0))
+        return f"🦘 **پرش!** {cur['name']} با پرش خود را به بلندی رساند! (High Ground +2 به حمله، بدون حمله فرصت)"
+    elif w in ("flee", "over"):
+        cur["distance"] = min(2, cur.get("distance", 0) + 2)
+        return f"🦘 **پرش بلند!** {cur['name']} از روی شکاف/ردیف دشمنان پرید!"
+    else:
+        return f"🦘 **پرش!** {cur['name']} جلو پرید و بدون حمله فرصت جابجا شد."
+
+
+def help_up(session: Session, uid: int, target_name: str = "") -> str:
+    """بلند کردن هم‌گروهی زمین‌گیر (Help Up) — اکشن اصلی."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    if cur.get("downed") or cur.get("dead"):
+        return "نمی‌توانی کمک کنی."
+    if cur.get("acted"):
+        return "اکشن اصلی‌ات را قبلاً زدی!"
+    target = None
+    for p in session.combat["participants"]:
+        if p["kind"] == "player" and p.get("downed") and (not target_name or target_name.lower() in p["name"].lower()):
+            if p.get("uid") != str(uid):
+                target = p
+                break
+    if not target:
+        return "هم‌گروهی زمین‌گیر در نزدیکی پیدا نشد!"
+    if abs(target.get("distance", 0) - cur.get("distance", 0)) > 0:
+        return f"{target['name']} در نزدیکی تو نیست — `/move near`."
+    cur["acted"] = True
+    target["downed"] = False
+    target["hp"] = 1
+    ch_t = get_participant_ch(session, target)
+    if ch_t:
+        ch_t.hp = 1
+        ch_t.death_saves = {"success": 0, "fail": 0}
+    return f"🤝 {cur['name']} {target['name']} را بلند کرد! (۱ HP برگشت)"
+
+
+def throw_action(session: Session, uid: int, item: str, target_name: str = "") -> str:
+    """پرتاب آیتم BG3-style (بونس‌اکشن) — معجون شفا، مشعل، روغن."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    ch = get_participant_ch(session, cur)
+    if not ch:
+        return "کاراکترت پیدا نشد."
+    if cur.get("downed"):
+        return "زمین‌گیری!"
+    if cur.get("bonus_acted"):
+        return "بونس‌اکشنت تمام شده!"
+    item = (item or "").lower().strip()
+    target = _find_target(session.combat, target_name) if target_name else None
+    parts = []
+    if item in ("potion", "healing", "معجون", "شفا"):
+        if ch.inventory.get("potion", 0) <= 0:
+            return "معجون شفا نداری!"
+        ch.inventory["potion"] -= 1
+        if not target:
+            allies = [p for p in session.combat["participants"] if p["kind"] == "player" and p.get("hp", 0) > 0 and p.get("hp", 0) < p.get("max_hp", 10)]
+            target = min(allies, key=lambda x: x["hp"], default=cur)
+        if target["kind"] == "player":
+            real = get_participant_ch(session, target)
+            heal = sum(roll_dice(2, 4)) + 2
+            if real:
+                healed = real.heal(heal)
+                target["hp"] = real.hp
+            else:
+                healed = heal
+                target["hp"] = min(target["max_hp"], target["hp"] + healed)
+            target["downed"] = False
+            parts.append(f"🧪 معجون شفا به {target['name']} خورد! {healed} HP التیام.")
+        else:
+            dmg = _roll_damage("1d2")
+            target["hp"] = max(0, target["hp"] - dmg)
+            parts.append(f"🧪 معجون به سر {target['name']} خورد: {dmg} آسیب.")
+    elif item in ("torch", "آتش", "مشعل"):
+        if not target:
+            return "هدف بده: `/throw torch گابلین`"
+        target["surface"] = "fire"
+        dmg = _roll_damage("1d4")
+        target["hp"] = max(0, target["hp"] - dmg)
+        parts.append(f"🔥 مشعل به {target['name']} خورد! آتش گرفت و {dmg} آسیب آتش.")
+    elif item in ("grease", "oil", "روغن", "بطری"):
+        if target:
+            target["surface"] = "oil"
+            parts.append(f"🛢️ روغن زیر {target['name']} ریخت — سطح لغزنده شد.")
+    else:
+        if not target:
+            return "هدفی برای پرتاب انتخاب کن."
+        dmg = _roll_damage("1d4")
+        target["hp"] = max(0, target["hp"] - dmg)
+        parts.append(f"🪨 جسمی به {target['name']} خورد: {dmg} آسیب.")
+    cur["bonus_acted"] = True
+    ch.bonus_action_available = False
+    if target and target.get("hp", 0) <= 0 and target.get("kind") == "monster" and target.get("alive"):
+        target["alive"] = False
+        session.combat["xp_pool"] += target["xp"]
+        parts.append(f"☠️ {target['name']} نابود شد! (+{target['xp']} XP)")
+    return "\n".join(parts)
+
+
+def dip_weapon(session: Session, uid: int, element: str = "fire") -> str:
+    """Dip Weapon (بونس‌اکشن) در BG3 — سلاح را در آتش/سم می‌زند 1d4 آسیب اضافی."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    ch = get_participant_ch(session, cur)
+    if not ch:
+        return "کاراکترت پیدا نشد."
+    if cur.get("bonus_acted"):
+        return "بونس‌اکشنت تمام شده!"
+    cur["bonus_acted"] = True
+    ch.bonus_action_available = False
+    cur["dipped"] = (element or "fire").lower()
+    if element in ("fire", "آتش"):
+        return f"🔥 سلاح در آتش فرو رفت! ضربه بعدی 1d4 آسیب آتش اضافه می‌زند."
+    elif element in ("poison", "سم"):
+        return f"☠️ سلاح به سم آغشته شد! ضربه بعدی 1d4 آسیب سم اضافه."
+    return f"💧 سلاح در {element} فرو رفت."
+
+
+def shove(session: Session, uid: int, target_name: str = "") -> str:
+    """Shove BG3: می‌تواند هدف را prone کند یا به پرتگاه/آتش هل دهد."""
+    combat = _combat(session)
+    ch = session.get_char(uid)
+    if not ch:
+        return "کاراکترت پیدا نشد."
+    cur = combat["participants"][combat["turn"]]
+    if cur.get("uid") != str(uid):
+        return "نوبت تو نیست."
+    if cur.get("acted"):
+        return "اکشن اصلی را قبلاً گرفتی!"
+    target = _find_target(combat, target_name)
+    if not target:
+        names = ", ".join(p["name"] for p in combat["participants"] if p["kind"] == "monster" and p["alive"])
+        return f"هدف پیدا نشد. دشمنان: {names}"
+    cur["acted"] = True
+    mod_att = ch.stat_mod("STR") + (proficiency_bonus(ch.level) if "athletics" in ch.proficiencies else 0)
+    mod_def = target.get("atk_bonus", 2)
+    r_a = roll_d20() + mod_att
+    r_d = roll_d20() + mod_def
+    off_edge = target.get("distance", 0) >= 1 or target.get("height", 0) > 0
+    if r_a > r_d:
+        # آیا سطح خطرناک جلوش هست؟
+        if target.get("surface") in ("fire", "acid", "ice"):
+            target["distance"] = 0
+            target.setdefault("conditions", []).append("prone")
+            dmg = _roll_damage("2d4")
+            target["hp"] = max(0, target["hp"] - dmg)
+            surf_fa = {"fire": "آتش", "acid": "اسید", "ice": "یخ"}.get(target["surface"], target["surface"])
+            return f"💪 {cur['name']} {target['name']} را به داخل {surf_fa} هل داد! {dmg} آسیب و prone شد."
+        if off_edge:
+            target["alive"] = False
+            target["hp"] = 0
+            combat["xp_pool"] += target["xp"]
+            return f"🕳️💥 **هل به پرتگاه!** {cur['name']} {target['name']} را از بلندی به پایین هل داد!\n☠️ سقوط کرد و مرد! (+{target['xp']} XP)"
+        # معمولی: انداختن روی زمین
+        target.setdefault("conditions", []).append("prone")
+        target["distance"] = max(0, target.get("distance", 0) - 1)
+        return f"💪 {cur['name']} {target['name']} را هل داد و روی زمین انداخت! (رول {r_a} در مقابل {r_d})"
+    else:
+        return f"🦵 هل دادن ناموفق بود! {target['name']} مقاومت کرد ({r_a} در مقابل {r_d})."
+
+
+def cunning_action(session: Session, uid: int, what: str = "disengage") -> str:
+    """Cunning Action راگ: dash/disengage/hide به عنوان بونس‌اکشن."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    ch = get_participant_ch(session, cur)
+    if not ch:
+        return "کاراکترت پیدا نشد."
+    if ch.cls != "rogue":
+        return "این فقط برای راگ (Cunning Action) است."
+    if cur.get("bonus_acted"):
+        return "بونس‌اکشنت تمام شده!"
+    cur["bonus_acted"] = True
+    ch.bonus_action_available = False
+    if what in ("dash", "دو"):
+        cur["dashing"] = True
+        cur["disengage_active"] = True
+        return f"🗡️ **Cunning Action: Dash** — {cur['name']} با حرکتی حیله‌گرانه دو برابر سریع‌تر حرکت می‌کند."
+    elif what in ("hide", "مخفی"):
+        return hide(session, uid)
+    else:
+        cur["disengage_active"] = True
+        return f"🗡️ **Cunning Action: Disengage** — {cur['name']} بدون حمله فرصت می‌تواند دور شود."
+
+
+def hellish_rebuke(session: Session, uid: int) -> str:
+    """Hellish Rebuke تیفلینگ (ری‌اکشن) — 2d10 آتش در پاسخ به آسیب."""
+    combat = _combat(session)
+    ch = session.get_char(uid)
+    if not ch:
+        return "کاراکترت پیدا نشد."
+    if ch.race != "tiefling":
+        return "این قابلیت فقط برای تیفلینگ است."
+    if "hellish_rebuke" not in ch.resources:
+        ch.resources["hellish_rebuke"] = {"max": 1, "used": 0, "per": "long"}
+    if ch.resources["hellish_rebuke"].get("used", 0) >= 1:
+        return "نفس جهنمی را در این استراحت استفاده کردی!"
+    cur = next((p for p in combat["participants"] if p.get("kind") == "player" and p.get("uid") == str(uid)), None)
+    if not cur:
+        return "در نبرد نیستی!"
+    if not cur.get("reaction_available", True):
+        return "ری‌اکشنت استفاده شده!"
+    last_attacker = cur.get("last_attacker")
+    if not last_attacker:
+        return "کسی هنوز به تو حمله نکرد!"
+    target = next((p for p in combat["participants"] if p.get("name") == last_attacker and p.get("alive")), None)
+    if not target:
+        return "مهاجم در میدان نیست!"
+    cur["reaction_available"] = False
+    ch.reaction_available = False
+    ch.resources["hellish_rebuke"]["used"] = 1
+    dmg = sum(roll_dice(2, 10))
+    target["hp"] = max(0, target["hp"] - dmg)
+    msg = f"😈 **Hellish Rebuke!** شعله‌های جهنم از {cur['name']} به {target['name']} زبانه می‌کشد: 🔥 {dmg} آسیب آتش!"
+    if target["hp"] <= 0:
+        target["alive"] = False
+        combat["xp_pool"] += target["xp"]
+        msg += f"\n☠️ {target['name']} سوخت! (+{target['xp']} XP)"
+    return msg
 
 
 def disengage(session: Session, uid: int) -> str:

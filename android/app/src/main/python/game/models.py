@@ -6,7 +6,7 @@ import string
 from .rules import (
     ABILITIES, RACES, CLASSES, WEAPONS, SPELLS, WEAPON_RANGES,
     STANDARD_ARRAY, ability_mod, level_from_xp, proficiency_bonus,
-    DEFAULT_PROFICIENCIES, CONDITIONS,
+    DEFAULT_PROFICIENCIES, CONDITIONS, COVER_TYPES, SURFACE_TYPES,
 )
 
 

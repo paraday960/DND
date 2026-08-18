@@ -11,6 +11,40 @@ ABILITY_FA = {
     "CHA": "جذابیت",
 }
 
+# ---------------- مکانیک‌های پیشرفته نبرد (BG3-style) ----------------
+# جدول پوشش
+COVER_TYPES = {
+    "none": {"fa": "بدون پوشش", "ac_bonus": 0, "save_bonus": 0},
+    "half": {"fa": "نیم‌پوشش", "ac_bonus": 2, "save_bonus": 2},
+    "three_quarters": {"fa": "سه‌چهارم پوشش", "ac_bonus": 5, "save_bonus": 5},
+    "full": {"fa": "پوشش کامل", "blocks_attacks": True},
+}
+
+# ارتفاع
+HEIGHT_BONUS_ATK = 2  # بلند بودن در BG3 +2 به حمله می‌دهد
+HEIGHT_DIS_ATK = 0    # پایین بودن در 5e ضعف می‌دهد
+
+# انواع سطوح (Surface Effects)
+SURFACE_TYPES = {
+    "fire": {"fa": "آتش", "dmg": "1d4", "dmg_type": "fire", "turn_dmg": True},
+    "ice": {"fa": "یخ", "save_dc": 10, "save_stat": "DEX", "fail_prone": True},
+    "water": {"fa": "آب", "shocked_by_lightning": True, "put_out_fire": True},
+    "acid": {"fa": "اسید", "ac_penalty": -2, "dmg": "1d4", "dmg_type": "acid", "turn_dmg": True},
+    "oil": {"fa": "روغن", "ignitable": True, "slippery": True},
+    "blood": {"fa": "خون", "slippery": True},
+    "poison_cloud": {"fa": "ابر سم", "dmg": "1d4", "dmg_type": "poison", "turn_dmg": True, "save_con": True},
+    "darkness": {"fa": "تاریکی", "blinded": True},
+}
+
+# تعداد دستورات
+ACTION_ECONOMY = {
+    "main_action": True,
+    "bonus_action": True,
+    "reaction": True,
+    "free_movement": True,
+    "free_object_interaction": True,
+}
+
 # ---------------- وضعیت‌های استاندارد D&D 5e ----------------
 CONDITIONS = {
     "blinded": {"fa": "کور", "effects": ["همه رول‌های حمله و مهارت با ضعف", "حملات به تو با مزیت"]},

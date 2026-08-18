@@ -141,38 +141,44 @@ def watchdog(app: Application):
                 logger.error("تنظیم مجدد وب‌هوک ناموفق: %s", e)
 
 COMMANDS = [
-    BotCommand("newgame", "🎮 ساخت اتاق بازی (میزبان)"),
-    BotCommand("join", "🔗 پیوستن به اتاق با کد"),
+    BotCommand("newgame", "🎮 ساخت اتاق بازی"),
+    BotCommand("join", "🔗 پیوستن به اتاق"),
     BotCommand("newchar", "🧙 ساخت کاراکتر"),
     BotCommand("sheet", "📜 کاراکتر من"),
     BotCommand("party", "👥 گروه"),
     BotCommand("roll", "🎲 تاس: /roll 2d6+3"),
-    BotCommand("scenario", "🐉 ساخت سناریو با AI (میزبان)"),
-    BotCommand("story", "📖 روایت اقدام بازیکن با AI"),
-    BotCommand("where", "🗺️ وضعیت فعلی ماجرا"),
-    BotCommand("combat", "⚔️ شروع نبرد (initiative خودکار)"),
-    BotCommand("attack", "🎯 حمله اصلی: /attack <دشمن>"),
-    BotCommand("cast", "✨ طلسم: /cast firebolt گابلین"),
-    BotCommand("dash", "🏃 دویدن/حرکت اضافه"),
+    BotCommand("scenario", "🐉 ساخت سناریو با AI"),
+    BotCommand("story", "📖 روایت با AI"),
+    BotCommand("where", "🗺️ وضعیت ماجرا"),
+    BotCommand("combat", "⚔️ شروع نبرد"),
+    BotCommand("attack", "🎯 حمله: /attack <دشمن>"),
+    BotCommand("cast", "✨ طلسم"),
+    BotCommand("dash", "🏃 دویدن/حرکت مضاعف"),
     BotCommand("disengage", "🚪 عقب‌نشینی امن"),
+    BotCommand("dodge", "🛡️ دفاع فعال"),
     BotCommand("help_act", "🤝 کمک به هم‌گروهی"),
     BotCommand("hide", "🙈 پنهان شدن"),
     BotCommand("shove", "💪 هل دادن دشمن"),
-    BotCommand("dodge", "🛡️ دفاع فعال"),
-    BotCommand("move", "🚶 حرکت در نبرد: near|far|flee"),
-    BotCommand("rage", "🪓 خشم بربر (Bonus)"),
-    BotCommand("inspire", "🎻 الهام بَرد (Bonus)"),
     BotCommand("secondwind", "💨 نفس دوم جنگجو"),
     BotCommand("actionsurge", "⚡ اکشن اضافه جنگجو"),
+    BotCommand("rage", "🪓 خشم بربر"),
+    BotCommand("inspire", "🎻 الهام بارد"),
+    BotCommand("smite", "✨ Divine Smite پالادین"),
+    BotCommand("offhand", "🗡️ حمله دست دوم"),
+    BotCommand("move", "🚶 حرکت در نبرد"),
+    BotCommand("jump", "🦘 پرش (بونس‌اکشن)"),
+    BotCommand("helpup", "🤝 بلند کردن دوست"),
+    BotCommand("throw", "🧪 پرتاب آیتم"),
+    BotCommand("dip", "🔥 فروبردن سلاح در آتش"),
+    BotCommand("cunning", "🗡️ Cunning Action راگ"),
+    BotCommand("rebuke", "😈 Hellish Rebuke تیفلینگ"),
     BotCommand("skip", "⏭️ رد نوبت"),
     BotCommand("deathsave", "💀 نجات از مرگ"),
     BotCommand("combatend", "🏁 پایان نبرد"),
-    BotCommand("levelup", "⭐ ارتقای سطح"),
-    BotCommand("xp", "💠 وضعیت تجربه"),
-    BotCommand("check", "🎲 آزمایش مهارت: /check stealth 15"),
-    BotCommand("rest", "🔥 استراحت: /rest short|long"),
+    BotCommand("check", "🎲 آزمایش مهارت"),
+    BotCommand("rest", "🔥 استراحت"),
     BotCommand("inventory", "🎒 موجودی"),
-    BotCommand("use", "🧪 استفاده از آیتم: /use potion"),
+    BotCommand("use", "🧪 استفاده از آیتم"),
     BotCommand("help", "📚 راهنما"),
 ]
 
@@ -232,6 +238,12 @@ def build_app(store=None, narrator=None) -> Application:
     app.add_handler(CommandHandler("actionsurge", handlers.actionsurge_cmd))
     app.add_handler(CommandHandler("offhand", handlers.offhand_cmd))
     app.add_handler(CommandHandler("smite", handlers.smite_cmd))
+    app.add_handler(CommandHandler("jump", handlers.jump_cmd))
+    app.add_handler(CommandHandler("helpup", handlers.help_up_cmd))
+    app.add_handler(CommandHandler("throw", handlers.throw_cmd))
+    app.add_handler(CommandHandler("dip", handlers.dip_cmd))
+    app.add_handler(CommandHandler("cunning", handlers.cunning_cmd))
+    app.add_handler(CommandHandler("rebuke", handlers.rebuke_cmd))
     app.add_handler(CommandHandler("skip", handlers.skip_cmd))
     app.add_handler(CommandHandler("deathsave", handlers.deathsave_cmd))
     app.add_handler(CommandHandler("combatend", handlers.combatend_cmd))
