@@ -663,7 +663,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         persist(room)
         return api_ok({"messages": msgs, "state": build_state(room, user)})
 
-    def _combat_action(action_fn):
+    def _combat_action(action_fn, advance_after=True):
         user, err = need_user()
         if err:
             return err
@@ -673,11 +673,22 @@ def build_app(store, narrator, telegram_app=None, loop=None):
             return api_err("اتاق پیدا نشد!")
         if not room.combat:
             return api_err("نبردی در جریان نیست.")
-        before = len(room.log)
-        msgs = [action_fn(room, user["id"])]
-        # حمله/طلسم ناموفق نباید نوبت بازیکن را بسوزاند.
-        if len(room.log) > before:
-            msgs += do_advance(room)
+        # اکشن‌های بونس‌اکشن بر اساس نام تابع تشخیص داده می‌شوند و نوبت را نمی‌سوزانند
+        BONUS_FN_NAMES = {"rage", "bardic_inspiration", "offhand_attack", "divine_smite",
+                         "cunning_action", "hellish_rebuke", "jump_action", "throw_action",
+                         "dip_weapon", "help_up"}
+        is_bonus = advance_after is False or getattr(action_fn, "__name__", "") in BONUS_FN_NAMES
+        result_text = action_fn(room, user["id"])
+        # پیام‌های خطا با این کلمات شروع می‌شوند → نوبت نسوزان
+        error_prefixes = ("هنوز نوبت", "نمی‌توانی", "این قابلیت فقط", "تعداد", "هم‌گروهی",
+                         "کاراکترت", "سلاح", "هدف پیدا نشد", "اکشن اصلی", "بونس‌اکشن",
+                         "نبردی", "جایگاه", "نفس اژدها را", "فقط می‌توانی", "تو زمین",
+                         "مردی", "نوبت تو نیست")
+        success = bool(result_text) and not result_text.startswith(error_prefixes)
+        if not is_bonus and success:
+            msgs = [result_text] + do_advance(room)
+        else:
+            msgs = [result_text]
         persist(room)
         return api_ok({"messages": msgs, "state": build_state(room, user)})
 
