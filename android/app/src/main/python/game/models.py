@@ -59,7 +59,9 @@ class Character:
             self.max_hp = hit_die + (level - 1) * avg + con_mod * level
         self.max_hp = max(self.max_hp, level)
         self.hp = self.max_hp
-        # زره ساده: کلاس‌های زره‌پوش +۲ AC
+        # زره پیش‌فرض (بعداً با equipment.eqip_armor به‌روز می‌شود)
+        self.armor = "medium" if CLASSES[cls].get("armor") else "none"
+        # محاسبه اولیه AC
         armor_bonus = 2 if CLASSES[cls]["armor"] else 0
         self.ac = 10 + ability_mod(self.abilities["DEX"]) + armor_bonus
 
@@ -112,15 +114,41 @@ class Character:
         gain = self.hit_die + con_mod
         self.max_hp += max(gain, 1)
         self.hp = self.max_hp
+        # ارتقای طلسم‌ها
+        if self.cls in ("wizard", "cleric", "druid", "bard", "sorcerer", "warlock", "paladin", "ranger"):
+            self.spell_slots = self._initial_spell_slots()
+            self.spell_slots_used = {}
+        # یادگیری فیچر جدید بر اساس سطح
+        gained = []
+        new_features = self.features()
+        if hasattr(self, "_known_features"):
+            for f in new_features:
+                if f not in self._known_features:
+                    gained.append(f)
+        self._known_features = list(new_features)
         return {"old": old_level, "new": self.level, "hp_gain": max(gain, 1),
-                "features": self.features()}
+                "features": new_features, "gained_features": gained}
 
     def features(self) -> list:
         f = list(CLASSES[self.cls]["features"])
+        if self.level >= 2:
+            f.append("واکنش (Reaction)")
+        if self.level >= 3:
+            f.append("مسیر تخصصی (Subclass)")
         if self.level >= 5:
             f.append("حمله اضافه (Extra Attack)")
         if self.level >= 3 and self.cls in ("wizard", "sorcerer", "bard", "warlock", "druid", "cleric"):
             f.append("طلسم سطح ۲")
+        if self.level >= 6 and self.cls in ("wizard", "sorcerer", "bard", "warlock", "druid", "cleric"):
+            f.append("طلسم سطح ۳")
+        if self.level >= 9 and self.cls in ("wizard", "sorcerer", "cleric", "druid"):
+            f.append("طلسم سطح ۵")
+        if self.level >= 10:
+            f.append("بهبود ability score (+2)")
+        if self.level >= 15:
+            f.append("ویژگی پیشرفته کلاس")
+        if self.level >= 20:
+            f.append("قابلیت نهایی (Capstone)")
         return f
 
     def heal(self, amount: int) -> int:
@@ -190,6 +218,7 @@ class Session:
 
     def __init__(self, chat_id: int, name: str, dm_id: int, dm_name: str):
         self.chat_id = chat_id
+        self.host_chat_id = chat_id  # چتی که نبرد در آن اجرا می‌شود
         self.name = name
         self.code = gen_code()
         self.dm_id = dm_id
@@ -204,16 +233,19 @@ class Session:
         # مثلاً {"light": "torch", "location": "تالار ورودی", "flags": {...}}
         self.world = {"light": "dark", "location": "", "flags": {}}
         self.campaign = None  # dict کمپین چندفصلی
+        self.npc_memory = {}  # حافظه گفتگو با NPCها
         self.add_player(dm_id, dm_name)
 
     # ---------- بازیکن‌ها ----------
-    def add_player(self, uid: int, uname: str) -> str:
-        """بازیکن اضافه می‌کند؛ اگر ظرفیت پر باشد خطا برمی‌گرداند."""
+    def add_player(self, uid: int, uname: str, chat_id: int = None) -> str:
+        """بازیکن اضافه می‌کند؛ اگر ظرفیت پر باشد خطا برمی‌گرداند.
+        chat_id اولین چتی است که بازیکن از آن وارد شده (برای یادآوری)."""
         if str(uid) in self.players:
             return "already"
         if len(self.players) >= 8:
             return "full"
-        self.players[str(uid)] = {"user": uname, "char": None}
+        self.players[str(uid)] = {"user": uname, "char": None,
+                                  "chat_id": chat_id or self.host_chat_id}
         return "ok"
 
     def get_char(self, uid: int):
@@ -228,6 +260,19 @@ class Session:
         return sum(1 for p in self.players.values() if p["char"])
 
     # ---------- لاگ ----------
+    def alive_players(self) -> list:
+        """لیست uid بازیکنان زنده و آگاه در نبرد."""
+        if not self.combat:
+            return []
+        out = []
+        for p in self.combat.get("participants", []):
+            if p.get("kind") != "player":
+                continue
+            if p.get("dead") or p.get("downed") or p.get("hp", 0) <= 0:
+                continue
+            out.append(p)
+        return out
+
     def add_log(self, who: str, what: str):
         self.log.append({"who": who, "what": what})
         if len(self.log) > 60:
@@ -240,6 +285,27 @@ class Session:
         return "\n".join(parts) or "(هنوز اتفاقی نیفتاده)"
 
     # ---------- سناریو ----------
+    @staticmethod
+    def _loc_name(l):
+        if isinstance(l, dict):
+            return l.get("name", str(l))
+        return str(l)
+
+    @staticmethod
+    def _npc_name(n):
+        if isinstance(n, dict):
+            role = f" ({n.get('role','')})" if n.get("role") else ""
+            return f"{n.get('name','؟')}{role}"
+        return str(n)
+
+    @staticmethod
+    def _tres_text(t):
+        if isinstance(t, dict):
+            qty = t.get("qty", "")
+            q = f" ×{qty}" if qty else ""
+            return f"{t.get('item','؟')}{q}"
+        return str(t)
+
     def scenario_text(self) -> str:
         if not self.scenario:
             return "(هنوز سناریویی ساخته نشده — DM با /scenario بسازد)"
@@ -248,16 +314,46 @@ class Session:
                f"\n🎯 **هدف:** {s.get('goal', '—')}",
                f"💡 **شروع:** {s.get('hook', '—')}"]
         if s.get("locations"):
-            out.append("\n🗺️ **مکان‌ها:** " + ", ".join(s["locations"]))
+            locs = []
+            for l in s["locations"]:
+                if isinstance(l, dict):
+                    hint = f" — {l.get('encounter_hint','')}" if l.get("encounter_hint") else ""
+                    locs.append(f"📍 {l.get('name','؟')}{hint}")
+                else:
+                    locs.append(f"📍 {l}")
+            out.append("\n🗺️ **مکان‌ها:**\n" + "\n".join(locs))
         if s.get("npcs"):
-            out.append("👥 **NPCها:** " + ", ".join(s["npcs"]))
+            out.append("👥 **شخصیت‌ها:** " + "، ".join(self._npc_name(n) for n in s["npcs"]))
         if s.get("encounters"):
             enc = []
             for e in s["encounters"]:
-                enc.append(f"{e.get('count', 1)}× {e.get('name', '؟')}")
-            out.append("⚔️ **رویارویی‌ها:** " + ", ".join(enc))
+                mark = " 👑" if e.get("is_boss") else ""
+                loc = f" ({e['location']})" if e.get("location") else ""
+                enc.append(f"{e.get('count', 1)}× {e.get('name', '؟')}{mark}{loc}")
+            out.append("⚔️ **رویارویی‌ها:**\n  • " + "\n  • ".join(enc))
+        if s.get("traps"):
+            tr = []
+            for t in s["traps"]:
+                if isinstance(t, dict):
+                    tr.append(f"🪤 {t.get('name','تله')} در {t.get('location','؟')} — DC {t.get('detect_dc','?')}")
+            if tr:
+                out.append("🪤 **تله‌های احتمالی:**\n  • " + "\n  • ".join(tr))
+        if s.get("branches"):
+            br = []
+            for b in s["branches"]:
+                if isinstance(b, dict):
+                    br.append(f"🔀 {b.get('text','؟')}")
+            if br:
+                out.append("🔀 **انتخاب‌ها:**\n  • " + "\n  • ".join(br[:4]))
+        if s.get("twist"):
+            out.append(f"🌀 **پیچ داستانی (برای DM):** ||{s['twist']}||")
         if s.get("treasure"):
-            out.append(f"💎 **گنج:** {s['treasure']}")
+            tlist = s["treasure"]
+            if isinstance(tlist, list):
+                out.append("💎 **گنج:** " + "، ".join(self._tres_text(t) for t in tlist))
+            else:
+                out.append(f"💎 **گنج:** {tlist}")
+        out.append("\n💬 حالا با `/story` یا نوشتن توصیف اکشن، ماجرا را شروع کنید!")
         return "\n".join(out)
 
     # ---------- سریال‌سازی ----------
@@ -272,6 +368,7 @@ class Session:
             "players": players, "scenario": self.scenario, "log": self.log,
             "combat": self.combat, "combat_xp": self.combat_xp,
             "world": self.world, "campaign": self.campaign,
+            "npc_memory": self.npc_memory,
         }
 
     @classmethod
@@ -285,6 +382,7 @@ class Session:
         s.combat_xp = d.get("combat_xp", 0)
         s.world = d.get("world") or {"light": "dark", "location": "", "flags": {}}
         s.campaign = d.get("campaign")
+        s.npc_memory = d.get("npc_memory", {})
         s.players = {}
         for uid, p in (d.get("players") or {}).items():
             char = Character.from_dict(p["char"]) if p.get("char") else None

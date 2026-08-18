@@ -19,7 +19,8 @@ def _load_dotenv():
 _load_dotenv()
 
 # ---------- تلگرام ----------
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+# strip() تا فاصله/خط جدیدی که موقع کپی توکن اضافه می‌شود، اعتبارسنجی را خراب نکند
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 
 # ---------- هوش مصنوعی (همه رایگان) ----------
 # انتخاب فراهم‌کننده: gemini | groq | openrouter | mistral | none

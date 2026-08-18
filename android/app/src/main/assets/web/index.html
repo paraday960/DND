@@ -204,18 +204,17 @@
       <div id="scenarioCard"></div>
       <div class="sec-title">📜 دفترچه ماجرا</div>
       <div class="feed" id="feed"></div>
-      <div class="chips">
-        <button class="chip dice" onclick="quickRoll('d20')">🎲 d20</button>
-        <button class="chip dice" onclick="quickRoll('2d6')">🎲 2d6</button>
-        <button class="chip dice" onclick="quickRoll('d8')">🎲 d8</button>
-        <button class="chip dice" onclick="quickRoll('adv')">🎲 adv</button>
-        <button class="chip" onclick="genScenario()">🐉 سناریوی جدید (DM)</button>
-        <button class="chip" onclick="whereNow()">🗺️ خلاصه ماجرا</button>
-      </div>
       <div class="story-input">
         <input id="inpAction" placeholder="اقدامت را بنویس... مثلاً: درِ کهنه را باز می‌کنم" maxlength="200"
                onkeydown="if(event.key==='Enter')sendAction()">
         <button class="btn gold" id="btnStory" onclick="sendAction()">بفرست ✨</button>
+      </div>
+      <div class="chips" style="margin-top:10px">
+        <button class="chip dice" onclick="quickRoll('d20')">🎲 d20</button>
+        <button class="chip dice" onclick="quickRoll('2d6')">🎲 2d6</button>
+        <button class="chip dice" onclick="quickRoll('d8')">🎲 d8</button>
+        <button class="chip dice" onclick="quickRoll('dis')">🎲 dis</button>
+        <button class="chip" onclick="doRest()">🔥 استراحت</button>
       </div>
     </div>
 
@@ -306,20 +305,53 @@ function render() {
   renderScenario(); renderFeed(); renderCombat(); renderChar(); renderParty();
   if (S.combat) { $('#combatBadge').classList.remove('hidden'); } else { $('#combatBadge').classList.add('hidden'); }
 }
+function _locName(l){ return typeof l==='object' ? (l.name||'') : String(l); }
+function _npcName(n){ return typeof n==='object' ? (n.role? `${n.name} (${n.role})` : n.name) : String(n); }
+function _tresText(t){
+  if (!t) return '';
+  if (typeof t === 'string') return t;
+  if (Array.isArray(t)) return t.map(_tresText).filter(Boolean).join('، ');
+  const qty = t.qty ? ` ×${t.qty}` : '';
+  return `${t.item||'گنج'}${qty}`;
+}
 function renderScenario() {
   const box = $('#scenarioCard');
   if (!S.scenario) { box.innerHTML = ''; return; }
   const sc = S.scenario;
-  const enc = (sc.encounters||[]).map(e => `${e.count}× ${e.name}`).join('، ');
+  const cur = (S.room&&S.room.location)||'';
+  const locs = (sc.locations||[]).map(l=>{
+    const nm = _locName(l);
+    const isCur = nm === cur;
+    const hint = (typeof l==='object' && l.encounter_hint) ? ` — ${l.encounter_hint}` : '';
+    return `<span class="tag" style="${isCur?'background:#1d2440;border-color:var(--gold);color:var(--gold2)':''}">🗺️ ${esc(nm)}${hint?` <small style="opacity:.7">${esc(hint)}</small>`:''}</span>`;
+  }).join('');
+  const npcs = (sc.npcs||[]).map(n=>`<span class="tag">👤 ${esc(_npcName(n))}</span>`).join('');
+  const boss = sc.boss ? `<span class="tag" style="background:#2a1f12;border-color:#7a5a1a;color:var(--gold2)">👑 ${esc(sc.boss.name||'باس')}</span>` : '';
+  const traps = (sc.traps||[]).map(t=>`<span class="tag">🪤 ${esc(t.name||'تله')} DC ${t.detect_dc}</span>`).join('');
+  const branches = (sc.branches||[]).map(b=>`<span class="chip" onclick="document.getElementById('inpAction').value='${esc(b.text||'').replace(/'/g,"\\'")}';document.getElementById('inpAction').focus()">🔀 ${esc(b.text||'')}</span>`).join('');
+  const enc = (sc.encounters||[]).map(e => {
+    const mk = e.is_boss?'👑':'⚔️';
+    const loc = e.location?` <small style="opacity:.7">(${esc(e.location)})</small>`:'';
+    return `<span class="tag">${mk} <b>${e.count}× ${esc(e.name)}</b>${loc}</span>`;
+  }).join('');
+  const hook = sc.hook ? `<div style="font-style:italic;color:var(--muted);margin-bottom:8px;line-height:1.9">${esc(sc.hook)}</div>` : '';
   box.innerHTML = `<div class="card">
-    <div class="sc-title">🐉 ${esc(sc.title)}</div>
+    <div class="sc-title">🐉 ${esc(sc.title||'ماجرای بی‌نام')}</div>
+    ${hook}
     <div class="sc-goal">🎯 ${esc(sc.goal||'')}</div>
-    <div class="tag-row">
-      ${(sc.locations||[]).map(l=>`<span class="tag">🗺️ ${esc(l)}</span>`).join('')}
-      ${(sc.npcs||[]).map(n=>`<span class="tag">👤 ${esc(n)}</span>`).join('')}
-      ${enc?`<span class="tag">⚔️ <b>${esc(enc)}</b></span>`:''}
-      ${sc.treasure?`<span class="tag">💎 ${esc(sc.treasure)}</span>`:''}
-    </div></div>`;
+    ${cur?`<div style="margin-top:6px;font-size:12px;color:var(--gold2)">📍 موقعیت: ${esc(cur)}</div>`:''}
+    <div class="tag-row">${locs}${npcs}${enc}${boss}${traps}</div>
+    ${sc.treasure?`<div class="tag-row"><span class="tag">💎 ${esc(_tresText(sc.treasure))}</span></div>`:''}
+    ${branches?`<div class="sec-title" style="margin-top:12px">🔀 انتخاب‌های داستانی</div><div class="chips" style="margin-top:4px">${branches}</div>`:''}
+    <div class="chips" style="margin-top:10px">
+      <button class="chip" onclick="lookAround()">👁️ نگاه کن</button>
+      <button class="chip" onclick="moveDir('جلو')">🚶 جلو برو</button>
+      <button class="chip" onclick="moveDir('عقب')">↩️ عقب برگرد</button>
+      <button class="chip" onclick="quickRoll('adv')">🎲 adv</button>
+      <button class="chip" onclick="genScenario()">🐉 سناریو جدید (DM)</button>
+      <button class="chip" onclick="whereNow()">🗺️ خلاصه ماجرا</button>
+    </div>
+  </div>`;
 }
 function renderFeed() {
   const feed = $('#feed');
@@ -359,7 +391,9 @@ async function sendAction() {
   const btn = $('#btnStory'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> روایت...';
   try {
     const d = await api('/api/story', { room: roomCode, action: act });
-    S = d.state; inp.value = ''; renderFeed();
+    S = d.state; inp.value = ''; render();
+    // داستان را در فید نشان بده: آخرین لاگ که از DM باشد، تازه است
+    renderFeed();
   } catch(e) { toast(e.message); }
   finally { btn.disabled = false; btn.textContent = 'بفرست ✨'; }
 }
@@ -375,6 +409,32 @@ async function whereNow() {
   try {
     const d = await api('/api/where', { room: roomCode });
     S = d.state; renderFeed();
+  } catch(e) { toast(e.message); }
+}
+async function lookAround() {
+  try {
+    const d = await api('/api/where/look', { room: roomCode });
+    S = d.state;
+    // توضیحات را در فید بینداز
+    S.log = S.log || [];
+    S.log.push({ who: 'سیستم', what: d.text || '' });
+    renderFeed();
+  } catch(e) { toast(e.message); }
+}
+async function moveDir(dir) {
+  try {
+    const d = await api('/api/move', { room: roomCode, direction: dir });
+    S = d.state;
+    S.log = S.log || [];
+    S.log.push({ who: 'سیستم', what: d.text || '' });
+    render(); renderFeed();
+  } catch(e) { toast(e.message); }
+}
+async function doRest() {
+  try {
+    const d = await api('/api/rest', { room: roomCode, kind: 'short' });
+    S = d.state; renderFeed(); renderChar();
+    toast((d.text||'استراحت کردی').slice(0,80));
   } catch(e) { toast(e.message); }
 }
 async function quickRoll(expr) {
@@ -406,27 +466,29 @@ function renderCombat() {
   const myTurn = c.is_my_turn;
   let parts = '';
   c.participants.forEach(p => {
-    let em;
-    if (p.kind === 'player') em = p.dead ? '💀' : (p.downed ? '😵' : '🧙');
-    else em = p.alive ? '👹' : '💀';
+    let em = p.emoji || (p.kind === 'player' ? '🧙' : '👹');
+    if (p.dead) em = '💀';
+    else if (p.downed) em = '😵';
+    else if (p.kind === 'monster' && !p.alive) em = '💀';
     const hpPct = p.max_hp ? Math.max(0, Math.round(p.hp / p.max_hp * 100)) : 0;
     const sel = selTarget === p.name ? ' sel' : '';
     const deadCls = (!p.alive || p.dead) ? ' dead' : '';
+    const bossMark = p.is_boss ? ' 👑' : '';
     const clickable = (p.kind === 'monster' && p.alive && myTurn && !isDown)
       ? `onclick="selTarget='${p.name.replace(/'/g,"\\'")}';renderCombat()"` : '';
     let status;
     if (p.dead) status = '💀 مرده';
-    else if (p.downed) status = '😵 زمین‌گیر — death save';
+    else if (p.downed) status = '😵 زمین‌گیر';
     else if (p.kind === 'monster' && !p.alive) status = '💀 نابود شد';
     else status = '❤️ ' + p.hp + '/' + p.max_hp;
     parts += `<div class="part${sel}${deadCls}" ${clickable}>
       <span class="em">${em}</span>
       <div class="info">
-        <div class="nm">${esc(p.name)} <small>AC ${p.ac} • Init ${p.init}</small></div>
+        <div class="nm">${esc(p.name)}${bossMark} <small>AC ${p.ac} • Init ${p.init}</small></div>
         <div class="hpbar"><div class="${hpPct<30?'low':''}" style="width:${hpPct}%"></div></div>
         <div class="bar-label"><span>${status}</span>${p.turn?'<b style="color:var(--gold)">نوبت فعلی ▶</b>':''}</div>
       </div>
-      ${p.kind==='player'?'<span class="turn-mark">🧙</span>':'<span class="turn-mark">👹</span>'}
+      <span class="turn-mark">${p.kind==='player'?'🧙':'👹'}</span>
     </div>`;
   });
   const banner = myTurn

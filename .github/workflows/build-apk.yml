@@ -3,9 +3,16 @@ name: Build D&D Server APK
 on:
   workflow_dispatch:
   push:
+    branches: [main]
+    tags: ['v*']
     paths:
       - 'android/**'
       - 'web/**'
+      - 'game/**'
+      - 'bot/**'
+      - 'webapp.py'
+      - 'main.py'
+      - 'config.py'
       - '.github/workflows/build-apk.yml'
 
 jobs:
@@ -26,16 +33,50 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.4'
+      - name: Sync Python sources into android assets
+        run: |
+          set -e
+          mkdir -p android/app/src/main/python/game android/app/src/main/python/bot android/app/src/main/assets/web
+          for f in game/*.py; do cp "$f" "android/app/src/main/python/$f"; done
+          for f in bot/*.py; do cp "$f" "android/app/src/main/python/$f"; done
+          cp webapp.py android/app/src/main/python/webapp.py
+          cp main.py   android/app/src/main/python/main.py
+          cp config.py android/app/src/main/python/config.py
+          cp web/index.html android/app/src/main/assets/web/index.html
       - name: Build signed debug APK
         working-directory: android
         run: gradle assembleDebug --no-daemon
-      - name: Publish signed APK artifact
+      - name: Copy APK to top-level artifact name
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk DnD-Bot.apk
+      - name: Upload signed APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DnD-Bot-Server-signed
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-      - name: Create GitHub release asset
-        if: startsWith(github.ref, 'refs/tags/')
+          name: DnD-Bot-APK
+          path: DnD-Bot.apk
+      - name: Create/update rolling "latest" release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          files: android/app/build/outputs/apk/debug/app-debug.apk
+          tag_name: latest
+          name: 📱 آخرین نسخه اندروید (latest)
+          prerelease: false
+          body: |
+            ### 🐉 D&D Bot — آخرین نسخه اندروید
+            این ریلیز به‌طور خودکار روی هر پوش به `main` آپدیت می‌شود.
+
+            **نحوه نصب**:
+            1. فایل `DnD-Bot.apk` را دانلود کن
+            2. روی گوشی اجازه‌ی نصب از منابع ناشناس بده
+            3. نصب کن و لذت ببر!
+
+            ⚙️ برای تنظیم توکن ربات و کلید Mistral، بعد از نصب وارد اپ شو و از منوی «تنظیمات» استفاده کن.
+          files: DnD-Bot.apk
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: D&D Bot ${{ github.ref_name }}
+          body: |
+            نسخه ${{ github.ref_name }} — فایل APK پایین پیوست شده.
+          files: DnD-Bot.apk

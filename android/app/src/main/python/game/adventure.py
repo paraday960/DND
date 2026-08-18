@@ -10,8 +10,23 @@ def skill_check(session, uid: int, skill: str, dc: int = 10, mode: str = "normal
     key = (skill or "").strip().lower()
     if not ch:
         return "کاراکترت را بساز."
+    # دستورات کوتاه فارسی
+    key_aliases = {
+        "ساخت": "sleight", "ظرافت": "sleight", "دست": "sleight",
+        "خنثی": "sleight", "تله": "sleight",
+        "ادراک": "perception", "بینایی": "perception",
+        "پنهان": "stealth", "دزدکی": "stealth",
+        "ورزش": "athletics", "قدرت": "athletics",
+    }
+    if key in key_aliases:
+        key = key_aliases[key]
     if key not in SKILLS:
         return "مهارت نامعتبر است: " + ", ".join(SKILLS)
+    # اگر مهارت sleight بود و تله‌ای در مکان بود، خنثی‌سازی تله انجام شود
+    if key in ("sleight", "thieves_tools"):
+        from .world import try_disarm_trap
+        trap_msg = try_disarm_trap(session, ch, "", int(dc) if dc else None)
+        return trap_msg
     ability = SKILLS[key]["ability"]
     bonus = ability_mod(ch.abilities[ability]) + (proficiency_bonus(ch.level) if key in ch.proficiencies else 0)
     r1, r2 = roll_d20(), roll_d20()
@@ -21,6 +36,12 @@ def skill_check(session, uid: int, skill: str, dc: int = 10, mode: str = "normal
     text = f"🎲 آزمایش {SKILLS[key]['fa']} (DC {dc}): {raw} {bonus:+d} = **{total}** — " + ("✅ موفق" if success else "❌ ناموفق")
     if mode != "normal":
         text += f" (تاس‌ها: {r1} و {r2})"
+    # اگر perception موفق بود، هشدار تله هم بده
+    if key == "perception" and success:
+        from .world import _check_trap_trigger
+        tm = _check_trap_trigger(session, ch, "بررسی")
+        if tm:
+            text += "\n" + tm
     session.add_log(ch.name, text)
     return text
 
@@ -48,13 +69,41 @@ def use_item(session, uid: int, item: str) -> str:
     key = (item or "").strip().lower()
     if not ch:
         return "کاراکترت را بساز."
-    if key not in ch.inventory or ch.inventory[key] <= 0:
+    # تطبیق نام (مثلاً «معجون بزرگ» یا «potion of healing»)
+    if "great" in key or "بزرگ" in key or "قوی" in key:
+        key = "great_potion"
+    elif "potion" in key or "معجون" in key or "شربت" in key:
+        key = "potion"
+    elif "antidote" in key or "پادزهر" in key:
+        key = "antidote"
+    if key not in ch.inventory or ch.inventory.get(key, 0) <= 0:
         return f"این آیتم را نداری. موجودی: {inventory_text(ch)}"
     if key == "potion":
         before = ch.hp
         ch.hp = min(ch.max_hp, ch.hp + random.randint(2, 10) + 2)
         ch.inventory[key] -= 1
-        return f"🧪 معجون شفا نوشیدی: +{ch.hp-before} HP (موجودی: {ch.inventory[key]})"
+        if ch.inventory[key] <= 0:
+            ch.inventory.pop(key, None)
+        return f"🧪 معجون شفا نوشیدی: +{ch.hp-before} HP (اکنون {ch.hp}/{ch.max_hp})"
+    if key == "great_potion":
+        before = ch.hp
+        ch.hp = min(ch.max_hp, ch.hp + random.randint(8, 20) + 4)
+        ch.inventory[key] -= 1
+        if ch.inventory[key] <= 0:
+            ch.inventory.pop(key, None)
+        return f"🧪 معجون بزرگ شفا نوشیدی: +{ch.hp-before} HP (اکنون {ch.hp}/{ch.max_hp})"
+    if key == "antidote":
+        ch.conditions = [c for c in ch.conditions if c not in ("poisoned", "poison")]
+        ch.inventory[key] -= 1
+        if ch.inventory[key] <= 0:
+            ch.inventory.pop(key, None)
+        return "💚 پادزهر خوردی؛ وضعیت مسمومیت برطرف شد."
+    if key == "torch":
+        session.world["light"] = "torch"
+        ch.inventory[key] -= 1
+        if ch.inventory[key] <= 0:
+            ch.inventory.pop(key, None)
+        return "🔥 مشعل روشن کردی!"
     return "این آیتم هنوز کاربردی ندارد."
 
 

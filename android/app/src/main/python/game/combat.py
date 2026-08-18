@@ -4,7 +4,141 @@ import random
 
 from .dice import DiceError, parse_dice, roll_dice, roll_d20
 from .models import Session
-from .rules import MONSTERS, SPELLS, ability_mod
+from .rules import CLASSES, MONSTERS, SPELLS, WEAPONS, ability_mod
+
+
+# جدول گنج/لوت تصادفی پس از پیروزی
+_LOOT_TABLE = [
+    ("potion", 1, "🧪 معجون شفا"),
+    ("torch", 2, "🔥 مشعل"),
+    ("gold", None, "🪙 سکه"),
+    ("rope", 1, "🪢 طناب"),
+]
+
+
+def _roll_loot(victory: bool, party_size: int, xp_pool: int = 0) -> list:
+    """پس از پیروزی، گنج تصادفی تولید می‌کند."""
+    if not victory:
+        return []
+    drops = []
+    # سکه بر اساس XP
+    gold_share = max(5, xp_pool // max(1, party_size) // 4)
+    for _ in range(party_size):
+        drops.append(("gold", random.randint(max(3, gold_share - 5), gold_share + 8)))
+    # شانس معجون/طناب/مشعل
+    if random.random() < 0.55:
+        drops.append(("potion", random.randint(1, 2)))
+    if random.random() < 0.35:
+        drops.append(("torch", random.randint(1, 2)))
+    if random.random() < 0.20:
+        drops.append(("rope", 1))
+    return drops
+
+
+def _apply_loot(session, drops: list) -> str:
+    """گنج را بین کاراکترها تقسیم می‌کند."""
+    lines = []
+    chars = [p["char"] for p in session.players.values() if p.get("char")]
+    if not chars:
+        return ""
+    for item, qty in drops:
+        if item == "gold":
+            ch = random.choice(chars)
+            ch.gold += qty
+            lines.append(f"🪙 {qty} سکه به {ch.name} رسید.")
+        else:
+            ch = random.choice(chars)
+            ch.inventory[item] = ch.inventory.get(item, 0) + qty
+            fa = {"potion": "معجون شفا", "torch": "مشعل", "rope": "طناب"}.get(item, item)
+            lines.append(f"{_LOOT_EMOJI(item)} {qty}× {fa} به {ch.name} رسید.")
+    return "\n".join(lines)
+
+
+def _LOOT_EMOJI(item: str) -> str:
+    return {"potion": "🧪", "torch": "🔥", "rope": "🪢"}.get(item, "🎁")
+
+
+def _default_atk_bonus(mkey: str, base: dict) -> int:
+    """پاداش حمله پیش‌فرض بر اساس CR هیولا (برآورد از روی xp/cr)."""
+    cr = base.get("cr", 0.25)
+    if cr >= 6:
+        return 7
+    if cr >= 3:
+        return 5
+    if cr >= 1:
+        return 3
+    return 2
+
+
+# تعداد حمله هر دشمن (multiattack) بر اساس کلید هیولا
+_MULTIATTACK = {
+    "troll": 2,
+    "dragon_young": 3,
+    "harpy": 2,
+    "orc": 1,
+    "goblin": 1,
+    "wolf": 1,
+    "skeleton": 1,
+    "zombie": 1,
+    "bandit": 1,
+    "giant_spider": 2,
+}
+
+
+def _monster_key(mon: dict) -> str:
+    """سعی می‌کند کلید MONSTERS را از روی نام پیدا کند."""
+    # نام مثل «ترول 2» یا «گابلین»
+    name = mon.get("_key", "")
+    if name:
+        return name
+    for k, v in MONSTERS.items():
+        if v["fa"] in mon.get("name", "") or mon.get("name", "").startswith(v["fa"]):
+            return k
+    return ""
+
+
+def _resolve_one_attack(session, mon, target, atk_bonus) -> tuple:
+    """یک حمله منفرد را اجرا می‌کند. خروجی: (lines_text, target_was_downed)."""
+    raw = roll_d20()
+    adv = "dodge" in target.get("conditions", [])
+    rolls = [raw]
+    if adv:
+        rolls.append(roll_d20())
+        raw = min(rolls)
+    atk = raw + atk_bonus
+    crit = raw == 20
+    fumble = raw == 1
+    hit = (crit or (raw != 1 and atk >= target["ac"])) and not fumble
+    lines = []
+    if hit:
+        dmg = _roll_damage(mon.get("dmg", "1d6+0"))
+        if crit:
+            dmg *= 2
+        target["hp"] = max(0, target["hp"] - dmg)
+        adv_tag = " (با ضعف بخاطر دفاع)" if adv else ""
+        lines.append(f"🎲 {mon['name']} به {target['name']} حمله کرد: {atk} "
+                     f"(رول {raw}{'+' + str(atk_bonus) if atk_bonus else ''}) "
+                     f"(AC {target['ac']}){adv_tag} — 💥 اصابت! {dmg} آسیب")
+        if crit and not adv_tag:
+            lines[-1] += " 🔥 **بحرانی!**"
+        if fumble:
+            pass  # impossible since hit
+        downed = False
+        if target["hp"] <= 0:
+            target["hp"] = 0
+            target["downed"] = True
+            real_char = session.get_char(int(target["uid"]))
+            if real_char:
+                real_char.hp = 0
+                real_char.death_saves = {"success": 0, "fail": 0}
+            lines.append(f"💀 **{target['name']} از پا درآمد!** (در نوبتت /deathsave بزن)")
+            downed = True
+        return "\n".join(lines), downed
+    else:
+        miss_tag = " — لغزش دست!" if fumble else " — بی‌اثر!"
+        return (f"🎲 {mon['name']} به {target['name']} حمله کرد: {atk} "
+                f"(AC {target['ac']}){miss_tag}"), False
+
 
 
 def _combat(session: Session) -> dict:
@@ -56,6 +190,7 @@ def start_combat(session: Session) -> str:
         init = roll_d20() + ability_mod(ch.abilities["DEX"])
         combat["participants"].append({
             "kind": "player", "uid": uid, "name": ch.name,
+            "emoji": CLASSES.get(ch.cls, {}).get("emoji", "🧙"),
             "init": init, "hp": ch.hp, "max_hp": ch.max_hp,
             "ac": ch.ac, "alive": True, "downed": not alive,
             "conditions": list(ch.conditions),
@@ -69,24 +204,36 @@ def start_combat(session: Session) -> str:
             count = max(1, int(e.get("count", 1)))
             base = MONSTERS.get(name.lower()) or {}
             for i in range(count):
+                mkey = name.lower()
+                base_atk = base.get("atk_bonus", _default_atk_bonus(mkey, base))
+                is_boss = bool(e.get("is_boss"))
+                mname = base.get("fa", name)
+                suffix = " 👑" if is_boss and count == 1 else ""
                 monsters.append({
                     "kind": "monster",
-                    "name": f"{base.get('fa', name)} {i + 1}" if count > 1 else base.get("fa", name),
-                    "init": roll_d20() + int(e.get("init_bonus", 1)),
+                    "_key": mkey,
+                    "name": (f"{mname} {i + 1}" if count > 1 else mname) + suffix,
+                    "emoji": base.get("emoji", "👹"),
+                    "init": roll_d20() + int(e.get("init_bonus", base_atk - 2)),
                     "hp": int(e.get("hp", base.get("hp", 10))),
                     "max_hp": int(e.get("hp", base.get("hp", 10))),
                     "ac": int(e.get("ac", base.get("ac", 12))),
                     "dmg": e.get("dmg", base.get("dmg", "1d6+2")),
+                    "atk_bonus": int(e.get("atk_bonus", base_atk)),
                     "xp": int(e.get("xp", base.get("xp", 50))),
                     "alive": True, "conditions": [],
+                    "is_boss": is_boss,
+                    "ability": e.get("ability", ""),
                 })
     if not monsters:
         # نبرد پیش‌فرض برای وقتی سناریویی نیست
         for i in range(2):
             monsters.append({
-                "kind": "monster", "name": f"گابلین {i + 1}",
+                "kind": "monster", "_key": "goblin", "name": f"گابلین {i + 1}",
+                "emoji": MONSTERS.get("goblin", {}).get("emoji", "👹"),
                 "init": roll_d20() + 2, "hp": 7, "max_hp": 7, "ac": 15,
-                "dmg": "1d6+2", "xp": 50, "alive": True, "conditions": [],
+                "dmg": "1d6+2", "atk_bonus": 2, "xp": 50,
+                "alive": True, "conditions": [], "is_boss": False,
             })
     combat["participants"].extend(monsters)
 
@@ -235,7 +382,8 @@ def run_initial_monsters(session: Session) -> str:
 
 
 def auto_act(session: Session, mon: dict) -> str:
-    """دشمن به یک بازیکن زنده (HP>0) حمله می‌کند؛ بازیکنان زمین‌گیر هدف ترجیحی نیستند."""
+    """دشمن با حمله (و در صورت نیاز multiattack) به بازیکن زنده حمله می‌کند.
+    dodge بازیکن باعث می‌شود حمله‌ها با ضعف (disadvantage) انجام شوند."""
     players = [p for p in session.combat["participants"]
                if p["kind"] == "player"
                and not p.get("dead")
@@ -244,34 +392,36 @@ def auto_act(session: Session, mon: dict) -> str:
                and p.get("hp", 0) > 0]
     if not players:
         return f"☠️ {mon['name']} به دنبال هدف می‌گردد اما همه نابود شده‌اند..."
-    target = random.choice(players)
-    raw = roll_d20()
-    # پاداش حمله هیولا: بر اساس CR/نوع (پیش‌فرض +۲)
     atk_bonus = int(mon.get("atk_bonus", 2))
-    atk = raw + atk_bonus
-    hit = (raw == 20) or (raw != 1 and atk >= target["ac"])
-    crit = raw == 20
-    if hit:
-        dmg = _roll_damage(mon.get("dmg", "1d6+0"))
-        if crit:
-            dmg *= 2
-        target["hp"] = max(0, target["hp"] - dmg)
-        result = (f"🎲 {mon['name']} به {target['name']} حمله کرد: {atk} "
-                  f"(رول {raw}{'+' + str(atk_bonus) if atk_bonus else ''}) "
-                  f"(AC {target['ac']}) — 💥 اصابت! {dmg} آسیب")
-        if target["hp"] <= 0:
-            # بازیکن زمین‌گیر (downed) هنوز در گردش نوبت می‌ماند تا death_save بدهد
-            # فقط وقتی فلگ dead=True شد کاملاً خارج می‌شود
-            target["hp"] = 0
-            target["downed"] = True
-            real_char = session.get_char(int(target["uid"]))
-            if real_char:
-                real_char.hp = 0
-                real_char.death_saves = {"success": 0, "fail": 0}
-            result += f"\n💀 **{target['name']} از پا درآمد!** (در نوبتت /deathsave بزن)"
-    else:
-        result = f"🎲 {mon['name']} به {target['name']} حمله کرد: {atk} (AC {target['ac']}) — بی‌اثر!"
-    session.add_log(mon["name"], result.replace("\n", " "))
+    n_atks = _MULTIATTACK.get(_monster_key(mon), 1)
+    # باس‌ها چند حمله بیشتر دارند
+    if mon.get("is_boss"):
+        n_atks = max(n_atks, 2)
+    parts = []
+    # قابلیت ویژه باس در اولین نوبت
+    boss_ability_used = mon.get("_ability_used", False)
+    if mon.get("is_boss") and not boss_ability_used and mon.get("ability"):
+        mon["_ability_used"] = True
+        parts.append(f"👑 **{mon['name']}** از قابلیت ویژه استفاده می‌کند: {mon['ability']}!")
+    target = random.choice(players)
+    for _i in range(n_atks):
+        hit_msg, downed = _resolve_one_attack(session, mon, target, atk_bonus)
+        parts.append(hit_msg)
+        if downed or target.get("hp", 0) <= 0:
+            new_players = [p for p in session.combat["participants"]
+                           if p["kind"] == "player"
+                           and not p.get("dead")
+                           and not p.get("downed")
+                           and p.get("alive", True)
+                           and p.get("hp", 0) > 0]
+            if new_players:
+                target = random.choice(new_players)
+            else:
+                break
+    result = "\n".join(parts)
+    if n_atks > 1 and not mon.get("is_boss"):
+        result = f"👹 {mon['name']} **{n_atks} حمله** می‌زند!\n" + result
+    session.add_log(mon["name"], result.replace("\n", " ")[:400])
     return result
 
 
@@ -306,28 +456,67 @@ def attack(session: Session, uid: int, target_name: str) -> str:
 
     from .rules import WEAPONS
     weapon = WEAPONS[ch.weapon]
-    raw_rolls = [roll_d20(), roll_d20()] if "dodge" in target.get("conditions", []) else [roll_d20()]
-    raw = min(raw_rolls) if len(raw_rolls) == 2 else raw_rolls[0]
-    atk = raw + ch.attack_bonus()
-    crit = raw == 20
-    fumble = raw == 1
-    hit = (crit or atk >= target["ac"]) and not fumble
-    if hit:
-        dmg = _roll_damage(weapon["dmg"]) + ch.stat_mod(weapon["stat"])
-        if crit:
-            dmg += _roll_damage(weapon["dmg"]) + ch.stat_mod(weapon["stat"])
-        target["hp"] = max(0, target["hp"] - dmg)
-        result = (f"🎲 {ch.name} با {weapon['fa']} به {target['name']}: {atk} "
-                  f"(AC {target['ac']}) {'— 💥 اصابت! ' + str(dmg) + ' آسیب' if hit else ''}")
-        if crit:
-            result += " 🔥 **حمله بحرانی!**"
-        if target["hp"] <= 0:
-            target["alive"] = False
-            combat["xp_pool"] += target["xp"]
-            result += f"\n☠️ **{target['name']} نابود شد!** (+{target['xp']} XP به خزانه گروه)"
-    else:
-        result = f"🎲 {ch.name} با {weapon['fa']} به {target['name']}: {atk} (AC {target['ac']}) — خطا!"
-    session.add_log(ch.name, result.replace("\n", " "))
+    # Rogue: اگر دشمن در کنار یال (ally) دیگری باشد Sneak Attack
+    has_ally_adjacent = False
+    for p in combat["participants"]:
+        if p.get("kind") == "player" and p.get("uid") != str(uid) \
+           and p.get("alive", True) and not p.get("dead") and not p.get("downed") \
+           and p.get("hp", 0) > 0:
+            has_ally_adjacent = True
+            break
+
+    # Extra Attack در سطح ۵+ برای جنگجو/بربر/پالادین/رنجر/مانک
+    n_attacks = 1
+    if ch.cls in ("fighter", "barbarian", "paladin", "ranger", "monk") and ch.level >= 5:
+        n_attacks = 2
+    if ch.cls == "fighter" and ch.level >= 11:
+        n_attacks = 3
+    if ch.cls == "fighter" and ch.level >= 20:
+        n_attacks = 4
+
+    parts = []
+    killed = False
+    for atk_i in range(n_attacks):
+        if target.get("hp", 0) <= 0 or not target.get("alive", True):
+            break
+        raw_rolls = [roll_d20(), roll_d20()] if "dodge" in target.get("conditions", []) else [roll_d20()]
+        raw = min(raw_rolls) if len(raw_rolls) == 2 else raw_rolls[0]
+        atk = raw + ch.attack_bonus()
+        crit = raw == 20
+        fumble = raw == 1
+        hit = (crit or atk >= target["ac"]) and not fumble
+        tag = f" (حمله {atk_i+1})" if n_attacks > 1 else ""
+        if hit:
+            dmg = _roll_damage(weapon["dmg"]) + ch.stat_mod(weapon["stat"])
+            sa = 0
+            if ch.cls == "rogue" and has_ally_adjacent and atk_i == 0:
+                sa_dice = max(1, (ch.level + 1) // 2)
+                sa = sum(roll_dice(sa_dice, 6))
+                dmg += sa
+            if crit:
+                dmg += _roll_damage(weapon["dmg"]) + ch.stat_mod(weapon["stat"])
+                if ch.cls == "rogue" and has_ally_adjacent and atk_i == 0:
+                    sa_dice = max(1, (ch.level + 1) // 2)
+                    dmg += sum(roll_dice(sa_dice, 6))
+            target["hp"] = max(0, target["hp"] - dmg)
+            line = (f"🎲 {ch.name}{tag} با {weapon['fa']} به {target['name']}: {atk} "
+                    f"(AC {target['ac']}) — 💥 {dmg} آسیب")
+            if crit:
+                line += " 🔥 **بحرانی!**"
+            if sa:
+                line += " 🗡️ **غافلگیرانه!**"
+            parts.append(line)
+            if target["hp"] <= 0:
+                target["alive"] = False
+                combat["xp_pool"] += target["xp"]
+                killed = True
+        else:
+            miss_tag = " — لغزش دست!" if fumble else " — خطا!"
+            parts.append(f"🎲 {ch.name}{tag} با {weapon['fa']} به {target['name']}: {atk} (AC {target['ac']}){miss_tag}")
+    result = "\n".join(parts)
+    if killed:
+        result += f"\n☠️ **{target['name']} نابود شد!** (+{target['xp']} XP به خزانه گروه)"
+    session.add_log(ch.name, result.replace("\n", " ")[:400])
     return result
 
 
@@ -480,6 +669,23 @@ def end_combat(session: Session) -> str:
                     ch.hp = max(1, ch.hp)
         victory = False
 
+    # همگام‌سازی نهایی HP از participants به کاراکترهای واقعی
+    for p in combat.get("participants", []):
+        if p.get("kind") != "player":
+            continue
+        ch = session.get_char(int(p["uid"]))
+        if not ch:
+            continue
+        ch.hp = max(0, int(p.get("hp", ch.hp)))
+        if p.get("dead"):
+            ch.hp = 0
+        # اگر برنده بودیم و hp کاراکتر 0 بود (downed) به 1 برمی‌گردد
+        if not victory and (p.get("downed") or ch.hp <= 0):
+            ch.hp = 1
+            p["downed"] = False
+            p["hp"] = 1
+            p["alive"] = True
+
     # XP را از هیولاهایی که واقعاً کشته شده‌اند محاسبه کن
     killed = [p for p in combat.get("participants", [])
               if p.get("kind") == "monster" and not p.get("alive", True)]
@@ -499,6 +705,13 @@ def end_combat(session: Session) -> str:
                 if ch.can_level_up():
                     info = ch.level_up()
                     leveled.append(f"🎉 **{ch.name}** به سطح {info['new']} رسید! (+{info['hp_gain']} HP)")
+    # لوت/گنج (فقط در پیروزی)
+    loot_lines = ""
+    if victory:
+        drops = _roll_loot(victory=True, party_size=max(1, len(recipients)), xp_pool=int(xp_pool * factor))
+        if drops:
+            loot_lines = "\n💎 **گنج و غنیمت:**\n" + _apply_loot(session, drops)
+
     session.combat = None
     session.state = "playing"
     if victory:
@@ -509,5 +722,7 @@ def end_combat(session: Session) -> str:
         msg = f"🏳️ نبرد پایان یافت. ({share} XP باطر نبرد)"
     if leveled:
         msg += "\n" + "\n".join(leveled)
-    session.add_log("سیستم", msg.replace("\n", " "))
+    if loot_lines:
+        msg += loot_lines
+    session.add_log("سیستم", msg.replace("\n", " ")[:600])
     return msg
