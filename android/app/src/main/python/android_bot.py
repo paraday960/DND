@@ -1352,7 +1352,7 @@ def http_server_loop(store, narrator, port):
                 return
 
             if path == "/api/combat/dodge":
-                from game.combat import dodge, advance
+                from game.combat import dodge, advance, end_combat
                 r, ch = need_room_and_char()
                 if not r: return
                 if not r.combat:
@@ -1360,7 +1360,30 @@ def http_server_loop(store, narrator, port):
                     return
                 msgs = [dodge(r, user["id"])]
                 if r.combat:
-                    msgs.append(advance(r))
+                    nxt = advance(r)
+                    if nxt: msgs.append(nxt)
+                    if r.combat:
+                        mons = [p for p in r.combat["participants"] if p["kind"]=="monster"]
+                        if mons and all(not m.get("alive",False) for m in mons):
+                            end = end_combat(r)
+                            if end: msgs.append(end)
+                self.store.save(r)
+                self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(r, user)}})
+                return
+
+            if path == "/api/combat/skip":
+                from game.combat import advance, end_combat
+                r, ch = need_room_and_char()
+                if not r: return
+                if not r.combat:
+                    self._json(400, {"ok": False, "error": "نبردی در جریان نیست"})
+                    return
+                msgs = [advance(r)]
+                if r.combat:
+                    mons = [p for p in r.combat["participants"] if p["kind"]=="monster"]
+                    if mons and all(not m.get("alive",False) for m in mons):
+                        end = end_combat(r)
+                        if end: msgs.append(end)
                 self.store.save(r)
                 self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(r, user)}})
                 return
@@ -1384,6 +1407,117 @@ def http_server_loop(store, narrator, port):
                     if nxt: msgs.append(nxt)
                 self.store.save(r)
                 self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(r, user)}})
+                return
+
+            # --- هندلر عمومی اکشن‌های نبرد (BG3) ---
+            COMBAT_SIMPLE = {
+                "/api/combat/dash": ("dash", None),
+                "/api/combat/disengage": ("disengage", None),
+                "/api/combat/hide": ("hide", None),
+                "/api/combat/secondwind": ("second_wind", None),
+                "/api/combat/actionsurge": ("action_surge", None),
+                "/api/combat/rage": ("rage", None),
+                "/api/combat/rebuke": ("hellish_rebuke", None),
+            }
+            BONUS_FN = {"rage","bardic_inspiration","offhand_attack","divine_smite",
+                        "cunning_action","hellish_rebuke","jump_action","throw_action",
+                        "dip_weapon","help_up"}
+            ERROR_PREFIXES = ("هنوز نوبت","نمی‌توانی","این قابلیت فقط","تعداد","هم‌گروهی",
+                              "کاراکترت","سلاح","هدف پیدا نشد","اکشن اصلی","بونس‌اکشن",
+                              "نبردی","جایگاه","نفس اژدها را","فقط می‌توانی","تو زمین",
+                              "مردی","نوبت تو نیست")
+            def _combat_call(fn_name, fn_call, target_needed=False, advance_after=True):
+                from game import combat as C
+                r, ch = need_room_and_char()
+                if not r: return
+                if not r.combat:
+                    self._json(400, {"ok": False, "error": "نبردی در جریان نیست"})
+                    return
+                fn = getattr(C, fn_name, None)
+                if not fn:
+                    self._json(500, {"ok": False, "error": "تابع پیدا نشد: "+fn_name})
+                    return
+                try:
+                    msg = fn_call(r, C, fn)
+                except Exception as e:
+                    self._json(500, {"ok": False, "error": str(e)})
+                    return
+                is_bonus = fn_name in BONUS_FN or not advance_after
+                success = bool(msg) and not str(msg).startswith(ERROR_PREFIXES)
+                msgs = [msg]
+                if success and not is_bonus and r.combat:
+                    nxt = C.advance(r)
+                    if nxt: msgs.append(nxt)
+                    # پایان خودکار
+                    if r.combat:
+                        mons = [p for p in r.combat["participants"] if p["kind"]=="monster"]
+                        if mons and all(not m.get("alive",False) for m in mons):
+                            end = C.end_combat(r)
+                            if end: msgs.append(end)
+                self.store.save(r)
+                self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(r, user)}})
+
+            if path in COMBAT_SIMPLE:
+                fn_name, _ = COMBAT_SIMPLE[path]
+                _combat_call(fn_name, lambda r,C,fn: fn(r, user["id"]))
+                return
+
+            if path == "/api/combat/help":
+                _combat_call("help_action",
+                             lambda r,C,fn: fn(r, user["id"], body.get("target","")),
+                             target_needed=True)
+                return
+            if path == "/api/combat/shove":
+                _combat_call("shove",
+                             lambda r,C,fn: fn(r, user["id"], body.get("target","")),
+                             target_needed=True)
+                return
+            if path == "/api/combat/inspire":
+                _combat_call("bardic_inspiration",
+                             lambda r,C,fn: fn(r, user["id"], body.get("target","")),
+                             target_needed=True, advance_after=False)
+                return
+            if path == "/api/combat/move":
+                _combat_call("move_action",
+                             lambda r,C,fn: fn(r, user["id"], body.get("where","near")),
+                             advance_after=False)
+                return
+            if path == "/api/combat/offhand":
+                _combat_call("offhand_attack",
+                             lambda r,C,fn: fn(r, user["id"], body.get("target","")),
+                             target_needed=True, advance_after=False)
+                return
+            if path == "/api/combat/smite":
+                slot = int(body.get("slot", 1) or 1)
+                _combat_call("divine_smite",
+                             lambda r,C,fn: fn(r, user["id"], slot),
+                             advance_after=False)
+                return
+            if path == "/api/combat/jump":
+                _combat_call("jump_action",
+                             lambda r,C,fn: fn(r, user["id"], body.get("where","near")),
+                             advance_after=False)
+                return
+            if path == "/api/combat/helpup":
+                _combat_call("help_up",
+                             lambda r,C,fn: fn(r, user["id"], body.get("target","")),
+                             target_needed=True, advance_after=False)
+                return
+            if path == "/api/combat/throw":
+                item = body.get("item","torch") or "torch"
+                _combat_call("throw_action",
+                             lambda r,C,fn: fn(r, user["id"], item, body.get("target","")),
+                             target_needed=True, advance_after=False)
+                return
+            if path == "/api/combat/dip":
+                _combat_call("dip_weapon",
+                             lambda r,C,fn: fn(r, user["id"], body.get("element","fire")),
+                             advance_after=False)
+                return
+            if path == "/api/combat/cunning":
+                _combat_call("cunning_action",
+                             lambda r,C,fn: fn(r, user["id"], body.get("what","disengage")),
+                             advance_after=False)
                 return
 
             # پیش‌فرض هندلرهای parent (attack/cast/skip/story/roll/scenario/char/create و...)

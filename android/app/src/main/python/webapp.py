@@ -826,8 +826,9 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         room = room_of(d.get("room", ""))
         if not room:
             return api_err("اتاق پیدا نشد!")
+        if not room.combat:
+            return api_err("نبردی در جریان نیست.")
         # در حالت DEV اجازه می‌دهیم با skip در نوبت دشمن هم جلو برویم (برای تست)
-        cur = room.combat["participants"][room.combat["turn"]] if room.combat else None
         if not config.WEBAPP_DEV and not is_player_turn(room, user["id"]):
             return api_err("هنوز نوبت تو نیست.")
         msgs = do_advance(room)
