@@ -687,7 +687,8 @@ function renderCombat() {
 
     // معجون و رد نوبت
     const utilBtns = [];
-    utilBtns.push(btnDark("🧪 معجون شفا", true, `quickPotion()`));
+    const potions = (S && S.me && S.me.char && S.me.char.inventory) ? (S.me.char.inventory.potion||0) : 0;
+    utilBtns.push(btnDark(`🧪 معجون (${potions})`, potions>0, `quickPotion()`));
     utilBtns.push(btnDark("⏭️ رد نوبت", true, `doSkip()`));
 
     actions = `

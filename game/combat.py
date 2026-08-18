@@ -533,13 +533,23 @@ def start_combat(session: Session) -> str:
                     "marked_by": None,
                 })
     if not monsters:
-        # نبرد پیش‌فرض برای وقتی سناریویی نیست
-        for i in range(2):
+        # نبرد پیش‌فرض بر اساس تعداد بازیکنان
+        n_players = sum(1 for p in combat["participants"] if p["kind"] == "player")
+        n_players = max(1, n_players)
+        # 1 بازیکن → 1 گابلین، ۲ بازیکن → ۲ گابلین، ۳+ → ۳ گابلین
+        n_goblins = min(n_players, 3)
+        goblin_tpl = MONSTERS.get("goblin", {})
+        for i in range(n_goblins):
             monsters.append({
-                "kind": "monster", "_key": "goblin", "name": f"گابلین {i + 1}",
-                "emoji": MONSTERS.get("goblin", {}).get("emoji", "👹"),
-                "init": roll_d20() + 2, "hp": 7, "max_hp": 7, "ac": 15,
-                "dmg": "1d6+2", "atk_bonus": 2, "xp": 50,
+                "kind": "monster", "_key": "goblin", "name": f"گابلین {i + 1}" if n_goblins>1 else "گابلین",
+                "emoji": goblin_tpl.get("emoji", "👹"),
+                "init": roll_d20() + 2,
+                "hp": int(goblin_tpl.get("hp", 7)),
+                "max_hp": int(goblin_tpl.get("hp", 7)),
+                "ac": int(goblin_tpl.get("ac", 13)),
+                "dmg": goblin_tpl.get("dmg", "1d6+1"),
+                "atk_bonus": int(goblin_tpl.get("atk_bonus", 3)),
+                "xp": int(goblin_tpl.get("xp", 25)),
                 "alive": True, "conditions": [], "is_boss": False,
                 "distance": 0, "height": 0, "cover": "none", "surface": "none",
                 "acted": False, "bonus_acted": False,
@@ -1909,6 +1919,29 @@ def end_combat(session: Session) -> str:
     if all_monsters_dead:
         # پیروزی: حتی اگر یک یا چند بازیکن زمین‌گیر شده باشند
         victory = True
+        # درمان کوچک بعد از پیروزی (نفس کشیدن و بستن زخم‌ها): 1d4 + CON برای هر بازیکن
+        for p in combat["participants"]:
+            if p["kind"] != "player" or p.get("dead"):
+                continue
+            ch = session.get_char(int(p["uid"]))
+            if not ch:
+                continue
+            con_mod = ability_mod(ch.abilities.get("CON", 10))
+            heal_amt = random.randint(1, 4) + max(0, con_mod)
+            # بازیکن زنده: التیام جزئی (سقف max_hp)
+            if not p.get("downed") and p.get("hp", 0) > 0:
+                new_hp = min(int(p.get("max_hp", ch.max_hp)), int(p.get("hp", 0)) + heal_amt)
+                p["hp"] = new_hp
+                ch.hp = new_hp
+            # بازیکن زمین‌گیر در لحظه پیروزی: با ۱ HP + التیام برمی‌خیزد
+            elif p.get("downed") or p.get("hp", 0) <= 0:
+                p["downed"] = False
+                p["dead"] = False
+                p["alive"] = True
+                p["death_saves"] = {"success": 0, "fail": 0}
+                new_hp = min(int(p.get("max_hp", ch.max_hp)), 1 + heal_amt)
+                p["hp"] = new_hp
+                ch.hp = new_hp
     elif total_party_kill:
         # شکست: همه بازیکن‌ها زمین‌گیر شده‌اند
         for p in combat["participants"]:

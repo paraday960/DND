@@ -33,7 +33,7 @@ class Character:
         self.xp = xp
         self.gold = gold
         self.proficiencies = list(DEFAULT_PROFICIENCIES.get(cls, []))
-        self.inventory = {"potion": 2, "torch": 3, "rope": 1}
+        self.inventory = {"potion": 3, "torch": 3, "rope": 1, "rations": 2}
         self.conditions = []
         self.death_saves = {"success": 0, "fail": 0}
         self.inspiration = False
