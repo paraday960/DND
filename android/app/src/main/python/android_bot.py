@@ -1076,9 +1076,6 @@ class ApiHandler(BaseHTTPRequestHandler):
             im = run_initial_monsters(s)
             if im:
                 msgs.append(im)
-            if s.combat and s.combat["participants"][0]["kind"] == "monster":
-                nxt = advance(s)
-                if nxt: msgs.append(nxt)
             self.store.save(s)
             self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(s, user)}})
             return
@@ -1095,8 +1092,14 @@ class ApiHandler(BaseHTTPRequestHandler):
                 msgs.append(cast(s, user["id"], body.get("spell", ""), body.get("target", "")))
             else:
                 msgs.append(advance(s))
+                self.store.save(s)
+                self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(s, user)}})
+                return
+            # بعد از اکشن اصلی (attack/cast) نوبت را جلو ببر — فقط اگر نبرد هنوز جاری است
             if s.combat:
-                msgs.append(advance(s))
+                nxt = advance(s)
+                if nxt:
+                    msgs.append(nxt)
             self.store.save(s)
             self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(s, user)}})
             return

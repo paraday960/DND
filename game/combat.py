@@ -426,13 +426,27 @@ def is_player_turn(session: Session, uid: int) -> bool:
     return True
 
 
-def _roll_damage(expr: str) -> int:
-    """پرتاب آسیب با پشتیبانی از d6، 2d8+3 و mod منفی."""
+def _roll_damage(expr, spell_mod: int = 0) -> int:
+    """پرتاب آسیب با پشتیبانی از d6، 2d8+3، 1d4+mod (spell_mod)، یا عدد ثابت.
+    اگر spell_mod پاس شود، در صورت وجود '+mod' در عبارت جایگزین می‌شود."""
+    s = str(expr).strip().lower().replace(" ", "")
+    if not s or s == "0":
+        return 0
+    # عدد ثابت
+    if s.lstrip("+-").isdigit():
+        return int(s)
+    # جایگزینی mod
+    if "mod" in s:
+        s = s.replace("+mod", f"{spell_mod:+d}").replace("-mod", f"{-spell_mod:+d}")
+        if s.startswith("mod"):
+            s = s.replace("mod", str(spell_mod), 1)
     try:
-        count, sides, mod = parse_dice(str(expr))
+        count, sides, mod = parse_dice(s)
     except DiceError:
-        count, sides, mod = 1, 1, 0
-    return sum(roll_dice(count, sides)) + mod if sides >= 2 else count + mod
+        return 0
+    if sides < 2:
+        return count + mod
+    return sum(roll_dice(count, sides)) + mod
 
 
 def start_combat(session: Session) -> str:
@@ -454,7 +468,7 @@ def start_combat(session: Session) -> str:
         # در شروع نبرد اکشن و بونس‌اکشن و ری‌اکشن همه در دسترس است
         ch.reset_turn_resources()
         combat["participants"].append({
-            "kind": "player", "uid": uid, "name": ch.name,
+            "kind": "player", "uid": str(uid), "name": ch.name,
             "emoji": CLASSES.get(ch.cls, {}).get("emoji", "🧙"),
             "init": init, "hp": ch.hp, "max_hp": ch.max_hp,
             "ac": ch.ac, "alive": True, "downed": not alive,
@@ -1648,12 +1662,30 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
                     break
         if not target:
             target = cur
-        if "1d4" in spell.get("heal", "1d8"):
-            healed = sum(roll_dice(1, 4)) + ch.spell_mod()
-        else:
-            healed = sum(roll_dice(1, 8)) + ch.spell_mod()
+        heal_expr = spell.get("heal", "1d8")
+        # تشخیص AOE heal (mass cure wounds)
+        if "aoe" in spell["kind"]:
+            healed_total = _roll_damage(heal_expr, ch.spell_mod())
+            aoe_r = spell.get("aoe", 6)
+            targets_t = [p for p in combat["participants"]
+                         if p.get("alive") and p.get("kind") == "player"]
+            parts.append(f"{spell['emoji']} {ch.name} «{spell['fa']}» می‌اندازد و همه را التیام می‌دهد...")
+            for t in targets_t:
+                real_char = session.get_char(int(t["uid"])) if t.get("uid") else None
+                if real_char:
+                    h = real_char.heal(healed_total)
+                    t["hp"] = real_char.hp
+                    if real_char.hp > 0:
+                        t["downed"] = False
+                        t["alive"] = True
+                        real_char.death_saves = {"success": 0, "fail": 0}
+                    parts.append(f"💚 {t['name']} +{h} HP")
+            result = "\n".join(parts)
+            session.add_log(ch.name, result.replace("\n", " "))
+            return result
+        healed = _roll_damage(heal_expr, ch.spell_mod())
         if spell.get("upcast", False) and ch.level >= 5:
-            healed += sum(roll_dice(1, 8))
+            healed += _roll_damage(heal_expr, 0) - _extract_static_mod(heal_expr.replace("mod", str(ch.spell_mod())))
         if target["kind"] == "player":
             real_char = session.get_char(int(target["uid"]))
             if real_char:
@@ -1698,6 +1730,107 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
         result = "\n".join(parts)
         session.add_log(ch.name, result.replace("\n", " "))
         return result
+    # ----- طلسم‌های کاربردی utility -----
+    if spell["kind"] == "utility":
+        parts.append(f"{spell['emoji']} {ch.name} طلسم «{spell['fa']}» را اجرا کرد! ✨")
+        result = "\n".join(parts)
+        session.add_log(ch.name, result.replace("\n", " "))
+        return result
+    # ----- Buff طولانی‌مدت -----
+    if spell["kind"] in ("buff_long", "buff_concentration"):
+        effect = spell.get("effect", "")
+        if spell_key == "magearmor":
+            new_ac = 13 + ability_mod(ch.abilities["DEX"])
+            ch.ac = max(ch.ac, new_ac)
+            cur["ac"] = ch.ac
+        if spell_key == "invisibility":
+            cur.setdefault("conditions", []).append("invisible")
+            if "invisible" not in ch.conditions:
+                ch.conditions.append("invisible")
+            if "concentrating" not in ch.conditions:
+                ch.conditions.append("concentrating")
+        parts.append(f"{spell['emoji']} {ch.name} «{spell['fa']}» را فعال کرد! {effect}")
+        result = "\n".join(parts)
+        session.add_log(ch.name, result.replace("\n", " "))
+        return result
+    # ----- تلپورت (Misty Step) -----
+    if "teleport" in spell["kind"]:
+        if cur.get("distance", 0) == 0:
+            cur["distance"] = 2
+            parts.append(f"{spell['emoji']} {ch.name} با {spell['fa']} خودش را به عقب منتقل کرد (بدون حمله فرصت)!")
+        else:
+            cur["distance"] = 0
+            parts.append(f"{spell['emoji']} {ch.name} با {spell['fa']} به خط مقدم رسید!")
+        cur["disengage_active"] = True
+        result = "\n".join(parts)
+        session.add_log(ch.name, result.replace("\n", " "))
+        return result
+    # ----- سپر جادویی (Shield - Reaction) - باید قبل از target-finding هندل شود -----
+    if spell_key == "shield":
+        ch.ac += 5
+        cur["ac"] += 5
+        cur.setdefault("temp_ac_boost", 0)
+        cur["temp_ac_boost"] += 5
+        cur["reaction_available"] = False
+        ch.reaction_available = False
+        parts.append(f"🛡️ سپر جادویی فعال شد! AC تا شروع نوبت بعد ۵+ می‌شود (الان {ch.ac}).")
+        result = "\n".join(parts)
+        session.add_log(ch.name, result.replace("\n", " "))
+        return result
+    # ----- AOE / Cone spells -----
+    if "aoe" in spell["kind"] or "cone" in spell["kind"]:
+        targets_all = [p for p in combat["participants"] if p["kind"]=="monster" and p.get("alive")]
+        if not targets_all:
+            return "هیچ هدفی در محدوده نیست."
+        # کنترل
+        if spell_key == "sleep":
+            hp_total = _roll_damage(spell.get("hp_total", "5d8"))
+            parts.append(f"💤 {ch.name} طلسم خواب انداخت! {hp_total} HP از دشمنان می‌خوابند...")
+            remaining = hp_total
+            for p in sorted(targets_all, key=lambda x: x.get("hp",0)):
+                if remaining >= p["hp"]:
+                    p.setdefault("conditions", []).append("unconscious")
+                    parts.append(f"💤 {p['name']} بیهوش شد!")
+                    remaining -= p["hp"]
+                else:
+                    break
+            result = "\n".join(parts)
+            session.add_log(ch.name, result.replace("\n", " ")[:500])
+            return result
+        if spell_key in ("faeriefire", "entangle"):
+            cond = "restrained" if spell_key == "entangle" else None
+            parts.append(f"{spell['emoji']} {ch.name} «{spell['fa']}» انداخت!")
+            for p in targets_all[:4]:
+                sv = roll_d20() + 2
+                if sv < spell_dc:
+                    if cond:
+                        p.setdefault("conditions", []).append(cond)
+                    parts.append(f"✨ {p['name']} در افکت افتاد (رول {sv} در مقابل DC {spell_dc})!")
+                else:
+                    parts.append(f"🛡️ {p['name']} جاخالی داد.")
+            result = "\n".join(parts)
+            session.add_log(ch.name, result.replace("\n", " "))
+            return result
+        # AOE damage (شامل dragonbreath از قبل هندل شده)
+        dmg = _roll_damage(spell.get("dmg","0"), ch.spell_mod())
+        parts.append(f"{spell['emoji']} {ch.name} «{spell['fa']}» انداخت!")
+        for p in targets_all[:8]:
+            sv = roll_d20() + 2
+            if sv >= spell_dc:
+                actual = max(1, dmg // 2) if dmg > 0 else 0
+                parts.append(f"🛡️ {p['name']} مقاومت: {actual} آسیب (رول {sv}).")
+            else:
+                actual = dmg
+                parts.append(f"💥 {p['name']}: {actual} آسیب!")
+            if actual > 0:
+                p["hp"] = max(0, p["hp"] - actual)
+            if p["hp"] <= 0:
+                p["alive"] = False
+                combat["xp_pool"] += p["xp"]
+                parts.append(f"☠️ {p['name']} مُرد!")
+        result = "\n".join(parts)
+        session.add_log(ch.name, result.replace("\n", " ")[:500])
+        return result
     # ----- طلسم‌های حمله تک‌هدف -----
     target = _find_target(combat, target_name)
     if not target:
@@ -1706,65 +1839,37 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
         return f"هدف پیدا نشد. دشمنان: {names}"
     is_ranged_spell = "ranged" in spell["kind"] or spell_key in ("firebolt", "eldritchblast", "rayoffrost", "guidingbolt", "hex", "huntersmark")
     if "attack" in spell["kind"]:
+        dmg_expr = spell.get("dmg", "1d8")
+        dmg_mod = ch.spell_mod() if "mod" in dmg_expr else 0
         hit_msg, downed = _resolve_one_attack(session, cur, target, spell_atk_bonus,
-                                              dmg_expr=spell["dmg"], dmg_type=spell.get("damage_type", "force"),
-                                              is_ranged=is_ranged_spell)
+                                              dmg_expr=dmg_expr, dmg_type=spell.get("damage_type", "force"),
+                                              is_ranged=is_ranged_spell, dmg_modifier=dmg_mod)
         parts.append(f"{spell['emoji']} {ch.name} «{spell['fa']}» می‌اندازد!")
         parts.append(hit_msg)
     elif "auto" in spell["kind"]:
-        dmg = _roll_damage(spell["dmg"])
+        dmg = _roll_damage(spell.get("dmg", "1d4"), ch.spell_mod())
         target["hp"] = max(0, target["hp"] - dmg)
         parts.append(f"{spell['emoji']} {ch.name} «{spell['fa']}» می‌اندازد: خودکار اصابت! {dmg} آسیب به {target['name']}!")
     elif "save" in spell["kind"]:
-        # طلسم‌هایی که save می‌خواهند
-        dmg = _roll_damage(spell["dmg"])
-        # پیدا کردن استت ذخیره
-        save_stat = "DEX"
-        if "con" in spell["kind"]:
-            save_stat = "CON"
-        if "wis" in spell["kind"]:
-            save_stat = "CHA"
-        save_bonus = 2  # برای هیولاها
-        save_roll = roll_d20() + save_bonus
+        dmg = _roll_damage(spell.get("dmg", "0"), ch.spell_mod())
+        save_roll = roll_d20() + 2
         if save_roll >= spell_dc:
-            actual_dmg = dmg // 2
-            parts.append(f"🛡️ {target['name']} در برابر طلسم مقاومت کرد (رول {save_roll} در برابر DC {spell_dc}): {actual_dmg} آسیب نصف!")
+            actual_dmg = max(1, dmg // 2) if dmg > 0 else 0
+            parts.append(f"🛡️ {target['name']} مقاومت کرد (رول {save_roll} در مقابل DC {spell_dc}): {actual_dmg} آسیب نصف!")
         else:
             actual_dmg = dmg
-            parts.append(f"{spell['emoji']} {target['name']} در ذخیره شکست خورد! {actual_dmg} آسیب کامل!")
+            parts.append(f"{spell['emoji']} {target['name']} در ذخیره شکست خورد! {actual_dmg} آسیب!")
             if "holdperson" in spell_key or "paralyze" in spell.get("effect", ""):
                 target.setdefault("conditions", []).append("paralyzed")
                 parts.append(f"🫵 {target['name']} فلج شد!")
-            if "sleep" in spell_key:
-                target.setdefault("conditions", []).append("unconscious")
-                parts.append(f"💤 {target['name']} به خواب عمیق فرو رفت!")
-        target["hp"] = max(0, target["hp"] - actual_dmg)
-    # ----- افکت‌های mark (نشان شکارچی/نفرین) -----
+        if actual_dmg > 0:
+            target["hp"] = max(0, target["hp"] - actual_dmg)
+    # ----- افکت‌های mark -----
     if spell_key in ("huntersmark", "hex"):
         cur["marked_target"] = target["name"]
-        ch.conditions.append("concentrating")
-        parts.append(f"🎯 {target['name']} علامت خورد! تمام حملات بعدی به او 1d6 آسیب اضافی خواهند زد (تا زمانی که تمرکز داری).")
-    # ----- Mage Armor -----
-    if spell_key == "magearmor":
-        new_ac = 13 + ability_mod(ch.abilities["DEX"])
-        if ch.armor == "none":
-            ch.ac = new_ac
-            cur["ac"] = ch.ac
-        parts.append(f"🧙 زره جادویی فعال شد! AC الان {ch.ac} است.")
-    # ----- Shield Spell (Reaction) -----
-    if spell_key == "shield":
-        # این به عنوان ری‌اکشن در مقابل حمله فراخوانی می‌شود، +5 AC می‌دهد تا شروع نوبت بعد
-        ch.ac += 5
-        cur["ac"] += 5
-        cur.setdefault("temp_ac_boost", 0)
-        cur["temp_ac_boost"] += 5
-        cur["reaction_available"] = False
-        ch.reaction_available = False
-        parts.append(f"🛡️ سپر جادویی فعال شد! AC تا شروع نوبت بعد ۵+ می‌شود (الان {ch.ac}).")
-    # ----- Misty Step -----
-    if spell_key == "mistystep":
-        cur["distance"] = 1 if cur.get("distance", 0) == 0 else 0
-        parts.append(f"💨 در مه ناپدید شدی و در موقعیت جدید ظاهر شدی!")
+        if "concentrating" not in ch.conditions:
+            ch.conditions.append("concentrating")
+        parts.append(f"🎯 {target['name']} علامت خورد! حملات بعدی به او آسیب اضافی می‌زنند.")
     # بررسی کشته شدن هدف
     if target.get("hp", 0) <= 0 and target.get("alive", True):
         target["alive"] = False
@@ -1773,7 +1878,6 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
     result = "\n".join(parts)
     session.add_log(ch.name, result.replace("\n", " ")[:500])
     return result
-
 
 def _all_players_incapacitated(session) -> bool:
     """اگر بازیکنی نمرده/زمین‌گیر نشده، False. در غیر این صورت True.
