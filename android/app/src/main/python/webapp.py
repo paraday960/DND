@@ -333,8 +333,11 @@ def build_app(store, narrator, telegram_app=None, loop=None):
             "weapons": {k: [{"key": w, "fa": WEAPONS[w]["fa"], "emoji": WEAPONS[w]["emoji"],
                              "dmg": WEAPONS[w]["dmg"]} for w in v["weapons"]]
                         for k, v in CLASSES.items()},
-            "spells": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
-                        "dmg": v["dmg"], "kind": v["kind"]} for k, v in SPELLS.items()],
+            "spells": [{"key": k, "fa": v["fa"], "emoji": v.get("emoji", "✨"),
+                        "dmg": v.get("dmg", v.get("heal", "")),
+                        "kind": v.get("kind", "utility"),
+                        "level": v.get("level", 0),
+                        "action": v.get("action", "main")} for k, v in SPELLS.items()],
             "monsters": [{"key": k, "fa": v["fa"], "emoji": v["emoji"]}
                          for k, v in MONSTERS.items()],
         })

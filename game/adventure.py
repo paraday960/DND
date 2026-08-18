@@ -46,7 +46,7 @@ def skill_check(session, uid: int, skill: str, dc: int = 10, mode: str = "normal
     return text
 
 
-def rest(session, uid: int, kind: str = "short") -> str:
+def rest(session, uid: int, kind: str = "short", hit_dice_count: int = 1) -> str:
     ch = session.get_char(uid)
     if not ch:
         return "کاراکترت را بساز."
@@ -54,14 +54,37 @@ def rest(session, uid: int, kind: str = "short") -> str:
         return "در نبرد نمی‌توانی استراحت کنی."
     if kind.lower() in ("long", "طولانی"):
         before = ch.hp
-        ch.hp = ch.max_hp
-        ch.death_saves = {"success": 0, "fail": 0}
-        ch.conditions = []
-        ch.reset_spell_slots()
-        return f"🌙 استراحت طولانی انجام شد: HP از {before} به {ch.hp} رسید و وضعیت‌ها پاک شد."
-    heal = min(ch.max_hp - ch.hp, max(1, ch.hit_die + ability_mod(ch.abilities["CON"])))
-    ch.hp += heal
-    return f"🔥 استراحت کوتاه: **+{heal} HP** (اکنون {ch.hp}/{ch.max_hp})"
+        ch.reset_long_rest()
+        # در استراحت طولانی نصف hit_dice ها برگشته
+        regained = max(1, ch.level // 2)
+        ch.hit_dice_used = max(0, ch.hit_dice_used - regained)
+        lines = [f"🌙 **استراحت طولانی (۸ ساعت)** انجام شد:",
+                 f"• HP کامل شد: از {before} به {ch.max_hp}",
+                 f"• همه جایگاه‌های طلسم و قابلیت‌های کلاس بازیابی شد",
+                 f"• همه وضعیت‌ها (شرایط) پاک شد",
+                 f"• {regained} تا Hit Die بازیابی شد"]
+        return "\n".join(lines)
+    # استراحت کوتاه (۱ ساعت)
+    if hit_dice_count < 1:
+        hit_dice_count = 1
+    available = ch.level - ch.hit_dice_used
+    count = min(hit_dice_count, available)
+    if count <= 0:
+        return "هیچ Hit Die باقی نمانده! در استراحت طولانی برمی‌گردند."
+    total_heal = 0
+    rolls = []
+    for _ in range(count):
+        heal = ch.spend_hit_die()
+        rolls.append(str(heal))
+        total_heal += heal
+    actual_heal = ch.heal(total_heal)
+    ch.reset_short_rest()
+    lines = [f"🔥 **استراحت کوتاه (۱ ساعت)**",
+             f"• {count}× Hit Die ({ch.hit_die}) هزینه کردی: رول‌ها {', '.join(rolls)}",
+             f"• مجموعاً **+{actual_heal} HP** (اکنون {ch.hp}/{ch.max_hp})",
+             f"• قابلیت‌های per-short-rest (نفس دوم، خشم، الهام بارد؟ نه الهام long است، کی‌پوینت مانک و...) بازیابی شد",
+             f"• Hit Die باقی‌مانده: {ch.level - ch.hit_dice_used}/{ch.level}"]
+    return "\n".join(lines)
 
 
 def use_item(session, uid: int, item: str) -> str:

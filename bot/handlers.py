@@ -6,7 +6,11 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 import config
-from game.combat import attack, cast, dodge, end_combat, start_combat, advance, is_player_turn
+from game.combat import (
+    attack, cast, dodge, dash, disengage, help_action, hide, shove,
+    second_wind, action_surge, rage, bardic_inspiration, move_action,
+    end_combat, start_combat, advance, is_player_turn,
+)
 from game.adventure import death_save, inventory_text, rest, skill_check, use_item
 from game.dice import DiceError, roll_disadvantage, roll_expression, roll_advantage, roll_d20
 from game.models import Session
@@ -31,13 +35,13 @@ WELCOME = """🐉 **به دانجن‌مستر هوشمند خوش اومدی!**
 راهنمای کامل دستورات: `/help`
 """
 
-HELP = """📚 **راهنمای کامل دستورات**
+HELP = """📚 **راهنمای کامل دستورات — قوانین رسمی D&D 5e**
 
 🎮 **جلسه و بازیکن‌ها:**
 • `/newgame` — ساختن اتاق بازی (میزبان)
 • `/join <کد>` — پیوستن به اتاق با کد
-• `/newchar` — ساخت کاراکتر جدید (نژاد، کلاس، سلاح)
-• `/sheet` — نمایش کاراکتر
+• `/newchar` — ساخت کاراکتر جدید (۱۲ کلاس، ۸ نژاد)
+• `/sheet` — نمایش کاراکتر (توانایی‌ها، مهارت‌ها، منابع)
 • `/party` — لیست گروه
 • `/levelup` — ارتقای سطح (وقتی XP کافی داری)
 • `/xp` — وضعیت تجربه
@@ -47,26 +51,59 @@ HELP = """📚 **راهنمای کامل دستورات**
 • `/story <اقدام>` — هر اقدامت رو بگو تا AI روایت کنه
 • `/where` — خلاصه وضعیت فعلی ماجرا
 
-⚔️ **نبرد:**
-• `/combat` — شروع نبرد (نوبت‌بندی خودکار)
-• `/attack <دشمن>` — حمله با سلاح
-• `/cast <طلسم> <هدف>` — طلسم (firebolt, magicmissile, curewounds, ...)
-• `/skip` — رد کردن نوبت
-• `/dodge` — دفاع؛ حمله بعدی دشمن با ضعف
-• `/deathsave` — نجات از مرگ هنگام زمین‌گیر شدن
-• `/combatend` — پایان نبرد و توزیع XP
+⚔️ **اکشن‌های اصلی نبرد (هر نوبت ۱ اکشن اصلی):**
+• `/combat` — شروع نبرد (initiative خودکار)
+• `/attack <دشمن>` — حمله با سلاح (شامل کریت، اسنک اتک، خشم، مزیت/ضعف)
+• `/cast <طلسم> <هدف>` — انداختن طلسم
+• `/dash` — 🏃 دویدن، حرکت اضافه
+• `/disengage` — 🚪 عقب‌نشینی امن (بدون حمله فرصت)
+• `/help <هم‌گروهی>` — 🤝 کمک کردن (حمله بعدی هدف مزیت می‌گیرد)
+• `/hide` — 🙈 پنهان شدن (حمله بعدی با مزیت)
+• `/shove <دشمن>` — 💪 هل دادن و انداختن روی زمین
+• `/dodge` — 🛡️ دفاع فعال (همه حملات به تو با ضعف)
+• `/skip` — ⏭️ رد کردن نوبت
+
+⚡ **بونس‌اکشن‌ها (هر نوبت حداکثر ۱ بونس‌اکشن):**
+• `/rage` — 🪓 خشم بربر (مقاومت فیزیکی + آسیب اضافه)
+• `/inspire <هم‌گروهی>` — 🎻 الهام بَرد (یک دی الهام به رول بعدی)
+• `/cast healingword <هدف>` — 💚 کلمه شفا (شفا دوری به عنوان بونس)
+• `/bonus offhand` — 🗡️ حمله با دست دوم
+
+🛡️ **واکنش‌ها (Reaction):**
+• حمله فرصت هنگام دور شدن دشمن بدون disengage **خودکار** است!
+• `/cast shield` — 🛡️ سپر جادویی (+5 AC به عنوان ری‌اکشن)
+
+💀 **وضعیت‌های بحرانی:**
+• `/deathsave` — نجات از مرگ (۳ موفق/۳ شکست)
+• `/combatend` — پایان دستی نبرد
+
+✨ **طلسم‌ها:**
+آتش‌پایه، موشک جادویی، مرهم زخم، کلمه شفا، تیر هدایت‌گر، انفجار باستانی،
+شعله مقدس، سپر جادویی، زره جادویی، خواب، نگه داشتن شخص، گوی آتش، نامرئی،
+گام مه، سلاح روحانی، نشان شکارچی، نفرین، دستان سوزان، آتش پری، گیر انداختن
 
 🎲 **تاس:**
 • `/roll 2d6+3` — هر ترکیبی: `d20`، `2d8`، `1d20+5`
 • `/roll adv` یا `/roll dis` — با برتری / ضعف
 
-🧭 **ماجراجویی عمیق‌تر:**
-• `/check stealth 15` — آزمایش مهارت؛ برتری/ضعف با `adv` یا `dis`
-• `/rest short` و `/rest long` — استراحت کوتاه/طولانی
-• `/inventory` — موجودی، مشعل و طناب
-• `/use potion` — استفاده از معجون شفا
+🔥 **استراحت:**
+• `/rest short` — استراحت کوتاه (۱ ساعت): مصرف Hit Die برای التیام، بازیابی منابع کوتاه
+• `/rest long` — استراحت طولانی (۸ ساعت): HP کامل، ریست کامل اسلات/منابع
 
-💡 نکته: دشمن‌ها هوشمندند و در نوبت خودشون حمله می‌کنن!
+🧭 **ماجراجویی:**
+• `/check <skill> <dc>` — آزمایش مهارت (ادراک، مخفی‌کاری، ورزش و...)
+• `/move near|far|flee` — حرکت در میدان نبرد (نزدیک/دور/فرار)
+• `/secondwind` — 💨 نفس دوم جنگجو (1d10+level التیام، یک‌بار در استراحت کوتاه)
+• `/actionsurge` — ⚡ اکشن اضافه جنگجو
+• `/inventory` — موجودی
+• `/use <item>` — استفاده از آیتم (معجون، مشعل، ...)
+
+🏅 **ویژگی‌های نژادی فعال:**
+• نفس اژدها (Dragonborn): `/cast dragonbreath`
+• شانس هالفلینگ: رول ۱ خودکار دوباره انداخته می‌شود
+• پافشاری نیمه‌اورک: هنگام down شدن یک‌بار با ۱ HP برمی‌گردد
+
+💡 دشمنان هوشمند هستند، حمله فرصت می‌زنند، و باس‌ها قابلیت ویژه دارند!
 """
 
 
@@ -528,6 +565,125 @@ async def combatend_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = end_combat(session)
     _save(update, context, session)
     await update.message.reply_text(result)
+
+
+# ---------- اکشن‌های جدید نبرد ----------
+async def dash_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    if not session.combat:
+        await update.message.reply_text("⚔️ نبردی در جریان نیست."); return
+    text = dash(session, update.effective_user.id)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+
+
+async def disengage_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    if not session.combat:
+        await update.message.reply_text("⚔️ نبردی در جریان نیست."); return
+    text = disengage(session, update.effective_user.id)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+
+
+async def help_action_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    if not session.combat:
+        await update.message.reply_text("⚔️ نبردی در جریان نیست."); return
+    target = " ".join(context.args or [])
+    text = help_action(session, update.effective_user.id, target)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+    await _maybe_advance(update, context, session)
+
+
+async def hide_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    if not session.combat:
+        await update.message.reply_text("⚔️ نبردی در جریان نیست."); return
+    text = hide(session, update.effective_user.id)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+    await _maybe_advance(update, context, session)
+
+
+async def shove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    if not session.combat:
+        await update.message.reply_text("⚔️ نبردی در جریان نیست."); return
+    target = " ".join(context.args or [])
+    text = shove(session, update.effective_user.id, target)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+    await _maybe_advance(update, context, session)
+
+
+async def secondwind_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    if not session.combat:
+        await update.message.reply_text("⚔️ نبردی در جریان نیست."); return
+    text = second_wind(session, update.effective_user.id)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+    await _maybe_advance(update, context, session)
+
+
+async def actionsurge_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    if not session.combat:
+        await update.message.reply_text("⚔️ نبردی در جریان نیست."); return
+    text = action_surge(session, update.effective_user.id)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+
+
+async def rage_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    if not session.combat:
+        await update.message.reply_text("⚔️ نبردی در جریان نیست."); return
+    text = rage(session, update.effective_user.id)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+
+
+async def inspire_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    if not session.combat:
+        await update.message.reply_text("⚔️ نبردی در جریان نیست."); return
+    target = " ".join(context.args or [])
+    text = bardic_inspiration(session, update.effective_user.id, target)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+
+
+async def move_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    if not session.combat:
+        await update.message.reply_text("⚔️ نبردی در جریان نیست."); return
+    where = (context.args[0] if context.args else "near")
+    text = move_action(session, update.effective_user.id, where)
+    _save(update, context, session)
+    await update.message.reply_text(text)
 
 
 # ---------- تجربه و سطح ----------

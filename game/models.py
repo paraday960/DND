@@ -4,9 +4,9 @@ import random
 import string
 
 from .rules import (
-    ABILITIES, RACES, CLASSES, WEAPONS, SPELLS,
+    ABILITIES, RACES, CLASSES, WEAPONS, SPELLS, WEAPON_RANGES,
     STANDARD_ARRAY, ability_mod, level_from_xp, proficiency_bonus,
-    DEFAULT_PROFICIENCIES,
+    DEFAULT_PROFICIENCIES, CONDITIONS,
 )
 
 
@@ -39,6 +39,22 @@ class Character:
         self.inspiration = False
         self.spell_slots = self._initial_spell_slots()
         self.spell_slots_used = {}
+        # منابع ویژگی‌های کلاس (که در استراحت ریست می‌شوند)
+        self.resources = self._initial_class_resources()
+        # Hit Dice برای استراحت کوتاه
+        self.hit_dice_used = 0
+        # بونس اکشن و ری‌اکشن در هر نوبت (در ابتدای نوبت ریست می‌شوند)
+        self.bonus_action_available = True
+        self.reaction_available = True
+        self.reaction_target = None  # برای آماده باش/فرصت
+        # وضعیت حرکت
+        self.distance = 0  # فاصله از دشمنان: 0 نزدیک، 1 متوسط، 2 دور
+        self.disengage_active = False
+        self.helped_target = None
+        self.hidden = False
+        # حالت خشم بربر
+        self.rage_active = False
+        self.rage_turns = 0
         # هنگام بازیابی از SQLite، امتیازها قبلاً شامل پاداش نژادی هستند؛
         # اعمال دوبارهٔ bonus باعث می‌شد هر بار load شدن کاراکتر قوی‌تر شود.
         self.abilities = dict(stats) if stats is not None else make_stats()
@@ -69,7 +85,46 @@ class Character:
         if self.cls not in ("wizard", "cleric", "druid", "bard", "sorcerer", "warlock", "paladin", "ranger"):
             return {}
         # مدل ساده‌شدهٔ slotها؛ استراحت طولانی آن‌ها را بازنشانی می‌کند.
-        return {1: max(1, min(4, 2 + self.level // 3)), 2: max(0, min(3, (self.level - 2) // 3))}
+        slots = {}
+        slots[1] = max(1, min(4, 2 + self.level // 3))
+        if self.level >= 3:
+            slots[2] = max(0, min(3, (self.level - 1) // 2))
+        if self.level >= 5:
+            slots[3] = max(1, min(2, (self.level - 3) // 2))
+        if self.level >= 7:
+            slots[4] = 1 if self.level >= 7 else 0
+        if self.level >= 9:
+            slots[5] = 1
+        return {k: v for k, v in slots.items() if v > 0}
+
+    def _initial_class_resources(self) -> dict:
+        res = {}
+        # Fighter
+        if self.cls == "fighter":
+            res["second_wind"] = {"max": 1, "used": 0, "per": "short"}
+            res["action_surge"] = {"max": 1 if self.level < 17 else 2, "used": 0, "per": "short"}
+        # Barbarian
+        if self.cls == "barbarian":
+            res["rage"] = {"max": 2 + self.level // 4, "used": 0, "per": "long"}
+        # Bard
+        if self.cls == "bard":
+            res["bardic_inspiration"] = {"max": max(3, self.level // 2 + 2), "used": 0, "dice": "d6" if self.level < 5 else "d8" if self.level < 10 else "d10" if self.level < 15 else "d12", "per": "long"}
+        # Monk
+        if self.cls == "monk":
+            res["ki"] = {"max": max(2, self.level), "used": 0, "per": "short"}
+        # Warlock
+        if self.cls == "warlock":
+            pass  # بعدا اضافه میشه invocations
+        # Dragonborn breath weapon
+        if self.race == "dragonborn":
+            res["breath"] = {"max": 1, "used": 0, "per": "short"}
+        # Halfling luck
+        if self.race == "halfling":
+            res["luck_used"] = False
+        # Half-orc relentless endurance
+        if self.race == "half_orc":
+            res["relentless_used"] = False
+        return res
 
     def available_slot(self, level: int = 1) -> bool:
         return self.spell_slots.get(level, 0) > self.spell_slots_used.get(level, 0)
@@ -82,6 +137,101 @@ class Character:
 
     def reset_spell_slots(self):
         self.spell_slots_used = {}
+
+    def reset_short_rest(self):
+        """استراحت کوتاه (۱ ساعت): hit dice می‌خوری، منابع per-short ریست می‌شوند."""
+        # ریست منابعی که per short هستند
+        for k, v in self.resources.items():
+            if v.get("per") == "short":
+                v["used"] = 0
+        # Warlock اسلات‌ها با استراحت کوتاه برمی‌گردند
+        if self.cls == "warlock":
+            self.spell_slots_used = {}
+        # Half-orc relentless endurance و dragonborn breath در short rest برمی‌گردند
+        if self.race == "half_orc":
+            self.resources["relentless_used"] = False
+        if self.race == "dragonborn" and "breath" in self.resources:
+            self.resources["breath"]["used"] = 0
+        # خستگی کم نمیشه
+        self.conditions = [c for c in self.conditions if c not in ("frightened", "charmed")]
+        # هاله بارد/الهام و غیره هم ریست میشن
+
+    def reset_long_rest(self):
+        """استراحت طولانی (۸ ساعت): همه چیز ریست میشه، HP کامل، اسلات‌ها کامل، منابع long."""
+        self.hp = self.max_hp
+        self.hit_dice_used = 0
+        self.death_saves = {"success": 0, "fail": 0}
+        self.conditions = []
+        self.spell_slots_used = {}
+        # همه منابع ریست
+        for k, v in self.resources.items():
+            v["used"] = 0
+        if self.race == "half_orc":
+            self.resources["relentless_used"] = False
+        if self.race == "halfling":
+            self.resources["luck_used"] = False
+        # خشم بربر خاموش میشه
+        self.rage_active = False
+        self.rage_turns = 0
+        self.hidden = False
+
+    def spend_hit_die(self) -> int:
+        """یک hit die در استراحت کوتاه خرج می‌کند و مقدار heal را برمی‌گرداند."""
+        if self.hit_dice_used >= self.level:
+            return 0
+        self.hit_dice_used += 1
+        import random
+        con_mod = self.stat_mod("CON")
+        roll = random.randint(1, self.hit_die) + con_mod
+        return max(1, roll)
+
+    def reset_turn_resources(self):
+        """در شروع نوبت بازیکن: بونس اکشن و ری‌اکشن دوباره در دسترس می‌شوند."""
+        self.bonus_action_available = True
+        self.reaction_available = True
+        self.disengage_active = False
+        self.helped_target = None
+        # اگر در خشم هستی شمارنده را زیاد کن و اگر آسیب ندیدی خاموش کن (بعدا در combat هندل می‌کنیم)
+
+    def advantage_on(self, roll_type: str, target=None) -> tuple:
+        """بر اساس شرایط، برمی‌گرداند که آیا این رول مزیت (advantage) یا ضعف (disadvantage) دارد.
+        خروجی: (has_adv, has_dis, reasons)
+        """
+        adv = False
+        dis = False
+        reasons = []
+        # وضعیت‌های خودم
+        if any(c in self.conditions for c in ("blinded", "frightened", "poisoned", "restrained", "stunned")):
+            dis = True
+            reasons.append("در وضعیت نامناسب")
+        if "prone" in self.conditions and roll_type == "attack_ranged":
+            dis = True
+            reasons.append("روی زمین افتاده و از دور حمله می‌کنی")
+        if "invisible" in self.conditions:
+            adv = True
+            reasons.append("نامرئی")
+        # اگر هدف کمک دریافت کرده
+        if self.helped_target == target:
+            adv = True
+            reasons.append("هم‌گروهی به تو کمک کرد")
+        if self.hidden and roll_type == "attack":
+            adv = True
+            reasons.append("مخفی بودی، حمله غافلگیرانه")
+        # وضعیت هدف
+        if target and isinstance(target, dict):
+            t_conds = target.get("conditions", [])
+            if any(c in t_conds for c in ("blinded", "restrained", "stunned", "unconscious", "prone")):
+                if roll_type == "attack_melee" or any(c in t_conds for c in ("unconscious", "paralyzed")):
+                    adv = True
+                    reasons.append("هدف در وضعیت آسیب‌پذیر است")
+            if "invisible" in t_conds and roll_type in ("attack", "attack_melee", "attack_ranged"):
+                dis = True
+                reasons.append("هدف نامرئی است")
+        # خشم
+        if self.rage_active and roll_type == "strength_attack":
+            adv = True
+            reasons.append("در حالت خشم")
+        return adv, dis, reasons
 
     # ---------- امکانات ----------
     def stat_mod(self, stat: str) -> int:
@@ -193,6 +343,10 @@ class Character:
             "conditions": self.conditions, "death_saves": self.death_saves,
             "inspiration": self.inspiration,
             "spell_slots": self.spell_slots, "spell_slots_used": self.spell_slots_used,
+            "resources": self.resources,
+            "hit_dice_used": self.hit_dice_used,
+            "rage_active": self.rage_active,
+            "rage_turns": self.rage_turns,
         }
 
     @classmethod
@@ -210,6 +364,10 @@ class Character:
         ch.inspiration = d.get("inspiration", False)
         ch.spell_slots = {int(k): v for k, v in d.get("spell_slots", ch.spell_slots).items()}
         ch.spell_slots_used = {int(k): v for k, v in d.get("spell_slots_used", {}).items()}
+        ch.resources = d.get("resources", ch.resources)
+        ch.hit_dice_used = d.get("hit_dice_used", 0)
+        ch.rage_active = d.get("rage_active", False)
+        ch.rage_turns = d.get("rage_turns", 0)
         return ch
 
 

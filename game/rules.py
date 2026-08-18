@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""قوانین D&D 5e — نژادها، کلاس‌ها، سلاح‌ها، توانایی‌ها و جداول ساده‌شده."""
+"""قوانین D&D 5e — نژادها، کلاس‌ها، سلاح‌ها، توانایی‌ها، وضعیت‌ها و اکشن‌ها."""
 
 ABILITIES = ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
 ABILITY_FA = {
@@ -9,6 +9,104 @@ ABILITY_FA = {
     "INT": "هوش",
     "WIS": "ادراک",
     "CHA": "جذابیت",
+}
+
+# ---------------- وضعیت‌های استاندارد D&D 5e ----------------
+CONDITIONS = {
+    "blinded": {"fa": "کور", "effects": ["همه رول‌های حمله و مهارت با ضعف", "حملات به تو با مزیت"]},
+    "charmed": {"fa": "افسون شده", "effects": ["نمی‌توانی به افسونگر حمله کنی", "افسونگر در برابرت CHA با مزیت دارد"]},
+    "deafened": {"fa": "ناشنوا", "effects": ["همه چک‌های ادراک شنوایی خودکار شکست می‌خورد"]},
+    "frightened": {"fa": "ترسیده", "effects": ["همه رول‌های حمله و مهارت با ضعف وقتی منبع ترس را می‌بینی", "نمی‌توانی عمداً به سمت منبع حرکت کنی"]},
+    "grappled": {"fa": "گرفتار شده", "effects": ["سرعت صفر می‌شود", "برای رهایی باید چک STR/DEX بزنی"]},
+    "incapacitated": {"fa": "بی‌اقدام", "effects": ["نمی‌توانی اکشن یا بونس اکشن بگیری", "حملات به تو با مزیت"]},
+    "invisible": {"fa": "نامرئی", "effects": ["حملات به تو با ضعف", "حملات تو با مزیت"]},
+    "paralyzed": {"fa": "فلج", "effects": ["بی‌اقدام هستی", "همه حملات علیه تو با مزیت", "هر ضربه به تو بحرانی است"]},
+    "poisoned": {"fa": "مسموم", "effects": ["همه رول‌های حمله و مهارت با ضعف"]},
+    "prone": {"fa": "روی زمین افتاده", "effects": ["حملات به تو از نزدیک با مزیت", "حملات تو از دور با ضعف", "برای بلند شدن نصف سرعت می‌رود"]},
+    "restrained": {"fa": "مقید شده", "effects": ["سرعت صفر", "همه حملات به تو با مزیت", "حملات تو با ضعف"]},
+    "stunned": {"fa": "گیج/شکه", "effects": ["بی‌اقدام هستی", "همه حملات به تو با مزیت"]},
+    "unconscious": {"fa": "بیهوش", "effects": ["بی‌اقدام، روی زمین افتاده", "همه حملات به تو با مزیت", "هر ضربه از نزدیک بحرانی است"]},
+    "exhaustion": {"fa": "خستگی مفرط", "levels": {
+        1: "همه چک‌های توانایی با ضعف",
+        2: "همه رول‌ها با ضعف، سرعت نصف",
+        3: "همه حملات و ذخیره‌ها با ضعف، ماکس HP نصف",
+        4: "سرعت صفر",
+        5: "ماکس HP به ۱ می‌رسد",
+        6: "مرگ",
+    }},
+    # شرایط کوتاه‌مدت بازی ما
+    "dodge": {"fa": "دفاع فعال", "effects": ["حملات به تو با ضعف تا نوبت بعد", "همه ذخیره‌های DEX با مزیت"]},
+    "raging": {"fa": "خشم", "effects": ["آسیب سلاح STR +2/+3/+4 بر اساس سطح", "مقاومت در برابر آسیب کوبنده/سوراخ/برنده"]},
+    "concentrating": {"fa": "در حال تمرکز طلسم", "effects": ["وقتی آسیب می‌خوری باید CON save بزنی"]},
+}
+
+# ---------------- اکشن‌های استاندارد نبرد ----------------
+COMBAT_ACTIONS = {
+    "attack": {"fa": "حمله", "type": "main", "desc": "حمله با سلاح یا طلسم"},
+    "cast": {"fa": "انداختن طلسم", "type": "main", "desc": "طلسمی که نیاز به اکشن دارد"},
+    "dash": {"fa": "دویدن", "type": "main", "desc": "سرعت حرکت در این نوبت دو برابر می‌شود"},
+    "disengage": {"fa": "عقب‌نشینی امن", "type": "main", "desc": "حرکت در این نوبت حمله فرصت ایجاد نمی‌کند"},
+    "dodge": {"fa": "دفاع", "type": "main", "desc": "حملات به تو با ضعف، DEX saves با مزیت تا نوبت بعد"},
+    "help": {"fa": "کمک", "type": "main", "desc": "به هم‌گروهی در حمله بعدی علیه هدف مزیت می‌دهد"},
+    "hide": {"fa": "پنهان شدن", "type": "main", "desc": "چک DEX (Stealth) برای مخفی شدن، حملات بعدی مزیت دارند"},
+    "ready": {"fa": "آماده باش", "type": "main", "desc": "یک اکشن را برای وقوع تریگر خاص ذخیره کن (واکنش)"},
+    "search": {"fa": "جستجو", "type": "main", "desc": "چک WIS (Perception) یا INT (Investigation) برای پیدا کردن چیزی"},
+    "use_object": {"fa": "استفاده از شیء", "type": "main", "desc": "استفاده از یک آیتم یا تعامل با شیء"},
+    "shove": {"fa": "هل دادن", "type": "main", "desc": "چک STR (Athletics) در مقابل هدف، می‌توانی هدف را به زمین بیندازی یا ۱.۵ متر عقب برانی"},
+    "grapple": {"fa": "گلاپل/گرفتن", "type": "main", "desc": "چک STR (Athletics) برای گرفتن هدف، سرعتش صفر می‌شود"},
+    "second_wind": {"fa": "نفس دوم", "type": "main", "class": "fighter", "desc": "یک بار در استراحت کوتاه: 1d10 + سطح fighter HP التیام"},
+    "action_surge": {"fa": "اکشن اضافه", "type": "main", "class": "fighter", "desc": "یک بار در استراحت کوتاه/طولانی: یک اکشن اضافه در همین نوبت"},
+}
+
+# اکشن‌های بونس (Bonus Action)
+BONUS_ACTIONS = {
+    "healing_word": {"fa": "کلمه شفا", "type": "bonus", "class": ["cleric", "bard", "druid"], "spell": True},
+    "cunning_action": {"fa": "اقدام حیله‌گر", "type": "bonus", "class": ["rogue"], "desc": "می‌توانی dash/disengage/hide به عنوان بونس اکشن بگیری"},
+    "bardic_inspiration": {"fa": "الهام بَرد", "type": "bonus", "class": ["bard"], "desc": "یک دی الهام به هم‌گروهی می‌دهی که به یک رول بعدی اضافه کند"},
+    "rage": {"fa": "خشم", "type": "bonus", "class": ["barbarian"], "desc": "وارد حالت خشم می‌شوی"},
+    "flurry_of_blows": {"fa": "ضربات پیاپی", "type": "bonus", "class": ["monk"], "desc": "بعد از حمله، دو ضربه مشت اضافه بدون سلاح"},
+    "patient_defense": {"fa": "دفاع صبورانه", "type": "bonus", "class": ["monk"], "desc": "به عنوان بونس اکشن دفاع می‌کنی با ۱ نقطه Ki"},
+    "step_of_the_wind": {"fa": "گام باد", "type": "bonus", "class": ["monk"], "desc": "با ۱ Ki dash یا disengage به عنوان بونس اکشن + پرش دو برابر"},
+    "smite": {"fa": "ضربه الهی", "type": "bonus", "class": ["paladin"], "spell": True, "desc": "بعد از ضربه با سلاح، یک جایگاه طلسم خرج می‌کنی تا آسیب تابشی اضافه بزنی"},
+    "hunters_mark": {"fa": "نشان شکارچی", "type": "bonus", "class": ["ranger"], "spell": True},
+    "hex": {"fa": "نفرین", "type": "bonus", "class": ["warlock"], "spell": True},
+    "offhand_attack": {"fa": "حمله دست دوم", "type": "bonus", "desc": "حمله دوم با سلاح سبک (بدون پاداش توانایی به آسیب)"},
+    "use_item_bonus": {"fa": "استفاده سریع آیتم", "type": "bonus", "desc": "نوشیدن معجون یا کشیدن سلاح به عنوان بونس اکشن"},
+}
+
+# جدول استاندارد DC (سختی) برای چک‌ها
+DC_TABLE = {
+    "very_easy": 5,
+    "easy": 10,
+    "medium": 15,
+    "hard": 20,
+    "very_hard": 25,
+    "nearly_impossible": 30,
+}
+
+# برد سلاح‌ها (متر)
+WEAPON_RANGES = {
+    # نزدیک
+    "longsword": {"type": "melee", "reach": 1.5},
+    "greataxe": {"type": "melee", "reach": 1.5},
+    "rapier": {"type": "melee", "reach": 1.5},
+    "dagger": {"type": "melee", "reach": 1.5, "ranged": 6, "ranged_max": 18, "light": True, "thrown": True},
+    "mace": {"type": "melee", "reach": 1.5},
+    "warhammer": {"type": "melee", "reach": 1.5},
+    "handaxe": {"type": "melee", "reach": 1.5, "ranged": 6, "ranged_max": 18, "light": True, "thrown": True},
+    "scimitar": {"type": "melee", "reach": 1.5, "light": True},
+    "staff": {"type": "melee", "reach": 1.5},
+    "shield": {"type": "melee", "reach": 1.5},
+    # دور
+    "shortbow": {"type": "ranged", "ranged": 24, "ranged_max": 96},
+    "longbow": {"type": "ranged", "ranged": 45, "ranged_max": 180},
+}
+
+# آسیب‌پذیری/مقاومت/ایمنی بر اساس نژاد
+RACE_DAMAGE_RESISTANCES = {
+    "tiefling": {"resist": ["fire"]},
+    "dwarf": {"resist": ["poison"]},
+    "dragonborn": {"breath": True},
 }
 
 # آرایه استاندارد امتیاز توانایی‌ها
@@ -163,14 +261,38 @@ WEAPONS = {
     "shield": {"fa": "سپر", "dmg": "1d4", "stat": "STR", "emoji": "🛡️"},
 }
 
-# ---------------- طلسم‌ها (ساده‌شده) ----------------
+# ---------------- طلسم‌ها (ساده‌شده D&D 5e) ----------------
 SPELLS = {
-    "firebolt": {"fa": "تیر آتش", "dmg": "1d10", "kind": "attack", "emoji": "🔥"},
-    "magicmissile": {"fa": "موشک جادویی", "dmg": "3d4+3", "kind": "auto", "emoji": "💫"},
-    "curewounds": {"fa": "مرهم زخم", "dmg": "1d8", "kind": "heal", "emoji": "💚"},
-    "guidingbolt": {"fa": "تیر هدایت‌گر", "dmg": "4d6", "kind": "attack", "emoji": "🌟"},
-    "eldritchblast": {"fa": "انفجار باستانی", "dmg": "1d10", "kind": "attack", "emoji": "🌑"},
-    "sacredflame": {"fa": "شعله مقدس", "dmg": "1d8", "kind": "auto", "emoji": "🕯️"},
+    # Cantrips (سطح ۰، بدون نیاز به slot)
+    "firebolt": {"fa": "تیر آتش", "level": 0, "dmg": "1d10", "kind": "attack_ranged", "damage_type": "fire", "emoji": "🔥"},
+    "eldritchblast": {"fa": "انفجار باستانی", "level": 0, "dmg": "1d10", "kind": "attack_ranged", "damage_type": "force", "emoji": "🌑"},
+    "sacredflame": {"fa": "شعله مقدس", "level": 0, "dmg": "1d8", "kind": "save_dex", "damage_type": "radiant", "emoji": "🕯️", "save_dc_stat": "DEX"},
+    "rayoffrost": {"fa": "اشعه یخبندان", "level": 0, "dmg": "1d8", "kind": "attack_ranged", "damage_type": "cold", "emoji": "❄️"},
+    "poisonspray": {"fa": "اسپری سم", "level": 0, "dmg": "1d12", "kind": "save_con", "damage_type": "poison", "emoji": "☠️", "range": 3},
+    "minorillusion": {"fa": "توهم کوچک", "level": 0, "kind": "utility", "emoji": "🎭"},
+    "prestidigitation": {"fa": "دست حقه", "level": 0, "kind": "utility", "emoji": "✨"},
+    # طلسم سطح ۱
+    "magicmissile": {"fa": "موشک جادویی", "level": 1, "dmg": "3d4+3", "kind": "auto", "damage_type": "force", "emoji": "💫"},
+    "curewounds": {"fa": "مرهم زخم", "level": 1, "heal": "1d8", "kind": "heal_touch", "emoji": "💚", "action": "main"},
+    "healingword": {"fa": "کلمه شفا", "level": 1, "heal": "1d4+mod", "kind": "heal_ranged", "emoji": "💚", "action": "bonus", "range": 18},
+    "guidingbolt": {"fa": "تیر هدایت‌گر", "level": 1, "dmg": "4d6", "kind": "attack_ranged", "damage_type": "radiant", "emoji": "🌟"},
+    "shield": {"fa": "سپر جادویی", "level": 1, "kind": "defense_bonus", "emoji": "🛡️", "action": "reaction", "effect": "+5 AC تا شروع نوبت بعد"},
+    "magearmor": {"fa": "زره جادویی", "level": 1, "kind": "buff_long", "emoji": "🧙", "effect": "پایه AC 13 + DEX به مدت ۸ ساعت"},
+    "sleep": {"fa": "خواب", "level": 1, "kind": "save_wis_aoe", "emoji": "💤", "hp_total": "5d8", "effect": "بیهوش کردن تا بیدار شدن/آسیب"},
+    "holdperson": {"fa": "نگه داشتن شخص", "level": 2, "kind": "save_wis", "emoji": "🫵", "effect": "فلج کردن هدف به مدت تمرکز"},
+    "fireball": {"fa": "گوی آتش", "level": 3, "dmg": "8d6", "kind": "save_dex_aoe", "damage_type": "fire", "emoji": "💥", "range": 45, "aoe_radius": 6},
+    "invisibility": {"fa": "نامرئی شدن", "level": 2, "kind": "buff_concentration", "emoji": "👻", "effect": "نامرئی تا حمله/طلسم یا تمرکز شکست"},
+    "mistystep": {"fa": "گام مه", "level": 2, "kind": "teleport_bonus", "emoji": "💨", "action": "bonus", "range": 9},
+    "spiritualweapon": {"fa": "سلاح روحانی", "level": 2, "dmg": "1d8+mod", "kind": "bonus_attack", "emoji": "🔨", "action": "bonus", "damage_type": "force"},
+    "huntersmark": {"fa": "نشان شکارچی", "level": 1, "kind": "buff_mark", "emoji": "🏹", "action": "bonus", "effect": "+1d6 آسیب به هدف علامت‌گذاری شده"},
+    "hex": {"fa": "نفرین", "level": 1, "kind": "buff_mark", "emoji": "👁️", "action": "bonus", "effect": "+1d6 نکروز به هدف، یک توانایی با ضعف"},
+    "curewounds_mass": {"fa": "مرهم زخم گروهی", "level": 3, "heal": "3d8+mod", "kind": "heal_aoe", "emoji": "💚", "range": 18, "aoe": 6},
+    "inflictwounds": {"fa": "ایجاد زخم", "level": 1, "dmg": "3d10", "kind": "attack_melee", "damage_type": "necrotic", "emoji": "💔"},
+    "burninghands": {"fa": "دستان سوزان", "level": 1, "dmg": "3d6", "kind": "save_dex_cone", "damage_type": "fire", "emoji": "🔥", "cone": 4.5},
+    "faeriefire": {"fa": "آتش پری", "level": 1, "kind": "save_dex_aoe", "emoji": "🌈", "effect": "همه در منطقه قابل دیدن، حملات به آن‌ها مزیت دارد"},
+    "entangle": {"fa": "گیر انداختن", "level": 1, "kind": "save_str_aoe", "emoji": "🌿", "effect": "مقید شدن توسط گیاهان"},
+    # تنفس اژدها (Dragonborn)
+    "dragonbreath": {"fa": "نفس اژدها", "level": 0, "kind": "save_dex_cone", "damage_type": "fire", "dmg": "2d6", "emoji": "🐲", "cone": 4.5, "race": "dragonborn", "per_rest": "long"},
 }
 
 # ---------------- دشمنان (ساده‌شده) ----------------

@@ -1,10 +1,48 @@
 # -*- coding: utf-8 -*-
-"""موتور نبرد — نوبت‌بندی، حمله، طلسم، دشمنان هوشمند و توزیع XP."""
+"""موتور نبرد D&D 5e — اکشن، بونس‌اکشن، ری‌اکشن، حمله فرصت، وضعیت‌ها، مزیت/ضعف."""
 import random
 
 from .dice import DiceError, parse_dice, roll_dice, roll_d20
 from .models import Session
-from .rules import CLASSES, MONSTERS, SPELLS, WEAPONS, ability_mod
+from .rules import (
+    CLASSES, MONSTERS, SPELLS, WEAPONS, WEAPON_RANGES, CONDITIONS,
+    ability_mod, proficiency_bonus,
+)
+
+
+# ---------------------- توابع کمکی D&D ----------------------
+def roll_adv_disadv(adv=False, dis=False):
+    """رول d20 با مزیت (advantage) یا ضعف (disadvantage). اگر هر دو true باشند لغو می‌شوند."""
+    if adv and dis:
+        adv, dis = False, False
+    r1 = roll_d20()
+    if not adv and not dis:
+        return r1, [r1], None
+    r2 = roll_d20()
+    if adv:
+        return max(r1, r2), [r1, r2], "adv"
+    return min(r1, r2), [r1, r2], "dis"
+
+
+def roll_with_mods(base_mod=0, adv=False, dis=False, crit_on=20):
+    """یک رول d20 به همراه مودیفایر و مزیت/ضعف انجام می‌دهد. خروجی: (total, raw, rolls, is_crit, is_fumble, mode)"""
+    raw, rolls, mode = roll_adv_disadv(adv, dis)
+    crit = (raw == crit_on)
+    fumble = (raw == 1)
+    total = raw + base_mod
+    return total, raw, rolls, crit, fumble, mode
+
+
+def get_participant_ch(session, p):
+    """اگر participant بازیکن باشد کاراکتر واقعی‌اش را برمی‌گرداند."""
+    if p.get("kind") != "player":
+        return None
+    return session.get_char(int(p.get("uid", 0)))
+
+
+def has_condition(p, cond):
+    """چک کردن اینکه یک شرکت‌کننده وضعیت خاصی دارد یا نه."""
+    return cond in p.get("conditions", [])
 
 
 # جدول گنج/لوت تصادفی پس از پیروزی
@@ -97,47 +135,148 @@ def _monster_key(mon: dict) -> str:
     return ""
 
 
-def _resolve_one_attack(session, mon, target, atk_bonus) -> tuple:
+def _calc_attack_adv_dis(attacker, target, is_ranged=False):
+    """محاسبه مزیت و ضعف برای حمله attacker به target."""
+    adv = False
+    dis = False
+    reasons = []
+    # وضعیت‌های حمله‌کننده
+    if has_condition(attacker, "blinded") or has_condition(attacker, "poisoned") or \
+       has_condition(attacker, "frightened") or has_condition(attacker, "restrained") or \
+       has_condition(attacker, "prone") and not is_ranged:
+        dis = True
+        reasons.append("در وضعیت نامناسب")
+    if has_condition(attacker, "invisible") or has_condition(attacker, "hidden"):
+        adv = True
+        reasons.append("نامرئی/مخفی")
+    # وضعیت‌های هدف
+    if has_condition(target, "blinded") or has_condition(target, "restrained") or \
+       has_condition(target, "stunned") or has_condition(target, "unconscious") or \
+       has_condition(target, "paralyzed") or has_condition(target, "prone") and not is_ranged:
+        adv = True
+        reasons.append("هدف در وضعیت آسیب‌پذیر")
+    if has_condition(target, "dodge"):
+        dis = True
+        reasons.append("هدف در حالت دفاع فعال")
+    if has_condition(target, "invisible"):
+        dis = True
+        reasons.append("هدف نامرئی")
+    if has_condition(target, "prone") and is_ranged:
+        dis = True
+        reasons.append("هدف روی زمین و حمله دوربرد")
+    # اگر هدف paralyzed/unconscious باشد و حمله نزدیک، کریت روی ۵ فوت اتوماتیک است
+    auto_crit_melee = (has_condition(target, "paralyzed") or has_condition(target, "unconscious")) and not is_ranged
+    if auto_crit_melee:
+        adv = True
+    # کمک هم‌گروهی
+    if attacker.get("helped_by"):
+        adv = True
+        reasons.append("هم‌گروهی کمک کرده")
+    return adv, dis, reasons, auto_crit_melee
+
+
+def _apply_damage_resistance(session, target, dmg, dmg_type="bludgeoning"):
+    """اعمال مقاومت/آسیب‌پذیری/ایمنی. خروجی: (damage_after, tags)"""
+    tags = []
+    # خشم بربر مقاومت در برابر آسیب‌های فیزیکی می‌دهد
+    if target.get("kind") == "player" and session is not None:
+        real_char = get_participant_ch(session, target)
+        if real_char and getattr(real_char, "rage_active", False):
+            if dmg_type in ("bludgeoning", "piercing", "slashing"):
+                dmg = max(1, dmg // 2)
+                tags.append("مقاومت (خشم)")
+    return max(0, dmg), tags
+
+
+def _resolve_one_attack(session, attacker, target, atk_bonus, dmg_expr=None,
+                        dmg_type="bludgeoning", is_ranged=False, extra_dmg=None,
+                        adv_override=None, dis_override=None) -> tuple:
     """یک حمله منفرد را اجرا می‌کند. خروجی: (lines_text, target_was_downed)."""
-    raw = roll_d20()
-    adv = "dodge" in target.get("conditions", [])
-    rolls = [raw]
-    if adv:
-        rolls.append(roll_d20())
-        raw = min(rolls)
+    adv, dis, reasons, auto_crit = _calc_attack_adv_dis(attacker, target, is_ranged)
+    if adv_override:
+        adv = True
+    if dis_override:
+        dis = True
+    # هالفلینگ: رول ۱ را دوباره می‌اندازد (luck)
+    attacker_ch = get_participant_ch(session, attacker)
+    raw, rolls, mode = roll_adv_disadv(adv, dis)
+    if attacker_ch and attacker_ch.race == "halfling" and raw == 1 and not getattr(attacker_ch, "resources", {}).get("luck_used", False):
+        raw2 = roll_d20()
+        rolls.append(raw2)
+        raw = raw2
+        if "resources" in attacker_ch.__dict__:
+            attacker_ch.resources["luck_used"] = True
+        reasons.append("شانس هالفلینگ")
     atk = raw + atk_bonus
-    crit = raw == 20
-    fumble = raw == 1
-    hit = (crit or (raw != 1 and atk >= target["ac"])) and not fumble
+    crit = (raw == 20) or auto_crit
+    fumble = (raw == 1)
+    hit = (crit or (raw != 1 and atk >= target.get("ac", 10))) and not fumble
     lines = []
+    adv_tag = ""
+    if mode == "adv":
+        adv_tag = f" (با مزیت، تاس‌ها {rolls[0]} و {rolls[1]})"
+    elif mode == "dis":
+        adv_tag = f" (با ضعف، تاس‌ها {rolls[0]} و {rolls[1]})"
     if hit:
-        dmg = _roll_damage(mon.get("dmg", "1d6+0"))
+        dmg_dice = dmg_expr or attacker.get("dmg", "1d6+0")
+        dmg = _roll_damage(dmg_dice)
+        if extra_dmg:
+            dmg += _roll_damage(extra_dmg) if isinstance(extra_dmg, str) else extra_dmg
         if crit:
-            dmg *= 2
-        target["hp"] = max(0, target["hp"] - dmg)
-        adv_tag = " (با ضعف بخاطر دفاع)" if adv else ""
-        lines.append(f"🎲 {mon['name']} به {target['name']} حمله کرد: {atk} "
-                     f"(رول {raw}{'+' + str(atk_bonus) if atk_bonus else ''}) "
-                     f"(AC {target['ac']}){adv_tag} — 💥 اصابت! {dmg} آسیب")
-        if crit and not adv_tag:
-            lines[-1] += " 🔥 **بحرانی!**"
-        if fumble:
-            pass  # impossible since hit
+            dmg += _roll_damage(dmg_dice)  # تاس‌های آسیب دوباره در کریت
+            if extra_dmg and isinstance(extra_dmg, str):
+                dmg += _roll_damage(extra_dmg)
+        # اعمال مقاومت/ضعف
+        dmg, res_tags = _apply_damage_resistance(session, target, dmg, dmg_type)
+        target["hp"] = max(0, target.get("hp", 10) - dmg)
+        # بررسی غلظت طلسم (Concentration)
+        if target.get("kind") == "player":
+            real_char = get_participant_ch(session, target)
+            if real_char and "concentrating" in real_char.conditions and dmg > 0:
+                dc = max(10, dmg // 2)
+                save = roll_d20() + real_char.stat_mod("CON")
+                if save < dc:
+                    real_char.conditions.remove("concentrating")
+                    lines.append(f"⚠️ تمرکز {target['name']} شکست! (رول {save} در برابر DC {dc})")
+        line = f"🎲 {attacker['name']} به {target['name']} حمله کرد: {atk} "
+        line += f"(رول {raw}{'+' + str(atk_bonus) if atk_bonus else ''}) "
+        line += f"(AC {target.get('ac', 10)}){adv_tag} — 💥 اصابت! {dmg} آسیب"
+        if dmg_type != "bludgeoning":
+            type_fa = {"fire": "آتش", "cold": "سرما", "lightning": "برق", "acid": "اسید",
+                       "poison": "سم", "necrotic": "نکروز", "radiant": "تابشی", "force": "نیرو",
+                       "piercing": "سوراخ‌کننده", "slashing": "برنده"}.get(dmg_type, dmg_type)
+            line += f" ({type_fa})"
+        if crit:
+            line += " 🔥 **بحرانی!**"
+        if res_tags:
+            line += f" [{'; '.join(res_tags)}]"
+        if reasons and adv:
+            pass
+        lines.append(line)
         downed = False
+        # Half-orc Relentless Endurance: وقتی قرار است down شوی یک بار به ۱ HP برمی‌گردی
         if target["hp"] <= 0:
-            target["hp"] = 0
-            target["downed"] = True
-            real_char = session.get_char(int(target["uid"]))
-            if real_char:
-                real_char.hp = 0
-                real_char.death_saves = {"success": 0, "fail": 0}
-            lines.append(f"💀 **{target['name']} از پا درآمد!** (در نوبتت /deathsave بزن)")
-            downed = True
+            real_char_target = get_participant_ch(session, target)
+            if real_char_target and real_char_target.race == "half_orc" and not real_char_target.resources.get("relentless_used", False):
+                target["hp"] = 1
+                real_char_target.hp = 1
+                real_char_target.resources["relentless_used"] = True
+                lines.append(f"💪 **{target['name']} (نیمه‌اورک)** با پافشاری از مرگ برگشت! (۱ HP)")
+                downed = False
+            else:
+                target["hp"] = 0
+                target["downed"] = True
+                if real_char_target:
+                    real_char_target.hp = 0
+                    real_char_target.death_saves = {"success": 0, "fail": 0}
+                lines.append(f"💀 **{target['name']} از پا درآمد!** (در نوبتت /deathsave بزن)")
+                downed = True
         return "\n".join(lines), downed
     else:
-        miss_tag = " — لغزش دست!" if fumble else " — بی‌اثر!"
-        return (f"🎲 {mon['name']} به {target['name']} حمله کرد: {atk} "
-                f"(AC {target['ac']}){miss_tag}"), False
+        miss_tag = " — لغزش دست!" if fumble else " — خطا!"
+        line = f"🎲 {attacker['name']} به {target['name']} حمله کرد: {atk} "
+        line += f"(AC {target.get('ac', 10)}){adv_tag}{miss_tag}"
+        return line, False
 
 
 
@@ -188,12 +327,22 @@ def start_combat(session: Session) -> str:
             continue
         alive = ch.hp > 0
         init = roll_d20() + ability_mod(ch.abilities["DEX"])
+        # در شروع نبرد اکشن و بونس‌اکشن و ری‌اکشن همه در دسترس است
+        ch.reset_turn_resources()
         combat["participants"].append({
             "kind": "player", "uid": uid, "name": ch.name,
             "emoji": CLASSES.get(ch.cls, {}).get("emoji", "🧙"),
             "init": init, "hp": ch.hp, "max_hp": ch.max_hp,
             "ac": ch.ac, "alive": True, "downed": not alive,
             "conditions": list(ch.conditions),
+            "distance": 0,  # 0: نزدیک، 1: متوسط، 2: دور
+            "acted": False,
+            "bonus_acted": False,
+            "reaction_available": True,
+            "disengage_active": False,
+            "helped_by": None,
+            "hidden": False,
+            "_attacks_this_turn": 0,
         })
 
     # دشمنان از سناریو
@@ -224,6 +373,12 @@ def start_combat(session: Session) -> str:
                     "alive": True, "conditions": [],
                     "is_boss": is_boss,
                     "ability": e.get("ability", ""),
+                    "distance": 0,
+                    "acted": False,
+                    "bonus_acted": False,
+                    "reaction_available": True,
+                    "disengage_active": False,
+                    "_attacks_this_turn": 0,
                 })
     if not monsters:
         # نبرد پیش‌فرض برای وقتی سناریویی نیست
@@ -234,6 +389,9 @@ def start_combat(session: Session) -> str:
                 "init": roll_d20() + 2, "hp": 7, "max_hp": 7, "ac": 15,
                 "dmg": "1d6+2", "atk_bonus": 2, "xp": 50,
                 "alive": True, "conditions": [], "is_boss": False,
+                "distance": 0, "acted": False, "bonus_acted": False,
+                "reaction_available": True, "disengage_active": False,
+                "_attacks_this_turn": 0,
             })
     combat["participants"].extend(monsters)
 
@@ -280,12 +438,48 @@ def _next_alive(combat: dict, start_idx: int) -> int:
     return start_idx
 
 
-def _goto_next(combat):
+def _trigger_opportunity_attacks(session, mover, from_dist, to_dist):
+    """وقتی موجودی از محدوده نزدیک (0) دور می‌شود بدون disengage، حملات فرصت را فعال می‌کند."""
+    messages = []
+    if mover.get("disengage_active", False):
+        return messages
+    if from_dist == 0 and to_dist > 0:
+        # همه دشمنان نزدیک یک حمله فرصت با ری‌اکشن می‌زنند
+        enemies = []
+        if mover["kind"] == "player":
+            enemies = [p for p in session.combat["participants"]
+                       if p["kind"] == "monster" and p.get("alive") and p.get("distance", 0) == 0
+                       and p.get("reaction_available", True) and p.get("hp", 0) > 0]
+        else:
+            enemies = [p for p in session.combat["participants"]
+                       if p["kind"] == "player" and not p.get("dead")
+                       and p.get("distance", 0) == 0 and p.get("reaction_available", True)
+                       and p.get("hp", 0) > 0]
+        for enemy in enemies:
+            if enemy.get("reaction_available", True):
+                enemy["reaction_available"] = False
+                if enemy["kind"] == "monster":
+                    atk_bonus = enemy.get("atk_bonus", 2)
+                    hit_msg, _ = _resolve_one_attack(session, enemy, mover, atk_bonus)
+                    messages.append(f"⚡ **حمله فرصت!** {enemy['name']} هنگام فرار {mover['name']} حمله می‌کند:\n{hit_msg}")
+                else:
+                    # بازیکن: حمله پایه با سلاح
+                    ch = get_participant_ch(session, enemy)
+                    if ch:
+                        hit_msg, _ = _resolve_one_attack(session, enemy, mover, ch.attack_bonus(), dmg_expr=WEAPONS[ch.weapon]["dmg"], dmg_type="slashing" if "sword" in ch.weapon or "axe" in ch.weapon else "piercing")
+                        messages.append(f"⚡ **حمله فرصت!** {enemy['name']} هنگام فرار {mover['name']} حمله می‌کند:\n{hit_msg}")
+    return messages
+
+
+def _goto_next(combat, session=None):
     """حرکت به نوبت بعدی شرکت‌کننده زنده؛ در صورت عبور از پایان لیست، round را زیاد می‌کند."""
     n = len(combat["participants"])
     if n == 0:
-        return
+        return []
     cur_idx = combat["turn"]
+    cur_p = combat["participants"][cur_idx]
+    messages = []
+    # حمله فرصت در شروع حرکت اگر بازیکن می‌خواهد دور شود (در حالت ساده همه در ابتدای نوبت اگر دور هستند حمله فرصت ندارند — اینجا در حرکت واقعی هندل می‌شود)
     nxt = _next_alive(combat, cur_idx)
     if nxt <= cur_idx:
         combat["round"] += 1
@@ -294,9 +488,24 @@ def _goto_next(combat):
     # وضعیت دفاع (Dodge) فقط تا شروع نوبت بعدی همین بازیکن دوام دارد
     if "dodge" in nxt_p.get("conditions", []):
         nxt_p["conditions"].remove("dodge")
+    # منابع نوبت ریست می‌شوند: اکشن، بونس‌اکشن، ری‌اکشن
+    nxt_p["acted"] = False
+    nxt_p["bonus_acted"] = False
+    nxt_p["reaction_available"] = True
+    nxt_p["_attacks_this_turn"] = 0
+    nxt_p["disengage_active"] = False
+    nxt_p["helped_by"] = None
+    nxt_p["hidden"] = False
+    # در نوبت بازیکن منابع کاراکتر هم ریست
+    if nxt_p.get("kind") == "player":
+        ch = get_participant_ch(session, nxt_p) if session else None
+        if ch:
+            ch.reset_turn_resources()
     # وقتی نوبت به یک بازیکن می‌رسد، در صورت زنده بودن، وضعیت downed از نوبت قبل پاک شود
     if nxt_p.get("kind") == "player" and not nxt_p.get("dead") and nxt_p.get("hp", 0) > 0:
         nxt_p["downed"] = False
+    # مدیریت خشم بربر: اگر نوبت رسید و در خشم هستی و حمله نکردی یا آسیب نخوردی خشم تمام می‌شود
+    return messages
 
 
 def _run_pending_monsters(session: Session, messages: list, advance_first: bool):
@@ -508,6 +717,8 @@ def attack(session: Session, uid: int, target_name: str) -> str:
         return "کاراکترت مرده است."
     if ch.hp <= 0 or cur.get("downed"):
         return "تو زمین‌گیری! فقط می‌توانی `/deathsave` بزنی."
+    if cur.get("acted"):
+        return "در این نوبت اکشن اصلی را قبلاً گرفتی! می‌توانی بونس‌اکشن بگیری یا `/skip` کنی."
 
     target = _find_target(combat, target_name)
     if not target:
@@ -517,16 +728,27 @@ def attack(session: Session, uid: int, target_name: str) -> str:
 
     from .rules import WEAPONS
     weapon = WEAPONS[ch.weapon]
-    # Rogue: اگر دشمن در کنار یال (ally) دیگری باشد Sneak Attack
+    weapon_range = WEAPON_RANGES.get(ch.weapon, {"type": "melee", "reach": 1.5})
+    is_ranged = weapon_range.get("type") == "ranged"
+    dmg_type = "piercing" if "bow" in ch.weapon or "arrow" in ch.weapon or "dagger" in ch.weapon else \
+               "slashing" if "axe" in ch.weapon or "sword" in ch.weapon or "scimitar" in ch.weapon else \
+               "bludgeoning" if "mace" in ch.weapon or "hammer" in ch.weapon or "staff" in ch.weapon else "bludgeoning"
+    # اگر دور هستی و سلاح نزدیک، باید اول move کنی
+    if cur.get("distance", 0) > 0 and weapon_range["type"] == "melee":
+        return f"فاصله تو تا دشمن زیاد است! اول با `/move near` نزدیک شو."
+    if cur.get("distance", 0) == 0 and weapon_range["type"] == "ranged" and not cur.get("disengage_active", False):
+        # حمله دوربرد در نزدیکی دشمن با ضعف (حمله فرصت نمی‌دهد اما ضعف دارد)
+        pass
+    # Rogue: Sneak Attack اگر مزیت داری یا هم‌گروهی کنار هدف است
     has_ally_adjacent = False
     for p in combat["participants"]:
         if p.get("kind") == "player" and p.get("uid") != str(uid) \
            and p.get("alive", True) and not p.get("dead") and not p.get("downed") \
-           and p.get("hp", 0) > 0:
+           and p.get("hp", 0) > 0 and p.get("distance", 0) == target.get("distance", 0):
             has_ally_adjacent = True
             break
 
-    # Extra Attack در سطح ۵+ برای جنگجو/بربر/پالادین/رنجر/مانک
+    # Extra Attack
     n_attacks = 1
     if ch.cls in ("fighter", "barbarian", "paladin", "ranger", "monk") and ch.level >= 5:
         n_attacks = 2
@@ -537,48 +759,307 @@ def attack(session: Session, uid: int, target_name: str) -> str:
 
     parts = []
     killed = False
+    cur["acted"] = True
+    ch.hidden = False
+    cur["hidden"] = False
+    # الهام بارد
+    extra_dmg = ""
+    if ch.inspiration:
+        sa_dice = max(1, (ch.level + 1) // 2)
+        if ch.cls == "rogue" and (has_ally_adjacent or cur.get("hidden")):
+            extra_dmg = f"{sa_dice}d6"
+    # خشم بربر آسیب اضافه
+    rage_bonus = ch.rage_dmg_bonus if ch.rage_active else 0
     for atk_i in range(n_attacks):
         if target.get("hp", 0) <= 0 or not target.get("alive", True):
             break
-        raw_rolls = [roll_d20(), roll_d20()] if "dodge" in target.get("conditions", []) else [roll_d20()]
-        raw = min(raw_rolls) if len(raw_rolls) == 2 else raw_rolls[0]
-        atk = raw + ch.attack_bonus()
-        crit = raw == 20
-        fumble = raw == 1
-        hit = (crit or atk >= target["ac"]) and not fumble
-        tag = f" (حمله {atk_i+1})" if n_attacks > 1 else ""
-        if hit:
-            dmg = _roll_damage(weapon["dmg"]) + ch.stat_mod(weapon["stat"])
-            sa = 0
-            if ch.cls == "rogue" and has_ally_adjacent and atk_i == 0:
-                sa_dice = max(1, (ch.level + 1) // 2)
-                sa = sum(roll_dice(sa_dice, 6))
-                dmg += sa
-            if crit:
-                dmg += _roll_damage(weapon["dmg"]) + ch.stat_mod(weapon["stat"])
-                if ch.cls == "rogue" and has_ally_adjacent and atk_i == 0:
-                    sa_dice = max(1, (ch.level + 1) // 2)
-                    dmg += sum(roll_dice(sa_dice, 6))
-            target["hp"] = max(0, target["hp"] - dmg)
-            line = (f"🎲 {ch.name}{tag} با {weapon['fa']} به {target['name']}: {atk} "
-                    f"(AC {target['ac']}) — 💥 {dmg} آسیب")
-            if crit:
-                line += " 🔥 **بحرانی!**"
-            if sa:
-                line += " 🗡️ **غافلگیرانه!**"
-            parts.append(line)
-            if target["hp"] <= 0:
-                target["alive"] = False
-                combat["xp_pool"] += target["xp"]
-                killed = True
+        sa = 0
+        extra = ""
+        if ch.cls == "rogue" and (has_ally_adjacent or cur.get("hidden") or cur.get("helped_by")) and atk_i == 0:
+            sa_dice = max(1, (ch.level + 1) // 2)
+            sa = sum(roll_dice(sa_dice, 6))
+            extra = f"{sa_dice}d6"
+        if rage_bonus:
+            extra_dmg_int = rage_bonus
         else:
-            miss_tag = " — لغزش دست!" if fumble else " — خطا!"
-            parts.append(f"🎲 {ch.name}{tag} با {weapon['fa']} به {target['name']}: {atk} (AC {target['ac']}){miss_tag}")
+            extra_dmg_int = 0
+        if sa:
+            extra_dmg_int += sa
+        # تایپ صحیح
+        if extra:
+            extra = f"{ch.stat_mod(weapon['stat'])+extra_dmg_int:+d}+{sa}d6"
+        hit_msg, downed = _resolve_one_attack(session, cur, target, ch.attack_bonus(),
+                                              dmg_expr=weapon["dmg"], dmg_type=dmg_type,
+                                              is_ranged=is_ranged, extra_dmg=extra_dmg_int if extra_dmg_int else None)
+        parts.append(hit_msg)
+        if target.get("hp", 0) <= 0:
+            target["alive"] = False
+            combat["xp_pool"] += target["xp"]
+            killed = True
     result = "\n".join(parts)
     if killed:
         result += f"\n☠️ **{target['name']} نابود شد!** (+{target['xp']} XP به خزانه گروه)"
+    # خشم بربر: اگر حمله زدی خشم ادامه پیدا می‌کند
+    if ch.rage_active:
+        ch.rage_turns += 1
     session.add_log(ch.name, result.replace("\n", " ")[:400])
     return result
+
+
+def move_action(session: Session, uid: int, where: str) -> str:
+    """حرکت در نبرد: near/far/flee — مدیریت فاصله و حمله فرصت."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    ch = get_participant_ch(session, cur)
+    if cur.get("downed") or cur.get("dead"):
+        return "نمی‌توانی حرکت کنی."
+    where = where.strip().lower()
+    cur_dist = cur.get("distance", 0)
+    msgs = []
+    if where in ("near", "جلو", "نزدیک"):
+        new_dist = 0
+        if cur_dist == 0:
+            return "همین الان در نزدیکی هستی!"
+        cur["distance"] = 0
+        msgs.append(f"🏃 {cur['name']} به سمت دشمنان دوید و در خط مقدم قرار گرفت!")
+    elif where in ("far", "عقب", "دور"):
+        new_dist = 1
+        if cur_dist > 0:
+            return "همین الان دور هستی!"
+        # حمله فرصت
+        opp = _trigger_opportunity_attacks(session, cur, cur_dist, new_dist)
+        msgs.extend(opp)
+        cur["distance"] = 1
+        msgs.append(f"🏹 {cur['name']} به عقب رفت و در فاصله دور ایستاد (برای کمان/طلسم مناسب).")
+    elif where in ("flee", "فرار"):
+        new_dist = 2
+        opp = []
+        if not cur.get("disengage_active", False):
+            opp = _trigger_opportunity_attacks(session, cur, cur_dist, 0)
+        msgs.extend(opp)
+        cur["distance"] = 2
+        msgs.append(f"🏃💨 {cur['name']} سعی در فرار از میدان نبرد دارد! (در صورتی که در ۲ نوبت متوالی flee بزنی فرار می‌کنی)")
+    return "\n".join(msgs)
+
+
+def dash(session: Session, uid: int) -> str:
+    """اکشن Dash: حرکت اضافه — در مدل ساده ما باعث می‌شود می‌توانی دو مرحله دور شوی/نزدیک شوی و حمله فرصت را نادیده می‌گیری اگر disengage نگرفتی."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    if cur.get("downed") or cur.get("dead"):
+        return "نمی‌توانی حرکت کنی."
+    cur["acted"] = True
+    session.add_log(cur["name"], "اکشن دویدن (Dash) گرفت")
+    return f"🏃 {cur['name']} دوید! حالا می‌توانی به `/move near|far|flee` حرکت کنی، حمله فرصت یک بار کمتر است."
+
+
+def disengage(session: Session, uid: int) -> str:
+    """اکشن Disengage: حرکت در این نوبت حمله فرصت ایجاد نمی‌کند."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    if cur.get("downed") or cur.get("dead"):
+        return "نمی‌توانی حرکت کنی."
+    cur["acted"] = True
+    cur["disengage_active"] = True
+    ch = get_participant_ch(session, cur)
+    if ch:
+        ch.disengage_active = True
+    session.add_log(cur["name"], "عقب‌نشینی امن (Disengage)")
+    return f"🚪 {cur['name']} عقب‌نشینی امن گرفت! حالا می‌توانی بدون حمله فرصت دور شوی (`/move flee`)."
+
+
+def help_action(session: Session, uid: int, target_name: str = "") -> str:
+    """اکشن Help: به هم‌گروهی در حمله بعدی به هدف مزیت می‌دهد."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    if cur.get("downed") or cur.get("dead"):
+        return "نمی‌توانی کمک کنی."
+    target = None
+    if target_name:
+        for p in session.combat["participants"]:
+            if p["kind"] == "player" and p["uid"] != str(uid) and target_name.lower() in p["name"].lower():
+                target = p
+                break
+    if not target:
+        # هدف: اولین هم‌گروهی زنده
+        for p in session.combat["participants"]:
+            if p["kind"] == "player" and p["uid"] != str(uid) and p.get("hp", 0) > 0 and not p.get("downed"):
+                target = p
+                break
+    if not target:
+        return "هم‌گروهی برای کمک پیدا نشد."
+    cur["acted"] = True
+    target["helped_by"] = cur["name"]
+    session.add_log(cur["name"], f"کمک کرد به {target['name']}")
+    return f"🤝 {cur['name']} به {target['name']} کمک می‌کند! حمله بعدی {target['name']} با مزیت انجام می‌شود."
+
+
+def hide(session: Session, uid: int) -> str:
+    """اکشن Hide: چک DEX (Stealth) در مقابل میانگین passive perception دشمنان."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    ch = get_participant_ch(session, cur)
+    if not ch:
+        return "کاراکترت پیدا نشد."
+    if cur.get("downed") or cur.get("dead"):
+        return "نمی‌توانی پنهان شوی."
+    cur["acted"] = True
+    stealth_mod = ch.stat_mod("DEX") + (proficiency_bonus(ch.level) if "stealth" in ch.proficiencies else 0)
+    roll = roll_d20() + stealth_mod
+    # passive perception دشمنان: 10 + WIS
+    monsters = [p for p in session.combat["participants"] if p["kind"] == "monster" and p.get("alive")]
+    if not monsters:
+        cur["hidden"] = True
+        ch.hidden = True
+        return f"🙈 {cur['name']} پنهان شد! هیچ دشمنی در میدان نیست."
+    avg_pp = 10 + 2  # برای سادگی
+    success = roll >= avg_pp
+    if success:
+        cur["hidden"] = True
+        ch.hidden = True
+        session.add_log(cur["name"], f"پنهان شد: رول {roll} در برابر {avg_pp}")
+        return f"🙈 {cur['name']} با موفقیت پنهان شد! (رول {roll}) حمله بعدی با مزیت خواهد بود."
+    else:
+        session.add_log(cur["name"], f"پنهان نشد: رول {roll} در برابر {avg_pp}")
+        return f"👀 نتوانستی پنهان شوی! (رول {roll} کمتر از {avg_pp}) دشمنان هنوز تو را می‌بینند."
+
+
+def shove(session: Session, uid: int, target_name: str = "") -> str:
+    """اکشن Shove: چک STR (Athletics) روبروی هدف؛ می‌توانی هدف را به زمین بیندازی (prone)."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    ch = get_participant_ch(session, cur)
+    if not ch:
+        return "کاراکترت پیدا نشد."
+    if cur.get("downed") or cur.get("dead"):
+        return "نمی‌توانی کسی را هل بدهی."
+    target = _find_target(session.combat, target_name) if target_name else None
+    if not target:
+        names = ", ".join(p["name"] for p in session.combat["participants"]
+                         if p["kind"] == "monster" and p["alive"])
+        return f"هدف پیدا نشد. دشمنان: {names}"
+    cur["acted"] = True
+    mod = ch.stat_mod("STR") + (proficiency_bonus(ch.level) if "athletics" in ch.proficiencies else 0)
+    my_roll = roll_d20() + mod
+    target_mod = _default_atk_bonus(_monster_key(target), MONSTERS.get(_monster_key(target), {}))
+    target_roll = roll_d20() + target_mod
+    if my_roll > target_roll:
+        target.setdefault("conditions", []).append("prone")
+        session.add_log(cur["name"], f"{target['name']} را هل داد و به زمین انداخت")
+        return f"💪 {cur['name']} با قدرت {target['name']} را هل داد و روی زمین انداخت! (رول {my_roll} در مقابل {target_roll}) هدف الان وضعیت prone دارد."
+    else:
+        return f"🦵 هل دادن {cur['name']} موفق نبود! (رول {my_roll} در مقابل {target_roll}) {target['name']} مقاومت کرد."
+
+
+def second_wind(session: Session, uid: int) -> str:
+    """Second Wind جنگجو: 1d10 + سطح fighter HP."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    ch = get_participant_ch(session, cur)
+    if not ch:
+        return "کاراکترت پیدا نشد."
+    if ch.cls != "fighter":
+        return "این قابلیت فقط برای جنگجو است."
+    if ch.resources.get("second_wind", {}).get("used", 0) >= ch.resources.get("second_wind", {}).get("max", 1):
+        return "نفس دوم را در این استراحت قبلاً استفاده کردی!"
+    cur["acted"] = True
+    ch.resources["second_wind"]["used"] += 1
+    heal = random.randint(1, 10) + ch.level
+    real_heal = ch.heal(heal)
+    cur["hp"] = ch.hp
+    session.add_log(ch.name, f"نفس دوم گرفت، +{real_heal} HP")
+    return f"💨 **نفس دوم!** {ch.name} نفس عمیق کشید و {real_heal} HP بازیافت کرد."
+
+
+def action_surge(session: Session, uid: int) -> str:
+    """Action Surge جنگجو: یک اکشن اضافه در همین نوبت."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    ch = get_participant_ch(session, cur)
+    if not ch:
+        return "کاراکترت پیدا نشد."
+    if ch.cls != "fighter":
+        return "این قابلیت فقط برای جنگجو است."
+    if ch.resources.get("action_surge", {}).get("used", 0) >= ch.resources.get("action_surge", {}).get("max", 1):
+        return "اکشن اضافه را در این استراحت قبلاً استفاده کردی!"
+    ch.resources["action_surge"]["used"] += 1
+    cur["acted"] = False  # می‌تواند دوباره اکشن اصلی بگیرد
+    session.add_log(ch.name, "از Action Surge استفاده کرد")
+    return f"⚡ **اکشن اضافه!** {ch.name} موج انرژی دریافت کرد و حالا می‌تواند یک اکشن دیگر بزند!"
+
+
+def rage(session: Session, uid: int) -> str:
+    """خشم بربر (Bonus Action)."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    ch = get_participant_ch(session, cur)
+    if not ch:
+        return "کاراکترت پیدا نشد."
+    if ch.cls != "barbarian":
+        return "این قابلیت فقط برای بربر است."
+    if ch.rage_active:
+        return "همین الان در خشم هستی!"
+    if ch.resources.get("rage", {}).get("used", 0) >= ch.resources.get("rage", {}).get("max", 2):
+        return "تعداد دفعات خشم در این استراحت طولانی تمام شده!"
+    ch.resources["rage"]["used"] += 1
+    ch.rage_active = True
+    ch.rage_turns = 0
+    cur["bonus_acted"] = True
+    ch.bonus_action_available = False
+    # خشم: +2 آسیب در این سطح، مقاومت فیزیکی
+    rage_dmg_bonus = 2 if ch.level < 9 else 3 if ch.level < 16 else 4
+    ch.rage_dmg_bonus = rage_dmg_bonus
+    session.add_log(ch.name, f"وارد حالت خشم شد (+{rage_dmg_bonus} آسیب، مقاومت فیزیکی)")
+    return f"🪓 **خشم!** {ch.name} وارد خشم وحشیانه شد!\n" \
+           f"• +{rage_dmg_bonus} آسیب با سلاح‌های STR\n" \
+           f"• مقاومت در برابر آسیب کوبنده/سوراخ/برنده (نصف آسیب)\n" \
+           f"• حملات با مزیت STR"
+
+
+def bardic_inspiration(session: Session, uid: int, target_name: str = "") -> str:
+    """الهام بَرد (Bonus Action)."""
+    if not is_player_turn(session, uid):
+        return "هنوز نوبت تو نیست."
+    cur = session.combat["participants"][session.combat["turn"]]
+    ch = get_participant_ch(session, cur)
+    if not ch:
+        return "کاراکترت پیدا نشد."
+    if ch.cls != "bard":
+        return "این قابلیت فقط برای بَرد است."
+    if ch.resources.get("bardic_inspiration", {}).get("used", 0) >= ch.resources.get("bardic_inspiration", {}).get("max", 3):
+        return "تعداد دی‌های الهام در این استراحت طولانی تمام شده!"
+    target = None
+    if target_name:
+        for p in session.combat["participants"]:
+            if p["kind"] == "player" and p["uid"] != str(uid) and target_name.lower() in p["name"].lower():
+                target = p
+                break
+    if not target:
+        for p in session.combat["participants"]:
+            if p["kind"] == "player" and p.get("hp", 0) > 0 and not p.get("downed"):
+                target = p
+                break
+    if not target:
+        return "هم‌گروهی برای الهام پیدا نشد."
+    ch.resources["bardic_inspiration"]["used"] += 1
+    cur["bonus_acted"] = True
+    ch.bonus_action_available = False
+    die = ch.resources["bardic_inspiration"]["dice"]
+    target["inspiration_die"] = die
+    tch = get_participant_ch(session, target)
+    if tch:
+        tch.inspiration = True
+    session.add_log(ch.name, f"به {target['name']} الهام بَرد داد ({die})")
+    return f"🎻 **الهام بَرد!** {ch.name} آهنگی الهام‌بخش برای {target['name']} نواخت! در یکی از رول‌های بعدی {die} اضافه می‌شود."
 
 
 def dodge(session: Session, uid: int) -> str:
@@ -588,10 +1069,14 @@ def dodge(session: Session, uid: int) -> str:
     cur = session.combat["participants"][session.combat["turn"]]
     if cur.get("downed") or cur.get("dead") or cur.get("hp", 1) <= 0:
         return "در وضعیت مرگ نمی‌توانی دفاع کنی — `/deathsave` بزن."
+    if cur.get("acted"):
+        return "قبلاً اکشن اصلی را گرفتی! (Dodge اکشن اصلی است)"
     if "dodge" not in cur.setdefault("conditions", []):
         cur["conditions"].append("dodge")
+    cur["acted"] = True
+    ch = get_participant_ch(session, cur)
     session.add_log(cur["name"], "حالت دفاعی گرفت (Dodge)")
-    return f"🛡️ {cur['name']} دفاع کرد؛ حمله‌ها علیه او با ضعف خواهند بود."
+    return f"🛡️ {cur['name']} دفاع کرد؛ حمله‌ها علیه او با ضعف خواهند بود و DEX saves با مزیت است."
 
 
 def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> str:
@@ -609,18 +1094,48 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
     if ch.hp <= 0 or cur.get("downed"):
         return "تو زمین‌گیری! فقط می‌توانی `/deathsave` بزنی."
 
-    spell = SPELLS.get(spell_key.lower())
+    spell_key = spell_key.lower().replace(" ", "")
+    spell = SPELLS.get(spell_key)
     if not spell:
         from .rules import SPELLS as S
-        return f"طلسم پیدا نشد. طلسم‌ها: {', '.join('`' + k + '`' for k in S)}"
+        return f"طلسم پیدا نشد. طلسم‌ها: {', '.join('`' + k + '`' for k in S if k in S)}"
 
-    castable = ch.cls in ("wizard", "sorcerer", "bard", "warlock", "cleric", "druid", "paladin", "ranger", "monk")
-    if not castable and spell_key.lower() != "curewounds":
-        return f"کلاس {ch.cls} اهل جادو نیست! 🥊"
-    cantrips = {"firebolt", "eldritchblast", "sacredflame"}
-    if spell_key.lower() not in cantrips and not ch.spend_slot(1):
-        return "🪄 جایگاه طلسم سطح ۱ نداری؛ استراحت طولانی کن."
-    if spell["kind"] == "heal":
+    # بررسی بونس‌اکشن بودن طلسم
+    is_bonus = spell.get("action") == "bonus"
+    if is_bonus:
+        if cur.get("bonus_acted"):
+            return "بونس‌اکشن این نوبت را قبلاً استفاده کردی!"
+    else:
+        if cur.get("acted"):
+            return "اکشن اصلی این نوبت قبلاً گرفته شده!"
+
+    # بررسی دسترسی کلاس (اسپشیال کیس‌ها)
+    castable_classes = ("wizard", "sorcerer", "bard", "warlock", "cleric", "druid", "paladin", "ranger", "monk")
+    is_dragonbreath = spell_key == "dragonbreath"
+    if is_dragonbreath:
+        if ch.race != "dragonborn":
+            return "این قابلیت فقط برای اژدهازاده است!"
+        if ch.resources.get("breath", {}).get("used", 0) >= 1:
+            return "نفس اژدها را در این استراحت استفاده کردی!"
+    else:
+        if ch.cls not in castable_classes and spell_key not in ("curewounds", "healingword"):
+            return f"کلاس {ch.cls} اهل جادو نیست! 🥊"
+    # مصرف اسلات
+    cantrips = {"firebolt", "eldritchblast", "sacredflame", "rayoffrost", "poisonspray", "minorillusion", "prestidigitation"}
+    if spell_key not in cantrips and not is_dragonbreath:
+        slot_level = spell.get("level", 1)
+        if not ch.spend_slot(slot_level):
+            return f"🪄 جایگاه طلسم سطح {slot_level} نداری؛ استراحت کن."
+    # اگر بونس اکشن بود مارک کن
+    if is_bonus:
+        cur["bonus_acted"] = True
+        ch.bonus_action_available = False
+    else:
+        cur["acted"] = True
+    parts = []
+    spell_dc = 8 + ch.spell_mod() + proficiency_bonus(ch.level)
+    # ----- طلسم‌های التیام -----
+    if "heal" in spell["kind"]:
         target = None
         if target_name:
             for p in combat["participants"]:
@@ -629,7 +1144,12 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
                     break
         if not target:
             target = cur
-        healed = sum(roll_dice(1, 8)) + ch.spell_mod()
+        if "1d4" in spell.get("heal", "1d8"):
+            healed = sum(roll_dice(1, 4)) + ch.spell_mod()
+        else:
+            healed = sum(roll_dice(1, 8)) + ch.spell_mod()
+        if spell.get("upcast", False) and ch.level >= 5:
+            healed += sum(roll_dice(1, 8))
         if target["kind"] == "player":
             real_char = session.get_char(int(target["uid"]))
             if real_char:
@@ -639,41 +1159,98 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
                     target["downed"] = False
                     target["alive"] = True
                     real_char.death_saves = {"success": 0, "fail": 0}
-        result = f"💚 {ch.name} طلسم «{spell['fa']}» را روی {target['name']} می‌اندازد... +{healed} HP"
-        session.add_log(ch.name, result)
+        parts.append(f"{spell['emoji']} {ch.name} طلسم «{spell['fa']}» را روی {target['name']} می‌اندازد... +{healed} HP")
+        result = "\n".join(parts)
+        session.add_log(ch.name, result.replace("\n", " "))
         return result
-
+    # ----- سپر جادویی (Shield - Reaction) -----
+    if spell_key == "shield":
+        ch.ac += 5
+        cur["ac"] += 5
+        cur["reaction_available"] = False
+        ch.reaction_available = False
+        parts.append(f"🛡️ {ch.name} طلسم سپر جادویی را به عنوان ری‌اکشن فعال کرد! AC تا نوبت بعد ۵+ می‌شود.")
+        result = "\n".join(parts)
+        return result
+    # ----- نفس اژدها (Dragonborn Breath) -----
+    if is_dragonbreath:
+        ch.resources["breath"]["used"] = 1
+        dmg = sum(roll_dice(2, 6))
+        parts.append(f"🐲 {ch.name} نفس آتشین اژدهای خود را بیرون می‌دهد! همه در مخروط ۴.۵ متر...")
+        for p in combat["participants"]:
+            if p["kind"] == "monster" and p.get("alive") and p.get("distance", 0) <= 1:
+                save = roll_d20() + 2  # DEX save
+                if save >= spell_dc:
+                    actual = dmg // 2
+                    parts.append(f"🛡️ {p['name']} با موفقیت جاخالی داد و {actual} آسیب خورد!")
+                else:
+                    actual = dmg
+                    parts.append(f"🔥 {p['name']} کامل سوخت: {actual} آسیب آتش!")
+                p["hp"] = max(0, p["hp"] - actual)
+                if p["hp"] <= 0:
+                    p["alive"] = False
+                    combat["xp_pool"] += p["xp"]
+                    parts.append(f"☠️ {p['name']} خاکستر شد!")
+        result = "\n".join(parts)
+        session.add_log(ch.name, result.replace("\n", " "))
+        return result
+    # ----- طلسم‌های حمله تک‌هدف -----
     target = _find_target(combat, target_name)
     if not target:
         names = ", ".join(p["name"] for p in combat["participants"]
-                          if p["kind"] == "monster" and p["alive"])
+                         if p["kind"] == "monster" and p["alive"])
         return f"هدف پیدا نشد. دشمنان: {names}"
-
-    if spell["kind"] == "auto":
+    is_ranged_spell = "ranged" in spell["kind"] or spell_key in ("firebolt", "eldritchblast", "rayoffrost", "guidingbolt", "hex", "huntersmark")
+    if "attack" in spell["kind"]:
+        hit_msg, downed = _resolve_one_attack(session, cur, target, ch.spell_mod() + proficiency_bonus(ch.level),
+                                              dmg_expr=spell["dmg"], dmg_type=spell.get("damage_type", "force"),
+                                              is_ranged=is_ranged_spell)
+        parts.append(f"{spell['emoji']} {ch.name} «{spell['fa']}» می‌اندازد!")
+        parts.append(hit_msg)
+    elif "auto" in spell["kind"]:
         dmg = _roll_damage(spell["dmg"])
         target["hp"] = max(0, target["hp"] - dmg)
-        result = f"✨ {ch.name} «{spell['fa']}» می‌اندازد: {dmg} آسیب به {target['name']}!"
-    else:  # attack roll
-        raw = roll_d20()
-        atk = raw + ch.spell_mod() + 2
-        crit = raw == 20
-        fumble = raw == 1
-        hit = (crit or atk >= target["ac"]) and not fumble
-        if hit:
-            dmg = _roll_damage(spell["dmg"])
-            if crit:
-                dmg += _roll_damage(spell["dmg"])
-            target["hp"] = max(0, target["hp"] - dmg)
-            result = f"✨ {ch.name} «{spell['fa']}» می‌اندازد: {atk} (AC {target['ac']}) — 💥 {dmg} آسیب!"
-            if crit:
-                result += " 🔥 بحرانی!"
+        parts.append(f"{spell['emoji']} {ch.name} «{spell['fa']}» می‌اندازد: خودکار اصابت! {dmg} آسیب به {target['name']}!")
+    elif "save" in spell["kind"]:
+        # طلسم‌هایی که save می‌خواهند
+        dmg = _roll_damage(spell["dmg"])
+        # پیدا کردن استت ذخیره
+        save_stat = "DEX"
+        if "con" in spell["kind"]:
+            save_stat = "CON"
+        if "wis" in spell["kind"]:
+            save_stat = "CHA"
+        save_bonus = 2  # برای هیولاها
+        save_roll = roll_d20() + save_bonus
+        if save_roll >= spell_dc:
+            actual_dmg = dmg // 2
+            parts.append(f"🛡️ {target['name']} در برابر طلسم مقاومت کرد (رول {save_roll} در برابر DC {spell_dc}): {actual_dmg} آسیب نصف!")
         else:
-            result = f"✨ {ch.name} «{spell['fa']}» می‌اندازد: {atk} (AC {target['ac']}) — خطا!"
-    if target["hp"] <= 0:
+            actual_dmg = dmg
+            parts.append(f"{spell['emoji']} {target['name']} در ذخیره شکست خورد! {actual_dmg} آسیب کامل!")
+            if "holdperson" in spell_key or "paralyze" in spell.get("effect", ""):
+                target.setdefault("conditions", []).append("paralyzed")
+                parts.append(f"🫵 {target['name']} فلج شد!")
+            if "sleep" in spell_key:
+                target.setdefault("conditions", []).append("unconscious")
+                parts.append(f"💤 {target['name']} به خواب عمیق فرو رفت!")
+        target["hp"] = max(0, target["hp"] - actual_dmg)
+    # ----- افکت‌های mark (نشان شکارچی/نفرین) -----
+    if spell_key in ("huntersmark", "hex"):
+        parts.append(f"🎯 {target['name']} علامت خورد! تمام حملات بعدی به او آسیب اضافه خواهند داشت.")
+        cur["marked_target"] = target["name"]
+    # ----- Mage Armor -----
+    if spell_key == "magearmor":
+        ch.ac = max(ch.ac, 13 + ability_mod(ch.abilities["DEX"]))
+        cur["ac"] = ch.ac
+        parts.append(f"🧙 زره جادویی فعال شد! AC الان {ch.ac} است.")
+    # بررسی کشته شدن هدف
+    if target.get("hp", 0) <= 0 and target.get("alive", True):
         target["alive"] = False
         combat["xp_pool"] += target["xp"]
-        result += f"\n☠️ **{target['name']} نابود شد!** (+{target['xp']} XP)"
-    session.add_log(ch.name, result.replace("\n", " "))
+        parts.append(f"\n☠️ **{target['name']} نابود شد!** (+{target['xp']} XP)")
+    result = "\n".join(parts)
+    session.add_log(ch.name, result.replace("\n", " ")[:500])
     return result
 
 

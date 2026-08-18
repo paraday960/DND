@@ -150,11 +150,21 @@ COMMANDS = [
     BotCommand("scenario", "🐉 ساخت سناریو با AI (میزبان)"),
     BotCommand("story", "📖 روایت اقدام بازیکن با AI"),
     BotCommand("where", "🗺️ وضعیت فعلی ماجرا"),
-    BotCommand("combat", "⚔️ شروع نبرد"),
-    BotCommand("attack", "🎯 حمله: /attack <دشمن>"),
-    BotCommand("cast", "✨ طلسم: /cast <طلسم> <هدف>"),
+    BotCommand("combat", "⚔️ شروع نبرد (initiative خودکار)"),
+    BotCommand("attack", "🎯 حمله اصلی: /attack <دشمن>"),
+    BotCommand("cast", "✨ طلسم: /cast firebolt گابلین"),
+    BotCommand("dash", "🏃 دویدن/حرکت اضافه"),
+    BotCommand("disengage", "🚪 عقب‌نشینی امن"),
+    BotCommand("help_act", "🤝 کمک به هم‌گروهی"),
+    BotCommand("hide", "🙈 پنهان شدن"),
+    BotCommand("shove", "💪 هل دادن دشمن"),
+    BotCommand("dodge", "🛡️ دفاع فعال"),
+    BotCommand("move", "🚶 حرکت در نبرد: near|far|flee"),
+    BotCommand("rage", "🪓 خشم بربر (Bonus)"),
+    BotCommand("inspire", "🎻 الهام بَرد (Bonus)"),
+    BotCommand("secondwind", "💨 نفس دوم جنگجو"),
+    BotCommand("actionsurge", "⚡ اکشن اضافه جنگجو"),
     BotCommand("skip", "⏭️ رد نوبت"),
-    BotCommand("dodge", "🛡️ دفاع در نبرد"),
     BotCommand("deathsave", "💀 نجات از مرگ"),
     BotCommand("combatend", "🏁 پایان نبرد"),
     BotCommand("levelup", "⭐ ارتقای سطح"),
@@ -209,8 +219,18 @@ def build_app(store=None, narrator=None) -> Application:
     app.add_handler(CommandHandler("combat", handlers.combat_cmd))
     app.add_handler(CommandHandler("attack", handlers.attack_cmd))
     app.add_handler(CommandHandler("cast", handlers.cast_cmd))
-    app.add_handler(CommandHandler("skip", handlers.skip_cmd))
+    app.add_handler(CommandHandler("dash", handlers.dash_cmd))
+    app.add_handler(CommandHandler("disengage", handlers.disengage_cmd))
+    app.add_handler(CommandHandler("help_act", handlers.help_action_cmd))
+    app.add_handler(CommandHandler("hide", handlers.hide_cmd))
+    app.add_handler(CommandHandler("shove", handlers.shove_cmd))
     app.add_handler(CommandHandler("dodge", handlers.dodge_cmd))
+    app.add_handler(CommandHandler("move", handlers.move_cmd))
+    app.add_handler(CommandHandler("rage", handlers.rage_cmd))
+    app.add_handler(CommandHandler("inspire", handlers.inspire_cmd))
+    app.add_handler(CommandHandler("secondwind", handlers.secondwind_cmd))
+    app.add_handler(CommandHandler("actionsurge", handlers.actionsurge_cmd))
+    app.add_handler(CommandHandler("skip", handlers.skip_cmd))
     app.add_handler(CommandHandler("deathsave", handlers.deathsave_cmd))
     app.add_handler(CommandHandler("combatend", handlers.combatend_cmd))
     app.add_handler(CommandHandler("levelup", handlers.levelup_cmd))
