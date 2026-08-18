@@ -1083,22 +1083,27 @@ class ApiHandler(BaseHTTPRequestHandler):
 
 
 def http_server_loop(store, narrator, port):
-    ApiHandler.store = store
-    ApiHandler.narrator = narrator
-    ApiHandler.dev = os.environ.get("WEBAPP_DEV", "0") == "1"
+    """راه‌اندازی سرور وب مینی‌گیم با استفاده از Flask (همان کد وب‌اپ اصلی)."""
+    # مطمئن شویم که webapp.py بتواند پوشه web را پیدا کند (روی اندروید cwd پوشه فایل‌هاست)
+    import sys
+    _here = os.path.dirname(os.path.abspath(__file__))
+    if _here not in sys.path:
+        sys.path.insert(0, _here)
     try:
-        srv = ThreadingHTTPServer(("0.0.0.0", port), ApiHandler)
-    except OSError as e:
-        if getattr(e, "errno", None) == 98:
-            log("⚠️ پورت %d اشغال است — نسخه دیگری از ربات هنوز فعال است. دکمه «توقف» را بزن، چند ثانیه صبر کن و دوباره شروع کن" % port)
-        else:
-            log("خطای سرور وب: %s" % e)
+        from webapp import build_app
+        from werkzeug.serving import make_server
+        # مهم: روی اندروید assets در همان مسیر کد هستند، پس BASE_DIR/web باید درست باشد
+        app = build_app(store, narrator)
+        srv = make_server("0.0.0.0", port, app, threaded=True)
+    except Exception as e:
+        log("❌ راه‌اندازی Flask ناموفق: %s" % e)
+        import traceback; traceback.print_exc()
         return
-    log("🌐 مینی‌گیم روی پورت %d فعال شد" % port)
+    log("🌐 مینی‌گیم روی پورت %d فعال شد (Flask)" % port)
 
     def serve():
         try:
-            srv.serve_forever(poll_interval=0.5)
+            srv.serve_forever()
         except Exception:
             pass
 

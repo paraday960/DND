@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>🐉 مینی‌گیم D&D</title>
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<meta name="theme-color" content="#0b0e14">
+<style>
+  :root{
+    --bg:#0b0e14; --card:#151b28; --card2:#1b2334; --line:#273043;
+    --gold:#d4af37; --gold2:#f2d67c; --text:#eae7dd; --muted:#98a0b3;
+    --red:#e05252; --green:#4caf7d; --blue:#5b9df0; --purple:#a78bfa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:radial-gradient(1200px 600px at 80% -10%, #1d2440 0%, transparent 60%),
+               radial-gradient(900px 500px at -10% 110%, #201a2e 0%, transparent 55%), var(--bg);
+    color:var(--text);
+    font-family:"Vazirmatn","IRANSans","Segoe UI",Tahoma,sans-serif;
+    min-height:100dvh; padding-bottom:74px;
+  }
+  header{
+    position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;
+    padding:12px 16px;background:rgba(11,14,20,.85);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  .logo-icon{width:32px;height:32px;border-radius:8px;box-shadow:0 0 12px rgba(212,175,55,.45);vertical-align:middle;margin-inline-end:6px;}
+  .logo{font-weight:800;font-size:17px;color:var(--gold2);letter-spacing:.3px;display:flex;align-items:center}
+  .logo small{display:block;font-size:10px;color:var(--muted);font-weight:400}
+  .room-pill{
+    margin-inline-start:auto;font-size:12px;background:var(--card2);
+    border:1px solid var(--line);border-radius:999px;padding:5px 12px;color:var(--gold2)
+  }
+  .room-pill b{font-family:monospace;letter-spacing:1px}
+  main{padding:14px 14px 10px;max-width:560px;margin:0 auto}
+  .hidden{display:none !important}
+
+  .card{background:linear-gradient(160deg,var(--card),var(--card2));border:1px solid var(--line);
+        border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 6px 20px rgba(0,0,0,.35)}
+  .hero{text-align:center;padding:28px 18px}
+  .hero h1{font-size:22px;color:var(--gold2);margin-bottom:6px}
+  .hero p{color:var(--muted);font-size:13px;margin-bottom:18px}
+  input,select,textarea{
+    width:100%;background:#0f1420;border:1px solid var(--line);color:var(--text);
+    border-radius:12px;padding:12px 14px;font-size:14px;font-family:inherit;margin-bottom:10px;outline:none
+  }
+  input:focus,select:focus,textarea:focus{border-color:var(--gold)}
+  .btn{
+    width:100%;border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:700;
+    font-family:inherit;cursor:pointer;transition:.15s;color:#0b0e14
+  }
+  .btn:active{transform:scale(.97)}
+  .btn.gold{background:linear-gradient(135deg,var(--gold2),var(--gold))}
+  .btn.red{background:var(--red);color:#fff}
+  .btn.green{background:var(--green);color:#fff}
+  .btn.blue{background:var(--blue);color:#fff}
+  .btn.dark{background:var(--card2);color:var(--text);border:1px solid var(--line)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .or{color:var(--muted);text-align:center;margin:10px 0;font-size:12px}
+  .hint{color:var(--muted);font-size:12px;text-align:center;margin-top:12px;line-height:1.9}
+  .join-row{display:flex;gap:8px}
+  .join-row input{margin-bottom:0;text-align:center;font-family:monospace;letter-spacing:2px;text-transform:uppercase}
+  .join-row .btn{width:110px;flex-shrink:0}
+
+  /* تب‌ها */
+  nav{
+    position:fixed;bottom:0;left:0;right:0;z-index:20;display:flex;
+    background:rgba(13,17,25,.95);backdrop-filter:blur(10px);border-top:1px solid var(--line)
+  }
+  .tab{
+    flex:1;background:none;border:none;color:var(--muted);font-family:inherit;
+    font-size:12px;padding:10px 4px 12px;cursor:pointer;position:relative;display:flex;
+    flex-direction:column;align-items:center;gap:3px
+  }
+  .tab .ic{font-size:20px}
+  .tab.active{color:var(--gold2)}
+  .tab.active::after{content:"";position:absolute;top:0;right:30%;left:30%;height:3px;
+    background:linear-gradient(90deg,transparent,var(--gold),transparent);border-radius:0 0 4px 4px}
+  .badge{position:absolute;top:6px;left:calc(50% - 18px);background:var(--red);color:#fff;
+    font-size:9px;width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+
+  /* فید داستان */
+  .feed{display:flex;flex-direction:column;gap:10px;max-height:52dvh;overflow-y:auto;padding:2px}
+  .msg{border-radius:14px;padding:10px 13px;font-size:13.5px;line-height:1.9;animation:fadein .25s}
+  .msg.dm{background:linear-gradient(160deg,#1e2433,#23283c);border:1px solid #39415c;border-inline-start:3px solid var(--purple)}
+  .msg.sys{background:#161b27;border:1px solid var(--line);color:var(--muted);font-size:12px}
+  .msg.act{background:#1a2230;border:1px solid var(--line);border-inline-start:3px solid var(--blue)}
+  .msg .who{font-size:11px;color:var(--gold2);font-weight:700;display:block;margin-bottom:3px}
+  @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .sec-title{font-size:13px;color:var(--muted);margin:6px 2px 8px;display:flex;align-items:center;gap:6px}
+  .sec-title::after{content:"";flex:1;height:1px;background:var(--line)}
+
+  .story-input{display:flex;gap:8px;margin-top:12px}
+  .story-input input{margin-bottom:0;flex:1}
+  .story-input .btn{width:auto;padding:12px 18px;flex-shrink:0}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .chip{background:var(--card2);border:1px solid var(--line);border-radius:999px;padding:6px 12px;
+        font-size:12px;cursor:pointer;color:var(--muted);font-family:inherit}
+  .chip:active{background:var(--gold);color:#0b0e14}
+  .chip.dice{font-family:monospace;color:var(--gold2)}
+
+  /* سناریو */
+  .sc-title{font-size:18px;color:var(--gold2);font-weight:800;margin-bottom:4px}
+  .sc-goal{font-size:13px;color:var(--text);line-height:1.9}
+  .tag-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .tag{background:#0f1420;border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-size:11px;color:var(--muted)}
+  .tag b{color:var(--text);font-weight:600}
+
+  /* کاراکتر */
+  .char-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .char-avatar{width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg,#2a3150,#3a2f52);
+    display:flex;align-items:center;justify-content:center;font-size:28px;border:1px solid #4a4f77}
+  .char-head h2{font-size:18px;color:var(--gold2)}
+  .char-head .sub{font-size:12px;color:var(--muted)}
+  .bar{height:12px;background:#0f1420;border-radius:999px;overflow:hidden;border:1px solid var(--line);margin:6px 0 2px}
+  .bar > div{height:100%;border-radius:999px;transition:width .5s}
+  .bar.hp > div{background:linear-gradient(90deg,#d95f5f,#4caf7d)}
+  .bar.xp > div{background:linear-gradient(90deg,#b8860b,#f2d67c)}
+  .bar-label{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+  .stat{background:#0f1420;border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center}
+  .stat b{font-family:monospace;font-size:15px;color:var(--gold2)}
+  .stat span{font-size:11px;color:var(--muted)}
+  .feat{font-size:12px;color:var(--muted);line-height:2;list-style:none}
+  .feat li::before{content:"✦ ";color:var(--gold)}
+
+  /* نبرد */
+  .turn-banner{border-radius:14px;padding:12px 14px;text-align:center;font-size:14px;font-weight:700;margin-bottom:12px}
+  .turn-banner.me{background:linear-gradient(135deg,#3a3320,#4a3f22);border:1px solid var(--gold);color:var(--gold2);animation:glow 1.6s infinite}
+  .turn-banner.enemy{background:linear-gradient(135deg,#3a2020,#4a2222);border:1px solid #7a3a3a;color:#ff9d9d}
+  @keyframes glow{0%,100%{box-shadow:0 0 0 0 rgba(212,175,55,.35)}50%{box-shadow:0 0 18px 3px rgba(212,175,55,.25)}}
+  .part{display:flex;align-items:center;gap:10px;background:#0f1420;border:1px solid var(--line);
+        border-radius:12px;padding:9px 12px;margin-bottom:8px;cursor:pointer;transition:.12s}
+  .part:active{background:#182036}
+  .part.sel{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+  .part.dead{opacity:.45;cursor:default}
+  .part .em{font-size:20px;width:34px;text-align:center}
+  .part .info{flex:1}
+  .part .nm{font-size:13px;font-weight:700}
+  .part .nm small{color:var(--muted);font-weight:400;font-size:10px;margin-inline-start:6px}
+  .part .hpbar{height:7px;background:#0b0f18;border-radius:99px;overflow:hidden;margin-top:4px}
+  .part .hpbar > div{height:100%;background:var(--green);transition:width .4s}
+  .part .hpbar > div.low{background:var(--red)}
+  .part .turn-mark{color:var(--gold);font-size:14px}
+  .part.dead .hpbar > div{background:#555}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .actions .btn{flex:1;min-width:100px}
+  .spell-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+  .spell-btn{background:#0f1420;border:1px solid var(--line);border-radius:10px;padding:10px;
+             color:var(--text);font-family:inherit;font-size:12.5px;cursor:pointer;text-align:right}
+  .spell-btn:active{background:var(--purple);color:#0b0e14}
+  .spell-btn b{display:block;font-size:13px}
+
+  /* گروه */
+  .code-box{text-align:center;padding:18px}
+  .code-box .code{font-family:monospace;font-size:30px;letter-spacing:6px;color:var(--gold2);
+                  background:#0f1420;border:1px dashed var(--gold);border-radius:12px;padding:12px;margin:10px 0}
+  .p-row{display:flex;align-items:center;gap:10px;background:#0f1420;border:1px solid var(--line);
+         border-radius:12px;padding:10px 12px;margin-bottom:8px}
+  .p-row .em{font-size:22px;width:36px;text-align:center}
+  .p-row .info{flex:1}
+  .p-row .nm{font-size:13.5px;font-weight:700}
+  .p-row .sub{font-size:11px;color:var(--muted)}
+  .crown{color:var(--gold);font-size:14px}
+
+  #toast{position:fixed;bottom:86px;left:50%;transform:translateX(-50%);background:#2a2133;
+         color:var(--text);border:1px solid var(--purple);padding:10px 18px;border-radius:12px;
+         font-size:13px;z-index:99;max-width:85vw;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.5);
+         opacity:0;pointer-events:none;transition:.25s}
+  #toast.show{opacity:1}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);
+           border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><img class="logo-icon" src="icon.png" alt=""> دانجن‌مستر AI<small>مینی‌گیم D&D — تا ۸ بازیکن</small></div>
+  <div id="roomPill" class="room-pill hidden">اتاق <b id="pillCode"></b></div>
+</header>
+
+<main>
+  <!-- صفحه ورود -->
+  <section id="screen-home">
+    <div class="card hero">
+      <h1>🐉 مینی‌گیم دانجن‌انددراگون</h1>
+      <p>با هوش مصنوعی — سناریو بساز، ماجرا برو، نبرد کن! ⚔️</p>
+      <input id="inpRoomName" placeholder="اسم اتاق (مثلاً: سفر به کوهستان مه‌آلود)" maxlength="40">
+      <button class="btn gold" id="btnCreate" onclick="createRoom()">🎮 ساخت اتاق جدید (میزبان)</button>
+      <div class="or">— یا —</div>
+      <div class="join-row">
+        <input id="inpCode" placeholder="کد اتاق دوستت" maxlength="8" style="text-transform:uppercase">
+        <button class="btn blue" onclick="joinRoom()">🔗 ورود</button>
+      </div>
+      <p class="hint">کد اتاق را با دوستانت به اشتراک بگذار؛ هر ۸ نفر<br>داخل همین مینی‌گیم با هم بازی می‌کنید!</p>
+    </div>
+  </section>
+
+  <!-- صفحه بازی -->
+  <section id="screen-game" class="hidden">
+
+    <!-- 📖 داستان -->
+    <div id="tab-story" class="tab-page">
+      <div id="scenarioCard"></div>
+      <div class="sec-title">📜 دفترچه ماجرا</div>
+      <div class="feed" id="feed"></div>
+      <div class="story-input">
+        <input id="inpAction" placeholder="اقدامت را بنویس... مثلاً: درِ کهنه را باز می‌کنم" maxlength="200"
+               onkeydown="if(event.key==='Enter')sendAction()">
+        <button class="btn gold" id="btnStory" onclick="sendAction()">بفرست ✨</button>
+      </div>
+      <div class="chips" style="margin-top:10px">
+        <button class="chip dice" onclick="quickRoll('d20')">🎲 d20</button>
+        <button class="chip dice" onclick="quickRoll('2d6')">🎲 2d6</button>
+        <button class="chip dice" onclick="quickRoll('d8')">🎲 d8</button>
+        <button class="chip dice" onclick="quickRoll('dis')">🎲 dis</button>
+        <button class="chip" onclick="doRest()">🔥 استراحت</button>
+      </div>
+    </div>
+
+    <!-- ⚔️ نبرد -->
+    <div id="tab-combat" class="tab-page hidden">
+      <div id="combatBox"></div>
+    </div>
+
+    <!-- 🧙 کاراکتر -->
+    <div id="tab-char" class="tab-page hidden">
+      <div id="charBox"></div>
+    </div>
+
+    <!-- 👥 گروه -->
+    <div id="tab-party" class="tab-page hidden">
+      <div id="partyBox"></div>
+    </div>
+  </section>
+</main>
+
+<nav id="tabbar" class="hidden">
+  <button class="tab active" data-tab="story"><span class="ic">📖</span>داستان</button>
+  <button class="tab" data-tab="combat"><span class="ic">⚔️</span>نبرد<span id="combatBadge" class="badge hidden">!</span></button>
+  <button class="tab" data-tab="char"><span class="ic">🧙</span>کاراکتر</button>
+  <button class="tab" data-tab="party"><span class="ic">👥</span>گروه</button>
+</nav>
+
+<div id="toast"></div>
+
+<script>
+/* ================= پایه ================= */
+const $ = s => document.querySelector(s);
+let S = null;          // state آخر
+let META = null;       // متادیتای بازی
+let roomCode = localStorage.getItem('dnd_room') || '';
+let selTarget = null;  // هدف انتخابی در نبرد
+let selSpell = null;
+let polling = null;
+const TG = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+if (TG) { TG.ready(); TG.expand(); }
+
+async function api(path, body) {
+  const opt = { method: body ? 'POST' : 'GET', headers: {} };
+  if (TG && TG.initData) opt.headers['X-Init-Data'] = TG.initData;
+  if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  const r = await fetch(path, opt);
+  const j = await r.json().catch(() => ({ ok: false, error: 'پاسخ نامعتبر' }));
+  if (!j.ok) throw new Error(j.error || 'خطا');
+  return j.data;
+}
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2600);
+}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+/* ================= بارگذاری اولیه ================= */
+async function init() {
+  try { META = await api('/api/meta'); } catch (e) { toast('اتصال برقرار نیست'); }
+  try {
+    const d = await api('/api/meta'); META = d; // مطمئن شو
+  } catch (e) {}
+  if (roomCode) { try { await loadState(); } catch (e) { showHome(); } }
+  else showHome();
+}
+function showHome() { $('#screen-home').classList.remove('hidden'); $('#screen-game').classList.add('hidden'); $('#tabbar').classList.add('hidden'); }
+function showGame() { $('#screen-home').classList.add('hidden'); $('#screen-game').classList.remove('hidden'); $('#tabbar').classList.remove('hidden'); }
+
+async function loadState() {
+  if (!roomCode) return null;
+  const d = await api('/api/room/state?room=' + encodeURIComponent(roomCode));
+  S = d;
+  if (!S.room.is_member) { showHome(); $('#inpCode').value = roomCode; toast('تو عضو این اتاق نیستی — دوباره وارد شو'); return null; }
+  localStorage.setItem('dnd_room', roomCode);
+  showGame(); render(); startPolling();
+  return d;
+}
+function startPolling() {
+  if (polling) clearInterval(polling);
+  polling = setInterval(() => { loadState().catch(()=>{}); }, 4000);
+}
+
+/* ================= رندر ================= */
+function render() {
+  if (!S) return;
+  $('#roomPill').classList.remove('hidden');
+  $('#pillCode').textContent = S.room.code;
+  renderScenario(); renderFeed(); renderCombat(); renderChar(); renderParty();
+  if (S.combat) { $('#combatBadge').classList.remove('hidden'); } else { $('#combatBadge').classList.add('hidden'); }
+}
+function _locName(l){ return typeof l==='object' ? (l.name||'') : String(l); }
+function _npcName(n){ return typeof n==='object' ? (n.role? `${n.name} (${n.role})` : n.name) : String(n); }
+function _tresText(t){
+  if (!t) return '';
+  if (typeof t === 'string') return t;
+  if (Array.isArray(t)) return t.map(_tresText).filter(Boolean).join('، ');
+  const qty = t.qty ? ` ×${t.qty}` : '';
+  return `${t.item||'گنج'}${qty}`;
+}
+function renderScenario() {
+  const box = $('#scenarioCard');
+  if (!S.scenario) { box.innerHTML = ''; return; }
+  const sc = S.scenario;
+  const cur = (S.room&&S.room.location)||'';
+  const locs = (sc.locations||[]).map(l=>{
+    const nm = _locName(l);
+    const isCur = nm === cur;
+    const hint = (typeof l==='object' && l.encounter_hint) ? ` — ${l.encounter_hint}` : '';
+    return `<span class="tag" style="${isCur?'background:#1d2440;border-color:var(--gold);color:var(--gold2)':''}">🗺️ ${esc(nm)}${hint?` <small style="opacity:.7">${esc(hint)}</small>`:''}</span>`;
+  }).join('');
+  const npcs = (sc.npcs||[]).map(n=>`<span class="tag">👤 ${esc(_npcName(n))}</span>`).join('');
+  const boss = sc.boss ? `<span class="tag" style="background:#2a1f12;border-color:#7a5a1a;color:var(--gold2)">👑 ${esc(sc.boss.name||'باس')}</span>` : '';
+  const traps = (sc.traps||[]).map(t=>`<span class="tag">🪤 ${esc(t.name||'تله')} DC ${t.detect_dc}</span>`).join('');
+  const branches = (sc.branches||[]).map(b=>`<span class="chip" onclick="document.getElementById('inpAction').value='${esc(b.text||'').replace(/'/g,"\\'")}';document.getElementById('inpAction').focus()">🔀 ${esc(b.text||'')}</span>`).join('');
+  const enc = (sc.encounters||[]).map(e => {
+    const mk = e.is_boss?'👑':'⚔️';
+    const loc = e.location?` <small style="opacity:.7">(${esc(e.location)})</small>`:'';
+    return `<span class="tag">${mk} <b>${e.count}× ${esc(e.name)}</b>${loc}</span>`;
+  }).join('');
+  const hook = sc.hook ? `<div style="font-style:italic;color:var(--muted);margin-bottom:8px;line-height:1.9">${esc(sc.hook)}</div>` : '';
+  box.innerHTML = `<div class="card">
+    <div class="sc-title">🐉 ${esc(sc.title||'ماجرای بی‌نام')}</div>
+    ${hook}
+    <div class="sc-goal">🎯 ${esc(sc.goal||'')}</div>
+    ${cur?`<div style="margin-top:6px;font-size:12px;color:var(--gold2)">📍 موقعیت: ${esc(cur)}</div>`:''}
+    <div class="tag-row">${locs}${npcs}${enc}${boss}${traps}</div>
+    ${sc.treasure?`<div class="tag-row"><span class="tag">💎 ${esc(_tresText(sc.treasure))}</span></div>`:''}
+    ${branches?`<div class="sec-title" style="margin-top:12px">🔀 انتخاب‌های داستانی</div><div class="chips" style="margin-top:4px">${branches}</div>`:''}
+    <div class="chips" style="margin-top:10px">
+      <button class="chip" onclick="lookAround()">👁️ نگاه کن</button>
+      <button class="chip" onclick="moveDir('جلو')">🚶 جلو برو</button>
+      <button class="chip" onclick="moveDir('عقب')">↩️ عقب برگرد</button>
+      <button class="chip" onclick="quickRoll('adv')">🎲 adv</button>
+      <button class="chip" onclick="genScenario()">🐉 سناریو جدید (DM)</button>
+      <button class="chip" onclick="whereNow()">🗺️ خلاصه ماجرا</button>
+    </div>
+  </div>`;
+}
+function renderFeed() {
+  const feed = $('#feed');
+  feed.innerHTML = (S.log||[]).map(m => {
+    const who = esc(m.who), what = esc(m.what);
+    const cls = who === 'DM' ? 'dm' : (who === 'سیستم' ? 'sys' : 'act');
+    const whoLine = (cls==='dm') ? '<span class="who">🐉 دانجن‌مستر</span>' : (cls==='sys' ? '' : `<span class="who">🧙 ${who}</span>`);
+    return `<div class="msg ${cls}">${whoLine}<div>${what}</div></div>`;
+  }).join('');
+  feed.scrollTop = feed.scrollHeight;
+}
+
+/* ================= اتاق ================= */
+async function createRoom() {
+  const name = $('#inpRoomName').value.trim();
+  const btn = $('#btnCreate'); btn.disabled = true;
+  try {
+    const d = await api('/api/room/create', { name });
+    roomCode = d.code; await loadState(); startPolling();
+    toast('🎉 اتاق ساخته شد! کد را برای دوستانت بفرست');
+  } catch(e) { toast(e.message); } finally { btn.disabled = false; }
+}
+async function joinRoom() {
+  const code = $('#inpCode').value.trim().toUpperCase();
+  if (!code) return toast('کد اتاق را وارد کن');
+  try {
+    const d = await api('/api/room/join', { code });
+    roomCode = d.code; await loadState(); startPolling();
+    toast('✅ وارد اتاق شدی! حالا کاراکترت را بساز 🧙');
+  } catch(e) { toast(e.message); }
+}
+
+/* ================= داستان و تاس ================= */
+async function sendAction() {
+  const inp = $('#inpAction'); const act = inp.value.trim();
+  if (!act) return toast('اول اقدامت را بنویس');
+  const btn = $('#btnStory'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> روایت...';
+  try {
+    const d = await api('/api/story', { room: roomCode, action: act });
+    S = d.state; inp.value = ''; render();
+    // داستان را در فید نشان بده: آخرین لاگ که از DM باشد، تازه است
+    renderFeed();
+  } catch(e) { toast(e.message); }
+  finally { btn.disabled = false; btn.textContent = 'بفرست ✨'; }
+}
+async function genScenario() {
+  try {
+    const d = await api('/api/scenario', { room: roomCode, request: '' });
+    S = d.state; render();
+    toast('🐉 سناریوی جدید ساخته شد!');
+  } catch(e) { toast(e.message); }
+}
+async function whereNow() {
+  toast('🗺️ دانجن‌مستر در حال مرور ذهنش...');
+  try {
+    const d = await api('/api/where', { room: roomCode });
+    S = d.state; renderFeed();
+  } catch(e) { toast(e.message); }
+}
+async function lookAround() {
+  try {
+    const d = await api('/api/where/look', { room: roomCode });
+    S = d.state;
+    // توضیحات را در فید بینداز
+    S.log = S.log || [];
+    S.log.push({ who: 'سیستم', what: d.text || '' });
+    renderFeed();
+  } catch(e) { toast(e.message); }
+}
+async function moveDir(dir) {
+  try {
+    const d = await api('/api/move', { room: roomCode, direction: dir });
+    S = d.state;
+    S.log = S.log || [];
+    S.log.push({ who: 'سیستم', what: d.text || '' });
+    render(); renderFeed();
+  } catch(e) { toast(e.message); }
+}
+async function doRest() {
+  try {
+    const d = await api('/api/rest', { room: roomCode, kind: 'short' });
+    S = d.state; renderFeed(); renderChar();
+    toast((d.text||'استراحت کردی').slice(0,80));
+  } catch(e) { toast(e.message); }
+}
+async function quickRoll(expr) {
+  try {
+    const d = await api('/api/roll', { room: roomCode, expr });
+    toast(`🎲 ${expr} → ${d.result} ${d.crit||''} (${d.breakdown})`);
+    const st = await api('/api/room/state?room=' + encodeURIComponent(roomCode));
+    S = st; renderFeed();
+  } catch(e) { toast(e.message); }
+}
+
+/* ================= نبرد ================= */
+function pAlive(p){ return p && !p.dead && !p.downed && p.hp > 0; }
+function renderCombat() {
+  const box = $('#combatBox');
+  if (!S.combat) {
+    const isDm = S.room.is_dm;
+    box.innerHTML = `<div class="card">
+      <div class="sec-title">⚔️ میدان نبرد — خالی</div>
+      <p class="hint" style="text-align:right">نبردی در جریان نیست.${S.scenario?' دشمن‌های سناریو آماده‌اند!':' (اول با سناریو، دشمن‌ها را مشخص کن — یا با دشمن‌های پیش‌فرض شروع کن)'}</p>
+      ${isDm?`<button class="btn red" onclick="startCombat()">⚔️ شروع نبرد</button>`:`<p class="hint">میزبان (${esc(S.room.dm_name)}) نبرد را شروع می‌کند...</p>`}
+    </div>`;
+    return;
+  }
+  const c = S.combat;
+  const meChar = S.me && S.me.char;
+  const me = c.participants.find(p => p.is_me);
+  const isDown = me && (!pAlive(me));
+  const myTurn = c.is_my_turn;
+  let parts = '';
+  c.participants.forEach(p => {
+    let em = p.emoji || (p.kind === 'player' ? '🧙' : '👹');
+    if (p.dead) em = '💀';
+    else if (p.downed) em = '😵';
+    else if (p.kind === 'monster' && !p.alive) em = '💀';
+    const hpPct = p.max_hp ? Math.max(0, Math.round(p.hp / p.max_hp * 100)) : 0;
+    const sel = selTarget === p.name ? ' sel' : '';
+    const deadCls = (!p.alive || p.dead) ? ' dead' : '';
+    const bossMark = p.is_boss ? ' 👑' : '';
+    const clickable = (p.kind === 'monster' && p.alive && myTurn && !isDown)
+      ? `onclick="selTarget='${p.name.replace(/'/g,"\\'")}';renderCombat()"` : '';
+    let status;
+    if (p.dead) status = '💀 مرده';
+    else if (p.downed) status = '😵 زمین‌گیر';
+    else if (p.kind === 'monster' && !p.alive) status = '💀 نابود شد';
+    else status = '❤️ ' + p.hp + '/' + p.max_hp;
+    parts += `<div class="part${sel}${deadCls}" ${clickable}>
+      <span class="em">${em}</span>
+      <div class="info">
+        <div class="nm">${esc(p.name)}${bossMark} <small>AC ${p.ac} • Init ${p.init}</small></div>
+        <div class="hpbar"><div class="${hpPct<30?'low':''}" style="width:${hpPct}%"></div></div>
+        <div class="bar-label"><span>${status}</span>${p.turn?'<b style="color:var(--gold)">نوبت فعلی ▶</b>':''}</div>
+      </div>
+      <span class="turn-mark">${p.kind==='player'?'🧙':'👹'}</span>
+    </div>`;
+  });
+  const banner = myTurn
+    ? `<div class="turn-banner me">🎯 نوبت توست! ${meChar?meChar.name:''} — یک دشمن را انتخاب کن</div>`
+    : `<div class="turn-banner enemy">⏳ نوبت: ${esc(c.current)} (دور ${c.round})</div>`;
+  const targetInfo = selTarget ? `هدف: <b>${esc(selTarget)}</b>` : '';
+  let actions = '';
+  if (myTurn && isDown) {
+    actions = `
+      <div class="actions">
+        <button class="btn green" onclick="doDeathSave()">💀 پرتاب نجات از مرگ</button>
+      </div>`;
+  } else if (myTurn) {
+    actions = `
+    <div class="actions">
+      <button class="btn red" onclick="doAttack()" ${selTarget?'':'disabled'}>⚔️ حمله</button>
+      <button class="btn blue" onclick="doDodge()">🛡️ دفاع</button>
+      <button class="btn dark" onclick="doSkip()">⏭️ رد نوبت</button>
+    </div>
+    <div class="actions" style="margin-top:6px">
+      <button class="btn gold" onclick="quickPotion()">🧪 معجون</button>
+      <button class="btn green" onclick="doCast('curewounds')">💚 شفا</button>
+    </div>
+    <div class="sec-title">✨ طلسم‌ها ${targetInfo?'— '+targetInfo:''}</div>
+    <div class="spell-grid">
+      ${(META?META.spells:[]).map(sp=>`<button class="spell-btn" onclick="doCast('${sp.key}')"><b>${sp.emoji} ${esc(sp.fa)}</b>${sp.dmg} ${sp.kind==='heal'?'💚':'💥'}</button>`).join('')}
+    </div>`;
+  }
+  const dm = S.room.is_dm ? `<button class="btn dark" style="margin-top:10px" onclick="endCombat()">🏳️ پایان نبرد (DM)</button>` : '';
+  box.innerHTML = `<div class="card">${banner}
+    <div class="sec-title">شرکت‌کنندگان (${c.participants.length})</div>
+    ${parts}${actions}${dm}</div>`;
+}
+async function startCombat() {
+  try {
+    const d = await api('/api/combat/start', { room: roomCode });
+    S = d.state; selTarget = null;
+    (d.messages||[]).forEach(m => toast(m.split('\n')[0].slice(0,80)));
+    render(); switchTab('combat');
+  } catch(e) { toast(e.message); }
+}
+async function doAttack() {
+  if (!selTarget) return;
+  try {
+    const d = await api('/api/combat/attack', { room: roomCode, target: selTarget });
+    S = d.state; selTarget = null; renderCombat(); renderFeed();
+  } catch(e) { toast(e.message); }
+}
+async function doCast(spell) {
+  if (!selTarget && spell !== 'curewounds') return toast('اول یک دشمن را انتخاب کن');
+  try {
+    const d = await api('/api/combat/cast', { room: roomCode, spell, target: selTarget||'' });
+    S = d.state; selTarget = null; renderCombat(); renderFeed();
+  } catch(e) { toast(e.message); }
+}
+async function doDodge() {
+  try {
+    const d = await api('/api/combat/dodge', { room: roomCode });
+    S = d.state; renderCombat(); renderFeed();
+    toast('🛡️ حالت دفاعی گرفتی');
+  } catch(e) { toast(e.message); }
+}
+async function doDeathSave() {
+  try {
+    const d = await api('/api/combat/deathsave', { room: roomCode });
+    S = d.state; renderCombat(); renderFeed();
+    (d.messages||[]).forEach(m => toast(m.split('\n')[0].slice(0,90)));
+  } catch(e) { toast(e.message); }
+}
+async function doSkip() {
+  try {
+    const d = await api('/api/combat/skip', { room: roomCode });
+    S = d.state; renderCombat(); renderFeed();
+  } catch(e) { toast(e.message); }
+}
+async function endCombat() {
+  try {
+    const d = await api('/api/combat/end', { room: roomCode });
+    S = d.state; renderCombat(); renderFeed();
+  } catch(e) { toast(e.message); }
+}
+async function quickPotion() {
+  try {
+    const d = await api('/api/inventory/use', { room: roomCode, item: 'potion' });
+    S = d.state; render(); toast((d.text||'استفاده شد').slice(0,80));
+  } catch(e) { toast(e.message); }
+}
+
+/* ================= کاراکتر ================= */
+function renderChar() {
+  const box = $('#charBox');
+  if (!S.me || !S.me.has_char) {
+    if (!META) return;
+    const races = META.races.map(r => `<option value="${r.key}">${r.emoji} ${r.fa} (+${r.bonus})</option>`).join('');
+    const classes = META.classes.map(c => `<option value="${c.key}">${c.emoji} ${c.fa} (HP ${c.hit_die})</option>`).join('');
+    box.innerHTML = `<div class="card">
+      <div class="sec-title">🧙 ساخت کاراکتر</div>
+      <input id="chName" placeholder="نام شخصیتت (مثلاً: آرین)" maxlength="30">
+      <select id="chRace">${races}</select>
+      <select id="chClass" onchange="fillWeapons()">${classes}</select>
+      <select id="chWeapon"></select>
+      <button class="btn gold" onclick="createChar()">⚔️ ساختن ماجراجو</button>
+      <p class="hint">امتیاز توانایی‌ها به‌صورت استاندارد و تصادفی توزیع می‌شود.</p>
+    </div>`;
+    fillWeapons();
+    return;
+  }
+  const ch = S.me.char;
+  const ab = ch.abilities.map(a => `<div class="stat"><span>${a.fa} (${a.key})</span><b>${a.value} (${a.mod>=0?'+':''}${a.mod})</b></div>`).join('');
+  const xpNext = ch.xp_next ? `از ${ch.xp_next}` : '— حداکثر سطح';
+  const lvlBtn = ch.can_level_up ? `<button class="btn green" style="margin-top:10px" onclick="levelUp()">⭐ ارتقا به سطح ${ch.level+1}!</button>` : '';
+  box.innerHTML = `<div class="card">
+    <div class="char-head">
+      <div class="char-avatar">${ch.cls_emoji}</div>
+      <div><h2>${esc(ch.name)}</h2>
+      <div class="sub">${ch.race_emoji} ${esc(ch.race)} • ${ch.cls_emoji} ${esc(ch.cls)} • سطح ${ch.level}</div></div>
+    </div>
+    <div class="bar-label"><span>❤️ HP</span><span>${ch.hp}/${ch.max_hp}</span></div>
+    <div class="bar hp"><div style="width:${Math.round(ch.hp/ch.max_hp*100)}%"></div></div>
+    <div class="bar-label"><span>⭐ تجربه</span><span>${ch.xp} XP ${ch.xp_next? 'از '+ch.xp_next : ''}</span></div>
+    <div class="bar xp"><div style="width:${ch.xp_next? Math.min(100,Math.round(ch.xp/ch.xp_next*100)):100}%"></div></div>
+    <div class="grid2">
+      <div class="stat"><span>🛡️ AC</span><b>${ch.ac}</b></div>
+      <div class="stat"><span>🗡️ بونوس حمله</span><b>${ch.attack_bonus>=0?'+':''}${ch.attack_bonus}</b></div>
+      <div class="stat"><span>${ch.weapon_emoji} ${esc(ch.weapon)}</span><b>${ch.weapon_dmg}</b></div>
+      <div class="stat"><span>🪙 سکه</span><b>${ch.gold}</b></div>
+    </div>
+    <div class="sec-title">توانایی‌ها</div>
+    <div class="grid2">${ab}</div>
+    <div class="sec-title">ویژگی‌ها</div>
+    <ul class="feat">${ch.features.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>
+    ${lvlBtn}
+  </div>`;
+}
+function fillWeapons() {
+  const cls = $('#chClass').value;
+  const ws = (META.weapons[cls]||[]).map(w => `<option value="${w.key}">${w.emoji} ${w.fa} (${w.dmg})</option>`).join('');
+  $('#chWeapon').innerHTML = ws;
+}
+async function createChar() {
+  const body = {
+    room: roomCode,
+    name: $('#chName').value.trim(),
+    race: $('#chRace').value,
+    cls: $('#chClass').value,
+    weapon: $('#chWeapon').value,
+  };
+  if (!body.name) return toast('اسم شخصیتت را بنویس!');
+  try {
+    const d = await api('/api/char/create', body);
+    S = d.state; render();
+    toast('🎉 کاراکترت ساخته شد! برو سراغ 📖 داستان');
+  } catch(e) { toast(e.message); }
+}
+async function levelUp() {
+  try {
+    const d = await api('/api/char/levelup', { room: roomCode });
+    S = d.state; render();
+    toast(`🎉 به سطح ${d.level} رسیدی!`);
+  } catch(e) { toast(e.message); }
+}
+
+/* ================= گروه ================= */
+function renderParty() {
+  const box = $('#partyBox');
+  const rows = (S.room.players||[]).map(p => {
+    const ch = p.char;
+    return `<div class="p-row">
+      <span class="em">${ch? ch.emoji : '🚪'}</span>
+      <div class="info">
+        <div class="nm">${esc(p.name)} ${p.is_dm?'<span class="crown">👑 DM</span>':''}</div>
+        <div class="sub">${ch? `${esc(ch.race)} ${esc(ch.cls)} • سطح ${ch.level} • ❤️ ${ch.hp}/${ch.max_hp} • AC ${ch.ac}` : 'بدون کاراکتر — منتظر است...'}</div>
+      </div>
+      ${ch && !ch.alive ? '<span>💀</span>' : ''}
+    </div>`;
+  }).join('');
+  box.innerHTML = `<div class="card code-box">
+    <div class="sec-title">🔑 کد اتاق — برای دوستانت بفرست</div>
+    <div class="code">${S.room.code}</div>
+    <button class="btn gold" onclick="copyCode()">📋 کپی کد</button>
+    <p class="hint">هر بازیکن از تلگرام خودش وارد همین مینی‌گیم می‌شود و با این کد به اتاق می‌پیوندد.</p>
+  </div>
+  <div class="card">
+    <div class="sec-title">👥 ماجراجویان (${S.room.count}/۸ — ${S.room.char_count} کاراکتر)</div>
+    ${rows}
+  </div>`;
+}
+async function copyCode() {
+  try { await navigator.clipboard.writeText(S.room.code); toast('📋 کپی شد!'); }
+  catch(e) { toast('کد: ' + S.room.code); }
+}
+
+/* ================= تب‌ها ================= */
+function switchTab(name) {
+  document.querySelectorAll('.tab-page').forEach(p => p.classList.add('hidden'));
+  $('#tab-' + name).classList.remove('hidden');
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+}
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+init();
+</script>
+</body>
+</html>
