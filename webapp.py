@@ -78,6 +78,14 @@ def validate_init_data(init_data: str):
 def build_app(store, narrator, telegram_app=None, loop=None):
     app = Flask(__name__)
 
+    # ---------- CORS برای مینی‌گیم (اجازه می‌دهد iframeها و webviewها بدون خطا کار کنند) ----------
+    @app.after_request
+    def _add_cors(resp):
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Init-Data"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        return resp
+
     # ---------- وب‌هوک تلگرام (جایگزین polling — سریع و بدون تأخیر) ----------
     @app.post("/webhook/<token>")
     def tg_webhook(token):
@@ -116,9 +124,11 @@ def build_app(store, narrator, telegram_app=None, loop=None):
             name = (request.args.get("user_name")
                     or request.headers.get("X-User-Name")
                     or "ماجراجوی آزمایشی")
-            if uid:
-                return {"id": int(uid), "first_name": name}
-            return {"id": 900000001, "first_name": "ماجراجوی آزمایشی"}
+            try:
+                uid_int = int(uid) if uid and uid != "None" else 900000001
+            except (TypeError, ValueError):
+                uid_int = 900000001
+            return {"id": uid_int, "first_name": name or "ماجراجوی آزمایشی"}
         return None
 
     def need_user():

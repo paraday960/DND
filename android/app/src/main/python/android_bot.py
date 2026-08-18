@@ -778,9 +778,12 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return u
         if self.dev:
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            uid = (q.get("user_id") or [None])[0]
-            if uid:
-                return {"id": int(uid), "first_name": (q.get("user_name") or ["ماجراجوی آزمایشی"])[0]}
+            uid_raw = (q.get("user_id") or [None])[0]
+            try:
+                uid = int(uid_raw) if uid_raw and uid_raw != "None" else 900000001
+            except (TypeError, ValueError):
+                uid = 900000001
+            return {"id": uid, "first_name": (q.get("user_name") or ["ماجراجوی آزمایشی"])[0]}
         return None
 
     _body_cache = None
@@ -1213,6 +1216,16 @@ def http_server_loop(store, narrator, port):
             self.end_headers()
             self.wfile.write(body)
 
+        def do_OPTIONS(self):
+            # پاسخ سبُک preflight برای CORS
+            self.send_response(204)
+            self.send_header("Allow", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Init-Data")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
         def do_GET(self):
             from urllib.parse import urlparse
             path = urlparse(self.path).path
@@ -1344,6 +1357,27 @@ def http_server_loop(store, narrator, port):
                 msgs = [dodge(r, user["id"])]
                 if r.combat:
                     msgs.append(advance(r))
+                self.store.save(r)
+                self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(r, user)}})
+                return
+
+            if path == "/api/combat/deathsave":
+                from game.adventure import death_save
+                from game.combat import advance
+                r, ch = need_room_and_char()
+                if not r: return
+                if not r.combat:
+                    self._json(400, {"ok": False, "error": "نبردی در جریان نیست"})
+                    return
+                if not ch or ch.hp > 0:
+                    self._json(400, {"ok": False, "error": "تو زمین‌گیر نیستی!"})
+                    return
+                msgs = [death_save(r, user["id"])]
+                # مرگ/زنده شدن را چک کن؛ اگر هنوز در نبرد هستی نوبت بچرخد
+                failed = ch.death_saves.get("fail", 0) >= 3
+                if r.combat and not failed:
+                    nxt = advance(r)
+                    if nxt: msgs.append(nxt)
                 self.store.save(r)
                 self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(r, user)}})
                 return
