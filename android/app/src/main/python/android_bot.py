@@ -1089,7 +1089,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             if path == "/api/combat/attack":
                 msgs.append(attack(s, user["id"], body.get("target", "")))
             elif path == "/api/combat/cast":
-                msgs.append(cast(s, user["id"], body.get("spell", ""), body.get("target", "")))
+                msgs.append(cast(s, user["id"], _s(body.get("spell")), body.get("target", "")))
             else:
                 msgs.append(advance(s))
                 self.store.save(s)
@@ -1257,7 +1257,13 @@ def http_server_loop(store, narrator, port):
                 self._json(401, {"ok": False, "error": "شناسایی نشدی"})
                 return
             body = self._body()
-            code = (body.get("room") or body.get("code") or "").strip().upper()
+            def _s(v, default=""):
+                try:
+                    return str(v).strip() if v is not None else default
+                except Exception:
+                    return default
+
+            code = _s(body.get("room") or body.get("code")).upper()
             s = self.store.find_by_code(code) if code else None
 
             def need_room_and_char():
@@ -1286,7 +1292,7 @@ def http_server_loop(store, narrator, port):
                 from game.adventure import rest
                 r, ch = need_room_and_char()
                 if not r: return
-                msg = rest(r, user["id"], body.get("kind", "short"))
+                msg = rest(r, user["id"], _s(body.get("kind"), "short"))
                 self.store.save(r)
                 self._json(200, {"ok": True, "data": {"text": msg, "state": self._state(r, user)}})
                 return
@@ -1297,7 +1303,7 @@ def http_server_loop(store, narrator, port):
                 if r.combat:
                     self._json(400, {"ok": False, "error": "در نبرد نمی‌توانی حرکت کنی"})
                     return
-                direction = (body.get("direction") or body.get("text") or "جلو").strip()
+                direction = _s(body.get("direction") or body.get("text"), "جلو")
                 from game.map import move_to, init_world
                 init_world(r)
                 msg = move_to(r, direction)
@@ -1328,7 +1334,7 @@ def http_server_loop(store, narrator, port):
                 if not r: return
                 try: dc = int(body.get("dc", 0) or 0)
                 except: dc = 0
-                msg = try_disarm_trap(r, ch, body.get("name", ""), dc or None)
+                msg = try_disarm_trap(r, ch, _s(body.get("name")), dc or None)
                 self.store.save(r)
                 self._json(200, {"ok": True, "data": {"text": msg, "state": self._state(r, user)}})
                 return
@@ -1337,7 +1343,7 @@ def http_server_loop(store, narrator, port):
                 from game.adventure import use_item
                 r, ch = need_room_and_char()
                 if not r: return
-                msg = use_item(r, user["id"], body.get("item", ""))
+                msg = use_item(r, user["id"], _s(body.get("item")))
                 self.store.save(r)
                 self._json(200, {"ok": True, "data": {"text": msg, "state": self._state(r, user)}})
                 return
@@ -1464,59 +1470,60 @@ def http_server_loop(store, narrator, port):
 
             if path == "/api/combat/help":
                 _combat_call("help_action",
-                             lambda r,C,fn: fn(r, user["id"], body.get("target","")),
+                             lambda r,C,fn: fn(r, user["id"], _s(body.get("target"))),
                              target_needed=True)
                 return
             if path == "/api/combat/shove":
                 _combat_call("shove",
-                             lambda r,C,fn: fn(r, user["id"], body.get("target","")),
+                             lambda r,C,fn: fn(r, user["id"], _s(body.get("target"))),
                              target_needed=True)
                 return
             if path == "/api/combat/inspire":
                 _combat_call("bardic_inspiration",
-                             lambda r,C,fn: fn(r, user["id"], body.get("target","")),
+                             lambda r,C,fn: fn(r, user["id"], _s(body.get("target"))),
                              target_needed=True, advance_after=False)
                 return
             if path == "/api/combat/move":
                 _combat_call("move_action",
-                             lambda r,C,fn: fn(r, user["id"], body.get("where","near")),
+                             lambda r,C,fn: fn(r, user["id"], _s(body.get("where"), "near")),
                              advance_after=False)
                 return
             if path == "/api/combat/offhand":
                 _combat_call("offhand_attack",
-                             lambda r,C,fn: fn(r, user["id"], body.get("target","")),
+                             lambda r,C,fn: fn(r, user["id"], _s(body.get("target"))),
                              target_needed=True, advance_after=False)
                 return
             if path == "/api/combat/smite":
-                slot = int(body.get("slot", 1) or 1)
+                try: slot = int(body.get("slot", 1) or 1)
+                except (TypeError, ValueError): slot = 1
                 _combat_call("divine_smite",
                              lambda r,C,fn: fn(r, user["id"], slot),
                              advance_after=False)
                 return
             if path == "/api/combat/jump":
                 _combat_call("jump_action",
-                             lambda r,C,fn: fn(r, user["id"], body.get("where","near")),
+                             lambda r,C,fn: fn(r, user["id"], _s(body.get("where"), "near")),
                              advance_after=False)
                 return
             if path == "/api/combat/helpup":
                 _combat_call("help_up",
-                             lambda r,C,fn: fn(r, user["id"], body.get("target","")),
+                             lambda r,C,fn: fn(r, user["id"], _s(body.get("target"))),
                              target_needed=True, advance_after=False)
                 return
             if path == "/api/combat/throw":
-                item = body.get("item","torch") or "torch"
+                item = _s(body.get("item"), "torch") or "torch"
                 _combat_call("throw_action",
-                             lambda r,C,fn: fn(r, user["id"], item, body.get("target","")),
+                             lambda r,C,fn: fn(r, user["id"], item, _s(body.get("target"))),
                              target_needed=True, advance_after=False)
                 return
             if path == "/api/combat/dip":
                 _combat_call("dip_weapon",
-                             lambda r,C,fn: fn(r, user["id"], body.get("element","fire")),
+                             lambda r,C,fn: fn(r, user["id"], _s(body.get("element"), "fire")),
                              advance_after=False)
                 return
             if path == "/api/combat/cunning":
                 _combat_call("cunning_action",
-                             lambda r,C,fn: fn(r, user["id"], body.get("what","disengage")),
+                             lambda r,C,fn: fn(r, user["id"], _s(body.get("what"), "disengage")),
                              advance_after=False)
                 return
 

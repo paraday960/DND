@@ -143,8 +143,17 @@ def build_app(store, narrator, telegram_app=None, loop=None):
             return None, api_err("شناسایی نشدی — مینی‌گیم را از داخل تلگرام باز کن.", 401)
         return u, None
 
+    def _s(v, default=""):
+        """هر مقداری را به string امن تبدیل می‌کند (برای جلوگیری از 500 روی garbage input)."""
+        if v is None:
+            return default
+        try:
+            return str(v).strip()
+        except Exception:
+            return default
+
     def room_of(code):
-        code = (code or "").strip().upper()
+        code = _s(code).upper()
         if not code:
             return None
         if code in _rooms:
@@ -364,7 +373,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         if err:
             return err
         d = request.json or {}
-        name = (d.get("name") or "ماجرای جدید").strip()[:40]
+        name = _s(d.get("name"), "ماجرای جدید")[:40]
         room = Session(chat_id=_rand_chat_id(), name=name,
                        dm_id=user["id"], dm_name=user.get("first_name", "میزبان"))
         persist(room)
@@ -412,10 +421,10 @@ def build_app(store, narrator, telegram_app=None, loop=None):
             return api_err("تو عضو این اتاق نیستی — اول با کد وارد شو.")
         if room.has_char(user["id"]):
             return api_err("قبلاً کاراکتر داری! (برای ساخت دوباره، اول با میزبان هماهنگ کن)")
-        name = (d.get("name") or "بی‌نام").strip()[:30]
-        race = d.get("race", "")
-        cls = d.get("cls", "")
-        weapon = d.get("weapon", "")
+        name = _s(d.get("name"), "بی‌نام")[:30]
+        race = _s(d.get("race"))
+        cls = _s(d.get("cls"))
+        weapon = _s(d.get("weapon"))
         if race not in RACES:
             return api_err("نژاد نامعتبر است.")
         if cls not in CLASSES:
@@ -463,7 +472,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
             return api_err("فقط میزبان (DM) می‌تواند سناریو بسازد.")
         if room.char_count() < 1:
             return api_err("اول حداقل یک کاراکتر بسازید تا سناریو متناسب با گروه باشد.")
-        req = (d.get("request") or "").strip()
+        req = _s(d.get("request"))
         scenario = narrator.scenario(room, req)
         room.scenario = scenario
         room.state = "playing"
@@ -482,7 +491,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
             return api_err("اتاق پیدا نشد!")
         if str(user["id"]) not in room.players:
             return api_err("تو عضو این اتاق نیستی.")
-        action = (d.get("action") or "").strip() or "ادامه بده؛ چه اتفاقی می‌افتد؟"
+        action = _s(d.get("action")) or "ادامه بده؛ چه اتفاقی می‌افتد؟"
         text = narrator.narrate(room, action)
         persist(room)
         return api_ok({"text": text, "state": build_state(room, user)})
@@ -506,7 +515,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         if err:
             return err
         d = request.json or {}
-        expr = (d.get("expr") or "").strip()
+        expr = _s(d.get("expr"))
         if not expr:
             return api_err("مثل: 2d6+3 یا d20 یا adv")
         try:
@@ -539,7 +548,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         if str(user["id"]) not in room.players: return api_err("تو عضو این اتاق نیستی.")
         try: dc = int(d.get("dc", 10))
         except (TypeError, ValueError): dc = 10
-        text = skill_check(room, user["id"], d.get("skill", "perception"), dc, d.get("mode", "normal"))
+        text = skill_check(room, user["id"], _s(d.get("skill"), "perception"), dc, _s(d.get("mode"), "normal"))
         persist(room); return api_ok({"text": text, "state": build_state(room, user)})
 
     @app.post("/api/rest")
@@ -548,7 +557,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         if err: return err
         d = request.json or {}; room = room_of(d.get("room", ""))
         if not room: return api_err("اتاق پیدا نشد!")
-        text = rest(room, user["id"], d.get("kind", "short"))
+        text = rest(room, user["id"], _s(d.get("kind"), "short"))
         persist(room); return api_ok({"text": text, "state": build_state(room, user)})
 
     @app.post("/api/deathsave")
@@ -573,7 +582,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         d = request.json or {}; room = room_of(d.get("room", ""))
         if not room: return api_err("اتاق پیدا نشد!")
         if room.combat: return api_err("در نبرد نمی‌توانی حرکت کنی.")
-        direction = (d.get("direction") or d.get("text") or "جلو").strip()
+        direction = _s(d.get("direction") or d.get("text"), "جلو")
         from game.map import init_world
         init_world(room)
         text = move_to(room, direction)
@@ -629,7 +638,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         if not ch: return api_err("کاراکتر نداری!")
         try: dc = int(d.get("dc", 0) or 0)
         except (TypeError, ValueError): dc = 0
-        text = try_disarm_trap(room, ch, d.get("name",""), dc or None)
+        text = try_disarm_trap(room, ch, _s(d.get("name")), dc or None)
         persist(room)
         return api_ok({"text": text, "state": build_state(room, user)})
 
@@ -639,7 +648,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         if err: return err
         d = request.json or {}; room = room_of(d.get("room", ""))
         if not room: return api_err("اتاق پیدا نشد!")
-        text = use_item(room, user["id"], d.get("item", ""))
+        text = use_item(room, user["id"], _s(d.get("item")))
         persist(room); return api_ok({"text": text, "state": build_state(room, user)})
 
     # ---------- نبرد ----------
@@ -695,13 +704,13 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     @app.post("/api/combat/attack")
     def api_combat_attack():
         d = request.json or {}
-        return _combat_action(lambda room, uid: attack(room, uid, d.get("target", "")))
+        return _combat_action(lambda room, uid: attack(room, uid, _s(d.get("target"))))
 
     @app.post("/api/combat/cast")
     def api_combat_cast():
         d = request.json or {}
         return _combat_action(lambda room, uid: cast(
-            room, uid, d.get("spell", ""), d.get("target", "")))
+            room, uid, _s(d.get("spell")), _s(d.get("target"))))
 
     @app.post("/api/combat/dodge")
     def api_combat_dodge():
@@ -718,7 +727,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     @app.post("/api/combat/help")
     def api_combat_help():
         d = request.json or {}
-        return _combat_action(lambda room, uid: help_action(room, uid, d.get("target", "")))
+        return _combat_action(lambda room, uid: help_action(room, uid, _s(d.get("target"))))
 
     @app.post("/api/combat/hide")
     def api_combat_hide():
@@ -727,7 +736,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     @app.post("/api/combat/shove")
     def api_combat_shove():
         d = request.json or {}
-        return _combat_action(lambda room, uid: shove(room, uid, d.get("target", "")))
+        return _combat_action(lambda room, uid: shove(room, uid, _s(d.get("target"))))
 
     @app.post("/api/combat/secondwind")
     def api_combat_secondwind():
@@ -744,49 +753,50 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     @app.post("/api/combat/inspire")
     def api_combat_inspire():
         d = request.json or {}
-        return _combat_action(lambda room, uid: bardic_inspiration(room, uid, d.get("target", "")))
+        return _combat_action(lambda room, uid: bardic_inspiration(room, uid, _s(d.get("target"))))
 
     @app.post("/api/combat/move")
     def api_combat_move():
         d = request.json or {}
-        return _combat_action(lambda room, uid: move_action(room, uid, d.get("where", "near")))
+        return _combat_action(lambda room, uid: move_action(room, uid, _s(d.get("where"), "near")))
 
     @app.post("/api/combat/offhand")
     def api_combat_offhand():
         d = request.json or {}
-        return _combat_action(lambda room, uid: offhand_attack(room, uid, d.get("target", "")))
+        return _combat_action(lambda room, uid: offhand_attack(room, uid, _s(d.get("target"))))
 
     @app.post("/api/combat/smite")
     def api_combat_smite():
         d = request.json or {}
-        slot = int(d.get("slot", 1))
+        try: slot = int(d.get("slot", 1))
+        except (TypeError, ValueError): slot = 1
         return _combat_action(lambda room, uid: divine_smite(room, uid, slot))
 
     @app.post("/api/combat/jump")
     def api_combat_jump():
         d = request.json or {}
-        return _combat_action(lambda room, uid: jump_action(room, uid, d.get("where", "near")))
+        return _combat_action(lambda room, uid: jump_action(room, uid, _s(d.get("where"), "near")))
 
     @app.post("/api/combat/helpup")
     def api_combat_helpup():
         d = request.json or {}
-        return _combat_action(lambda room, uid: help_up(room, uid, d.get("target", "")))
+        return _combat_action(lambda room, uid: help_up(room, uid, _s(d.get("target"))))
 
     @app.post("/api/combat/throw")
     def api_combat_throw():
         d = request.json or {}
-        item = d.get("item", "torch") or "torch"
-        return _combat_action(lambda room, uid: throw_action(room, uid, item, d.get("target", "")))
+        item = _s(d.get("item"), "torch") or "torch"
+        return _combat_action(lambda room, uid: throw_action(room, uid, item, _s(d.get("target"))))
 
     @app.post("/api/combat/dip")
     def api_combat_dip():
         d = request.json or {}
-        return _combat_action(lambda room, uid: dip_weapon(room, uid, d.get("element", "fire")))
+        return _combat_action(lambda room, uid: dip_weapon(room, uid, _s(d.get("element"), "fire")))
 
     @app.post("/api/combat/cunning")
     def api_combat_cunning():
         d = request.json or {}
-        return _combat_action(lambda room, uid: cunning_action(room, uid, d.get("what", "disengage")))
+        return _combat_action(lambda room, uid: cunning_action(room, uid, _s(d.get("what"), "disengage")))
 
     @app.post("/api/combat/rebuke")
     def api_combat_rebuke():
