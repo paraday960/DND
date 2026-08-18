@@ -682,14 +682,25 @@ def on_callback(store, cb):
 
 def bot_loop(store):
     offset = 0
+    fail_streak = 0
     last_net_log = 0.0
     log("🚀 ربات آنلاین — منتظر پیام‌ها...")
     while not stopped():
         try:
-            data = tg("getUpdates", {"offset": offset, "timeout": 10, "allowed_updates": ["message", "callback_query"]}, timeout=20)
+            # به‌جای timeout=20 از 35 استفاده می‌کنیم چون long-polling تلگرام استاندارد
+            # 30s است و اگر 20s ببندیم قبل از پایان پاسخ را می‌بندیم (علت
+            # «Remote end closed connection without response» روی برخی ISPها)
+            data = tg("getUpdates", {"offset": offset, "timeout": 25,
+                                     "allowed_updates": ["message", "callback_query"]},
+                     timeout=40)
             if not data or not data.get("ok"):
-                time.sleep(3)
+                fail_streak += 1
+                # کدهای عادی مثل 409 خودش در tg هندل می‌شود؛ اینجا فقط sleep کوتاه
+                time.sleep(2 if fail_streak < 3 else 5)
                 continue
+            # موفقیت آمیز — شمارنده خطا صفر شود
+            if fail_streak > 0:
+                fail_streak = 0
             for u in data.get("result", []):
                 offset = max(offset, u["update_id"] + 1)
                 try:
@@ -700,11 +711,16 @@ def bot_loop(store):
                 except Exception as e:
                     log("خطای پردازش آپدیت: %s" % e)
         except Exception as e:
+            fail_streak += 1
             now = time.time()
-            if now - last_net_log > 30:
+            # برای خطاهای شبکه پشت‌سرهم، تایم استراحت را افزایش می‌دهیم تا باتری/لاگ نپاشد
+            wait = min(2 + fail_streak, 25)
+            should_log = (fail_streak == 1) or (now - last_net_log > 60) or (fail_streak % 5 == 0)
+            if should_log:
                 last_net_log = now
-                log("⚠️ اتصال به تلگرام برقرار نشد (%s) — وای‌فای/دیتا گوشی را بررسی کن؛ اگر شبکه‌ات تلگرام را مسدود می‌کند ابزار عبور را روشن کن" % e)
-            time.sleep(5)
+                log("⚠️ اتصال به تلگرام قطع شد (خطای %dم: %s) — اگر اپ ابزار عبور دارد روشن کن، در غیر این صورت منتظر می‌مانم..."
+                    % (fail_streak, str(e)[:100]))
+            time.sleep(wait)
     log("حلقه ربات متوقف شد")
 
 
