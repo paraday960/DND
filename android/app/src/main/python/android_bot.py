@@ -767,12 +767,23 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return {"id": int(uid), "first_name": (q.get("user_name") or ["ماجراجوی آزمایشی"])[0]}
         return None
 
+    _body_cache = None
+
     def _body(self):
+        if self._body_cache is not None:
+            return self._body_cache
         try:
             n = int(self.headers.get("Content-Length", "0"))
-            return json.loads(self.rfile.read(n).decode()) if n else {}
+            raw = self.rfile.read(n) if n else b""
+            self._body_cache = json.loads(raw.decode()) if raw else {}
         except Exception:
-            return {}
+            self._body_cache = {}
+        return self._body_cache
+
+    def _reset_body_cache(self):
+        # برای هر درخواست جدید کش را خالی کن (BaseHTTPRequestHandler یک‌بارمصرف است
+        # ولی محض اطمینان فراخوانی می‌شود)
+        self._body_cache = None
 
     def _room(self):
         body = self._body()
@@ -1034,7 +1045,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/combat/start":
-            from game.combat import start_combat, advance
+            from game.combat import start_combat, advance, run_initial_monsters
             if s.dm_id != user["id"]:
                 self._json(403, {"ok": False, "error": "فقط میزبان."})
                 return
@@ -1042,8 +1053,12 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._json(400, {"ok": False, "error": "نبرد در جریان است."})
                 return
             msgs = [start_combat(s)]
+            im = run_initial_monsters(s)
+            if im:
+                msgs.append(im)
             if s.combat and s.combat["participants"][0]["kind"] == "monster":
-                msgs.append(advance(s))
+                nxt = advance(s)
+                if nxt: msgs.append(nxt)
             self.store.save(s)
             self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(s, user)}})
             return
@@ -1083,38 +1098,298 @@ class ApiHandler(BaseHTTPRequestHandler):
 
 
 def http_server_loop(store, narrator, port):
-    """راه‌اندازی سرور وب مینی‌گیم با استفاده از Flask (همان کد وب‌اپ اصلی)."""
-    # مطمئن شویم که webapp.py بتواند پوشه web را پیدا کند (روی اندروید cwd پوشه فایل‌هاست)
+    """راه‌اندازی سرور وب مینی‌گیم — اول Flask (اصلی) سعی می‌شود،
+    در صورت خطا (pip چاکوپی، missing dep و...) به ApiHandler استاندارد برمی‌گردد."""
     import sys
     _here = os.path.dirname(os.path.abspath(__file__))
     if _here not in sys.path:
         sys.path.insert(0, _here)
+
+    # مطمئن شویم که پوشه web در دسترس است (فایل‌های استاتیک index.html/icon.png)
+    # چاکوپی هم فایل‌های assets را به assets می‌ریزد هم پایتون را به python —
+    # هر دوی این‌ها در همان _here هستند.
+    web_dir = os.path.join(_here, "web")
+    # در چاکوپی، assets/ در همان ریشه‌ی _here (python/) اکستراکت می‌شود
+    # و ممکن است پوشه web کنار کد نباشد اما در assets/ قابل دسترسی باشد.
+    candidates = [
+        web_dir,
+        os.path.join(os.path.dirname(_here), "assets", "web"),
+        os.path.join(os.path.dirname(_here), "..", "assets", "web"),
+        os.path.join(FILES_DIR, "web"),
+    ]
+    chosen_web = None
+    for cand in candidates:
+        try:
+            if os.path.isdir(cand) and os.path.isfile(os.path.join(cand, "index.html")):
+                chosen_web = os.path.normpath(cand)
+                break
+        except Exception:
+            pass
+    if chosen_web is None:
+        chosen_web = web_dir
+    web_dir = chosen_web
+    log("📂 پوشه web مینی‌گیم: %s (exists=%s)" % (web_dir, os.path.isdir(web_dir)))
+
+    use_flask = False
+    srv = None
     try:
         from webapp import build_app
         from werkzeug.serving import make_server
-        # مهم: روی اندروید assets در همان مسیر کد هستند، پس BASE_DIR/web باید درست باشد
         app = build_app(store, narrator)
         srv = make_server("0.0.0.0", port, app, threaded=True)
+        use_flask = True
+        log("🌐 مینی‌گیم روی پورت %d فعال شد (Flask)" % port)
     except Exception as e:
-        log("❌ راه‌اندازی Flask ناموفق: %s" % e)
-        import traceback; traceback.print_exc()
-        return
-    log("🌐 مینی‌گیم روی پورت %d فعال شد (Flask)" % port)
+        log("⚠️ Flask آماده نبود (%s) — استفاده از سرور استاندارد کتابخانه" % e)
+        use_flask = False
 
-    def serve():
+    if use_flask:
+        def serve():
+            try:
+                srv.serve_forever()
+            except Exception:
+                pass
+        threading.Thread(target=serve, daemon=True).start()
+        while not stopped():
+            time.sleep(1)
         try:
-            srv.serve_forever()
+            srv.shutdown()
+            srv.server_close()
         except Exception:
             pass
+        log("🌐 وب‌سرور مینی‌گیم متوقف شد")
+        return
 
-    threading.Thread(target=serve, daemon=True).start()
+    # ---------- Fallback: سرور ساده استاندارد (اگر Flask در دسترس نبود) ----------
+    # ApiHandler ای که در بالای همین فایل تعریف شده، برای ۳ GET و ۷ POST کافی است،
+    # اما برای اینکه مینی‌گیم جدید (که endpointهای move/look/check/rest/inventory/...
+    # می‌خواهد) هم کار کند، همین‌جا ورک‌های لازم را اضافه می‌کنیم.
+    import mimetypes
+
+    dev_fallback = (os.environ.get("WEBAPP_DEV", "0") == "1")
+
+    # در بدنه کلاس پایتون، «store = store» سمت راست را در اسکوپ خود کلاس
+    # جست‌وجو می‌کند و متغیر enclosing را نمی‌بیند. از alias محلی استفاده می‌کنیم.
+    _s = store
+    _n = narrator
+    _d = dev_fallback
+    _wd = web_dir
+
+    class FullApiHandler(ApiHandler):
+        """ApiHandler کامل‌تر: استاتیک + endpointهای جدید مینی‌گیم."""
+        store = _s
+        narrator = _n
+        dev = _d
+        web_dir = _wd
+
+        def _send_file(self, path, ctype=None):
+            try:
+                with open(path, "rb") as f:
+                    body = f.read()
+            except Exception:
+                self._json(404, {"ok": False, "error": "not found"})
+                return
+            self.send_response(200)
+            ct = ctype or mimetypes.guess_type(path)[0] or "application/octet-stream"
+            self.send_header("Content-Type", ct)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            from urllib.parse import urlparse
+            path = urlparse(self.path).path
+            if path in ("/", "/index.html"):
+                self._send_file(os.path.join(self.web_dir, "index.html"), "text/html; charset=utf-8")
+                return
+            # فایل استاتیک (icon.png, css/js و...)
+            safe_path = path.lstrip("/")
+            static_candidate = os.path.normpath(os.path.join(self.web_dir, safe_path))
+            if (static_candidate.startswith(self.web_dir)
+                    and os.path.isfile(static_candidate)):
+                self._send_file(static_candidate)
+                return
+            if path == "/healthz":
+                self._json(200, {"ok": True, "fallback": True})
+                return
+            # بقیه GET ها از parent
+            super().do_GET()
+
+        def do_POST(self):
+            from urllib.parse import urlparse
+            path = urlparse(self.path).path
+            user = self._user()
+            if not user:
+                self._json(401, {"ok": False, "error": "شناسایی نشدی"})
+                return
+            body = self._body()
+            code = (body.get("room") or body.get("code") or "").strip().upper()
+            s = self.store.find_by_code(code) if code else None
+
+            def need_room_and_char():
+                if not s:
+                    self._json(404, {"ok": False, "error": "اتاق پیدا نشد"})
+                    return None, None
+                ch = s.get_char(user["id"])
+                if not ch:
+                    self._json(400, {"ok": False, "error": "کاراکتر نداری"})
+                    return s, None
+                return s, ch
+
+            if path == "/api/check":
+                from game.adventure import skill_check
+                r, ch = need_room_and_char()
+                if not r: return
+                try: dc = int(body.get("dc", 10))
+                except: dc = 10
+                msg = skill_check(r, user["id"], body.get("skill", "perception"),
+                                  dc, body.get("mode", "normal"))
+                self.store.save(r)
+                self._json(200, {"ok": True, "data": {"text": msg, "state": self._state(r, user)}})
+                return
+
+            if path == "/api/rest":
+                from game.adventure import rest
+                r, ch = need_room_and_char()
+                if not r: return
+                msg = rest(r, user["id"], body.get("kind", "short"))
+                self.store.save(r)
+                self._json(200, {"ok": True, "data": {"text": msg, "state": self._state(r, user)}})
+                return
+
+            if path == "/api/move":
+                r, ch = need_room_and_char()
+                if not r: return
+                if r.combat:
+                    self._json(400, {"ok": False, "error": "در نبرد نمی‌توانی حرکت کنی"})
+                    return
+                direction = (body.get("direction") or body.get("text") or "جلو").strip()
+                from game.map import move_to, init_world
+                init_world(r)
+                msg = move_to(r, direction)
+                self.store.save(r)
+                self._json(200, {"ok": True, "data": {"text": msg, "state": self._state(r, user)}})
+                return
+
+            if path in ("/api/look", "/api/where/look"):
+                r, ch = need_room_and_char()
+                if not r: return
+                from game.map import describe, init_world
+                init_world(r)
+                msg = describe(r)
+                self._json(200, {"ok": True, "data": {"text": msg, "state": self._state(r, user)}})
+                return
+
+            if path == "/api/inventory":
+                from game.adventure import inventory_text
+                r, ch = need_room_and_char()
+                if not r: return
+                msg = inventory_text(ch)
+                self._json(200, {"ok": True, "data": {"text": msg, "state": self._state(r, user)}})
+                return
+
+            if path == "/api/disarm":
+                from game.world import try_disarm_trap
+                r, ch = need_room_and_char()
+                if not r: return
+                try: dc = int(body.get("dc", 0) or 0)
+                except: dc = 0
+                msg = try_disarm_trap(r, ch, body.get("name", ""), dc or None)
+                self.store.save(r)
+                self._json(200, {"ok": True, "data": {"text": msg, "state": self._state(r, user)}})
+                return
+
+            if path == "/api/inventory/use":
+                from game.adventure import use_item
+                r, ch = need_room_and_char()
+                if not r: return
+                msg = use_item(r, user["id"], body.get("item", ""))
+                self.store.save(r)
+                self._json(200, {"ok": True, "data": {"text": msg, "state": self._state(r, user)}})
+                return
+
+            if path == "/api/deathsave":
+                from game.adventure import death_save
+                r, ch = need_room_and_char()
+                if not r: return
+                msg = death_save(r, user["id"])
+                self.store.save(r)
+                self._json(200, {"ok": True, "data": {"text": msg, "state": self._state(r, user)}})
+                return
+
+            if path == "/api/combat/dodge":
+                from game.combat import dodge, advance
+                r, ch = need_room_and_char()
+                if not r: return
+                if not r.combat:
+                    self._json(400, {"ok": False, "error": "نبردی در جریان نیست"})
+                    return
+                msgs = [dodge(r, user["id"])]
+                if r.combat:
+                    msgs.append(advance(r))
+                self.store.save(r)
+                self._json(200, {"ok": True, "data": {"messages": msgs, "state": self._state(r, user)}})
+                return
+
+            # پیش‌فرض هندلرهای parent (attack/cast/skip/story/roll/scenario/char/create و...)
+            super().do_POST()
+
+    # fallback state: حالت scenario_view (فیلتر اسپویل)
+    def _safe_scenario(sc):
+        if not sc: return None
+        def _ln(l):
+            if isinstance(l, dict):
+                return {"name": l.get("name", str(l)),
+                        "description": l.get("description", ""),
+                        "encounter_hint": l.get("encounter_hint", "")}
+            return {"name": str(l)}
+        return {
+            "title": sc.get("title"), "hook": sc.get("hook"), "goal": sc.get("goal"),
+            "locations": [_ln(l) for l in (sc.get("locations") or [])],
+            "npcs": [{"name": (n.get("name") if isinstance(n, dict) else str(n)),
+                      "role": (n.get("role") if isinstance(n, dict) else "")}
+                     for n in (sc.get("npcs") or [])],
+            "encounters": [{"name": e.get("name","؟"), "count": e.get("count",1),
+                            "ac": e.get("ac"), "hp": e.get("hp"), "xp": e.get("xp"),
+                            "is_boss": bool(e.get("is_boss")),
+                            "location": e.get("location","")}
+                           for e in (sc.get("encounters") or [])],
+            "treasure": sc.get("treasure"),
+            "traps": [{"name": t.get("name",""), "location": t.get("location",""),
+                       "detect_dc": t.get("detect_dc",13)}
+                      for t in (sc.get("traps") or []) if not t.get("triggered")],
+            "branches": sc.get("branches") or [],
+            "boss": ({"name": sc["boss"].get("name",""),
+                      "ability": sc["boss"].get("ability","")}
+                     if isinstance(sc.get("boss"), dict) else None),
+        }
+
+    FullApiHandler._state_orig = FullApiHandler._state
+    def _state_full(self, s, user):
+        d = self._state_orig(s, user)
+        d["scenario"] = _safe_scenario(getattr(s, "scenario", None))
+        world = getattr(s, "world", None) or {}
+        d["room"]["location"] = world.get("location", "")
+        d["room"]["locations"] = world.get("locations", [])
+        d["room"]["light"] = world.get("light", "dark")
+        return d
+    FullApiHandler._state = _state_full
+
+    class ThreadingServer(ThreadingHTTPServer):
+        daemon_threads = True
+        allow_reuse_address = True
+
+    try:
+        httpd = ThreadingServer(("0.0.0.0", port), FullApiHandler)
+    except OSError as e:
+        log("خطا در bind پورت %d: %s" % (port, e))
+        return
+    log("🌐 مینی‌گیم (fallback) روی پورت %d فعال شد" % port)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
     while not stopped():
         time.sleep(1)
-    try:
-        srv.shutdown()
-        srv.server_close()
-    except Exception:
-        pass
+    httpd.shutdown()
     log("🌐 وب‌سرور مینی‌گیم متوقف شد")
 
 

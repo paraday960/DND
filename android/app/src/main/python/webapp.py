@@ -554,6 +554,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         return api_ok({"text": text, "state": build_state(room, user)})
 
     @app.post("/api/where/look")
+    @app.post("/api/look")
     def api_look():
         user, err = need_user()
         if err: return err
@@ -563,6 +564,32 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         init_world(room)
         text = map_describe(room)
         return api_ok({"text": text, "state": build_state(room, user)})
+
+    @app.post("/api/inventory")
+    def api_inventory():
+        user, err = need_user()
+        if err: return err
+        d = request.json or {}; room = room_of(d.get("room", ""))
+        if not room: return api_err("اتاق پیدا نشد!")
+        ch = room.get_char(user["id"])
+        if not ch: return api_err("کاراکتر نداری!")
+        return api_ok({"text": inventory_text(ch), "state": build_state(room, user)})
+
+    @app.get("/api/log")
+    def api_debug_log():
+        """لاگ‌های سمت سرور (حداکثر ۱۰۰ خط آخر) — برای عیب‌یابی مینی‌گیم."""
+        try:
+            log_path = os.path.join(
+                os.environ.get("FILES_DIR", os.path.join(BASE_DIR, "data")), "bot.log")
+            if not os.path.isfile(log_path):
+                log_path = os.path.join(BASE_DIR, "bot.log")
+            if os.path.isfile(log_path):
+                with open(log_path, encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+                return jsonify({"ok": True, "log": "".join(lines[-200:])})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)})
+        return jsonify({"ok": True, "log": ""})
 
     @app.post("/api/disarm")
     def api_disarm():

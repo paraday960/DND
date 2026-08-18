@@ -398,11 +398,72 @@ def auto_act(session: Session, mon: dict) -> str:
     if mon.get("is_boss"):
         n_atks = max(n_atks, 2)
     parts = []
-    # قابلیت ویژه باس در اولین نوبت
+    # قابلیت ویژه باس در اولین نوبت — افکت مکانیکی واقعی
     boss_ability_used = mon.get("_ability_used", False)
     if mon.get("is_boss") and not boss_ability_used and mon.get("ability"):
         mon["_ability_used"] = True
-        parts.append(f"👑 **{mon['name']}** از قابلیت ویژه استفاده می‌کند: {mon['ability']}!")
+        ability = (mon.get("ability") or "").lower()
+        parts.append(f"👑 **{mon['name']}** از قابلیت ویژه استفاده می‌کند: _{mon['ability']}_!")
+        # ۱) احضار هم‌دست (کلمات کلیدی: احضار، صدا زدن، کمک، summon)
+        if any(k in ability for k in ("احضار", "کمک", "صدا زدن", "مینیون", "سرباز", "summon", "call")):
+            from .dice import roll_dice
+            add_count = 1 + roll_dice(2)  # ۲-۳ هم‌دست
+            from .rules import MONSTERS
+            minion_opts = [k for k in ("goblin", "skeleton", "kobold", "bandit", "wolf", "giant_rat") if k in MONSTERS]
+            if minion_opts:
+                for _ in range(add_count):
+                    mk = random.choice(minion_opts)
+                    template = MONSTERS[mk]
+                    init = roll_dice(20) + 2
+                    parts.append(f"👹 **{template['fa']}** به میدان می‌رسد!")
+                    session.combat["participants"].append({
+                        "kind": "monster", "name": template["fa"],
+                        "key": mk, "hp": template["hp"], "max_hp": template["hp"],
+                        "ac": template["ac"], "atk": template["atk"],
+                        "atk_bonus": template.get("atk_bonus", 2),
+                        "xp": template["xp"] // 2,
+                        "alive": True, "conditions": [], "init": init - 2,  # بعد از باس
+                        "emoji": template.get("emoji", "👹"),
+                    })
+                # لیست initiative را دوباره مرتب کن
+                session.combat["participants"].sort(key=lambda p: -p["init"])
+        # ۲) ضربه AoE / فریاد ترس (کلمات: فریاد، غرش، وحشت، ترس، AoE، همه)
+        elif any(k in ability for k in ("فریاد", "غرش", "وحشت", "ترس", "aoc", "همه", "بمب", "انفجار")):
+            from .dice import roll_dice
+            dmg = roll_dice(8) + mon.get("atk_bonus", 3)
+            parts.append(f"💥 موجی از قدرت همه بازیکنان را در بر می‌گیرد!")
+            for p in session.combat["participants"]:
+                if p["kind"] == "player" and p.get("alive") and p.get("hp", 0) > 0:
+                    # WIS save half
+                    ch = session.get_char(int(p.get("uid", 0)))
+                    if ch:
+                        from .rules import ability_mod
+                        save = roll_dice(20) + ability_mod(ch.abilities.get("WIS", 10))
+                        if save >= 13:
+                            d = max(1, dmg // 2)
+                            parts.append(f"🛡️ {ch.name} با موفقیت مقاومت می‌کند و {d} آسیب می‌خورد.")
+                        else:
+                            d = dmg
+                            p["conditions"] = list(set(p.get("conditions", []) + ["ترسیده"]))
+                            parts.append(f"😱 {ch.name} ترسیده و {d} آسیب می‌خورد!")
+                        p["hp"] = max(0, p["hp"] - d)
+                        if p["hp"] <= 0:
+                            p["downed"] = True
+                            parts.append(f"💔 {ch.name} زمین‌گیر شد!")
+            # همه آسیب دیدن نوبت یک بارس
+        # ۳) التیام / دیوفالت: زره باس بالا می‌رود
+        elif any(k in ability for k in ("زره", "دفاع", "سپر", "shield", "heal", "درمان")):
+            mon["ac"] = mon.get("ac", 12) + 2
+            heal = 8
+            mon["hp"] = min(mon.get("max_hp", mon["hp"]) + heal, mon.get("hp", 0) + heal)
+            parts.append(f"🛡️ {mon['name']} خود را مقاوم‌تر می‌کند (+2 AC، {heal} HP)!")
+        # ۴) در غیر این صورت فقط پیام (کازمتیک) — باس یک‌بار attack اضافه
+        else:
+            target = random.choice(players) if players else None
+            if target:
+                hit_msg, _ = _resolve_one_attack(session, mon, target, atk_bonus + 2)
+                parts.append("⚡ حمله قدرتمند اضافی!\n" + hit_msg)
+
     target = random.choice(players)
     for _i in range(n_atks):
         hit_msg, downed = _resolve_one_attack(session, mon, target, atk_bonus)
