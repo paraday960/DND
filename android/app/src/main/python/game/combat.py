@@ -189,26 +189,41 @@ def _apply_damage_resistance(session, target, dmg, dmg_type="bludgeoning"):
 
 
 def _resolve_one_attack(session, attacker, target, atk_bonus, dmg_expr=None,
-                        dmg_type="bludgeoning", is_ranged=False, extra_dmg=None,
-                        adv_override=None, dis_override=None) -> tuple:
-    """یک حمله منفرد را اجرا می‌کند. خروجی: (lines_text, target_was_downed)."""
+                        dmg_type="bludgeoning", is_ranged=False, extra_dmg_dice=None,
+                        dmg_modifier=0, adv_override=None, dis_override=None,
+                        critical=False) -> tuple:
+    """یک حمله منفرد را اجرا می‌کند. خروجی: (lines_text, target_was_downed).
+    
+    نکته مهم قانون D&D: در کریت فقط **تاس‌های آسیب** دو برابر می‌شوند، modifier عدد ثابت اضافه نمی‌شود.
+    """
     adv, dis, reasons, auto_crit = _calc_attack_adv_dis(attacker, target, is_ranged)
     if adv_override:
         adv = True
     if dis_override:
         dis = True
+    # حمله دوربرد در ۵ فوت دشمن، با ضعف
+    if is_ranged and not has_condition(target, "prone"):
+        if target.get("distance", 0) == 0:
+            dis = True
+            reasons.append("حمله دور در نزدیکی دشمن")
     # هالفلینگ: رول ۱ را دوباره می‌اندازد (luck)
     attacker_ch = get_participant_ch(session, attacker)
     raw, rolls, mode = roll_adv_disadv(adv, dis)
-    if attacker_ch and attacker_ch.race == "halfling" and raw == 1 and not getattr(attacker_ch, "resources", {}).get("luck_used", False):
+    if attacker_ch and attacker_ch.race == "halfling" and raw == 1 and not attacker_ch.resources.get("luck_used", False):
         raw2 = roll_d20()
         rolls.append(raw2)
         raw = raw2
-        if "resources" in attacker_ch.__dict__:
-            attacker_ch.resources["luck_used"] = True
+        attacker_ch.resources["luck_used"] = True
         reasons.append("شانس هالفلینگ")
-    atk = raw + atk_bonus
-    crit = (raw == 20) or auto_crit
+    # الهام بارد اگر دارد
+    insp_bonus = 0
+    if attacker.get("inspiration_die"):
+        die = attacker.pop("inspiration_die")
+        sides = int(die[1:]) if die.startswith("d") else 6
+        insp_bonus = random.randint(1, sides)
+        reasons.append(f"الهام بارد +{insp_bonus}")
+    atk = raw + atk_bonus + insp_bonus
+    crit = (raw == 20) or auto_crit or critical
     fumble = (raw == 1)
     hit = (crit or (raw != 1 and atk >= target.get("ac", 10))) and not fumble
     lines = []
@@ -219,13 +234,23 @@ def _resolve_one_attack(session, attacker, target, atk_bonus, dmg_expr=None,
         adv_tag = f" (با ضعف، تاس‌ها {rolls[0]} و {rolls[1]})"
     if hit:
         dmg_dice = dmg_expr or attacker.get("dmg", "1d6+0")
-        dmg = _roll_damage(dmg_dice)
-        if extra_dmg:
-            dmg += _roll_damage(extra_dmg) if isinstance(extra_dmg, str) else extra_dmg
+        # قانون کریت: فقط تاس‌ها دو برابر می‌شوند، modifier ثابت نه
+        base_dice_dmg = _roll_damage(dmg_dice) - (_extract_static_mod(dmg_dice))  # فقط تاس
+        static_mod = _extract_static_mod(dmg_dice) + dmg_modifier
         if crit:
-            dmg += _roll_damage(dmg_dice)  # تاس‌های آسیب دوباره در کریت
-            if extra_dmg and isinstance(extra_dmg, str):
-                dmg += _roll_damage(extra_dmg)
+            base_dice_dmg += _roll_damage(dmg_dice) - _extract_static_mod(dmg_dice)  # تاس‌های دوباره
+        # تاس‌های آسیب اضافه (sneak attack, hunter's mark, smite و...)
+        extra_dice_total = 0
+        if extra_dmg_dice:
+            for d_expr in (extra_dmg_dice if isinstance(extra_dmg_dice, list) else [extra_dmg_dice]):
+                if isinstance(d_expr, str):
+                    extra_dice_total += _roll_damage(d_expr) - _extract_static_mod(d_expr)
+                    if crit:
+                        extra_dice_total += _roll_damage(d_expr) - _extract_static_mod(d_expr)
+                else:
+                    extra_dice_total += int(d_expr)
+        dmg = base_dice_dmg + static_mod + extra_dice_total
+        dmg = max(dmg, 1)
         # اعمال مقاومت/ضعف
         dmg, res_tags = _apply_damage_resistance(session, target, dmg, dmg_type)
         target["hp"] = max(0, target.get("hp", 10) - dmg)
@@ -239,7 +264,7 @@ def _resolve_one_attack(session, attacker, target, atk_bonus, dmg_expr=None,
                     real_char.conditions.remove("concentrating")
                     lines.append(f"⚠️ تمرکز {target['name']} شکست! (رول {save} در برابر DC {dc})")
         line = f"🎲 {attacker['name']} به {target['name']} حمله کرد: {atk} "
-        line += f"(رول {raw}{'+' + str(atk_bonus) if atk_bonus else ''}) "
+        line += f"(رول {raw}{'+' + str(atk_bonus + insp_bonus) if (atk_bonus + insp_bonus) else ''}) "
         line += f"(AC {target.get('ac', 10)}){adv_tag} — 💥 اصابت! {dmg} آسیب"
         if dmg_type != "bludgeoning":
             type_fa = {"fire": "آتش", "cold": "سرما", "lightning": "برق", "acid": "اسید",
@@ -248,13 +273,13 @@ def _resolve_one_attack(session, attacker, target, atk_bonus, dmg_expr=None,
             line += f" ({type_fa})"
         if crit:
             line += " 🔥 **بحرانی!**"
+        if insp_bonus:
+            line += f" 🎻 الهام +{insp_bonus}"
         if res_tags:
             line += f" [{'; '.join(res_tags)}]"
-        if reasons and adv:
-            pass
         lines.append(line)
         downed = False
-        # Half-orc Relentless Endurance: وقتی قرار است down شوی یک بار به ۱ HP برمی‌گردی
+        # Half-orc Relentless Endurance
         if target["hp"] <= 0:
             real_char_target = get_participant_ch(session, target)
             if real_char_target and real_char_target.race == "half_orc" and not real_char_target.resources.get("relentless_used", False):
@@ -277,6 +302,15 @@ def _resolve_one_attack(session, attacker, target, atk_bonus, dmg_expr=None,
         line = f"🎲 {attacker['name']} به {target['name']} حمله کرد: {atk} "
         line += f"(AC {target.get('ac', 10)}){adv_tag}{miss_tag}"
         return line, False
+
+
+def _extract_static_mod(dmg_expr: str) -> int:
+    """مقدار ثابت پایانی عبارت آسیب (مثل +3 یا -1 در 1d8+3, 2d6-1) را برمی‌گرداند."""
+    try:
+        count, sides, mod = parse_dice(str(dmg_expr))
+        return mod
+    except Exception:
+        return 0
 
 
 
@@ -477,18 +511,25 @@ def _goto_next(combat, session=None):
     if n == 0:
         return []
     cur_idx = combat["turn"]
-    cur_p = combat["participants"][cur_idx]
     messages = []
-    # حمله فرصت در شروع حرکت اگر بازیکن می‌خواهد دور شود (در حالت ساده همه در ابتدای نوبت اگر دور هستند حمله فرصت ندارند — اینجا در حرکت واقعی هندل می‌شود)
     nxt = _next_alive(combat, cur_idx)
     if nxt <= cur_idx:
         combat["round"] += 1
     combat["turn"] = nxt
     nxt_p = combat["participants"][nxt]
-    # وضعیت دفاع (Dodge) فقط تا شروع نوبت بعدی همین بازیکن دوام دارد
-    if "dodge" in nxt_p.get("conditions", []):
-        nxt_p["conditions"].remove("dodge")
-    # منابع نوبت ریست می‌شوند: اکشن، بونس‌اکشن، ری‌اکشن
+    # وضعیت‌های یک‌نوبته پاک می‌شوند
+    for cond in ("dodge",):
+        if cond in nxt_p.get("conditions", []):
+            nxt_p["conditions"].remove(cond)
+    # بافت +AC سپر جادویی در شروع نوبت بعد تمام می‌شود
+    if nxt_p.get("temp_ac_boost"):
+        boost = nxt_p.pop("temp_ac_boost")
+        nxt_p["ac"] = max(10, nxt_p["ac"] - boost)
+        if nxt_p.get("kind") == "player" and session:
+            ch = get_participant_ch(session, nxt_p)
+            if ch:
+                ch.ac = nxt_p["ac"]
+    # منابع نوبت ریست می‌شوند
     nxt_p["acted"] = False
     nxt_p["bonus_acted"] = False
     nxt_p["reaction_available"] = True
@@ -496,15 +537,24 @@ def _goto_next(combat, session=None):
     nxt_p["disengage_active"] = False
     nxt_p["helped_by"] = None
     nxt_p["hidden"] = False
+    nxt_p["_main_attack_done"] = False
     # در نوبت بازیکن منابع کاراکتر هم ریست
-    if nxt_p.get("kind") == "player":
-        ch = get_participant_ch(session, nxt_p) if session else None
+    if nxt_p.get("kind") == "player" and session:
+        ch = get_participant_ch(session, nxt_p)
         if ch:
             ch.reset_turn_resources()
+            # مدیریت خشم بربر
+            if ch.rage_active:
+                ch.rage_turns += 1
+                # اگر تا نوبت بعدی حمله نزده باشی یا آسیب نخورده باشی، خشم خاموش می‌شود
+                if ch.rage_turns > 1:
+                    ch.rage_active = False
+                    ch.rage_turns = 0
+                    ch.rage_dmg_bonus = 0
+                    messages.append(f"😤 خشم {ch.name} فروکش کرد.")
     # وقتی نوبت به یک بازیکن می‌رسد، در صورت زنده بودن، وضعیت downed از نوبت قبل پاک شود
     if nxt_p.get("kind") == "player" and not nxt_p.get("dead") and nxt_p.get("hp", 0) > 0:
         nxt_p["downed"] = False
-    # مدیریت خشم بربر: اگر نوبت رسید و در خشم هستی و حمله نکردی یا آسیب نخوردی خشم تمام می‌شود
     return messages
 
 
@@ -703,7 +753,7 @@ def _find_target(combat: dict, name: str):
     return None
 
 
-def attack(session: Session, uid: int, target_name: str) -> str:
+def attack(session: Session, uid: int, target_name: str, is_bonus_offhand=False) -> str:
     combat = _combat(session)
     ch = session.get_char(uid)
     if not ch:
@@ -717,8 +767,12 @@ def attack(session: Session, uid: int, target_name: str) -> str:
         return "کاراکترت مرده است."
     if ch.hp <= 0 or cur.get("downed"):
         return "تو زمین‌گیری! فقط می‌توانی `/deathsave` بزنی."
-    if cur.get("acted"):
-        return "در این نوبت اکشن اصلی را قبلاً گرفتی! می‌توانی بونس‌اکشن بگیری یا `/skip` کنی."
+    if is_bonus_offhand:
+        if cur.get("bonus_acted"):
+            return "بونس‌اکشن این نوبت را قبلاً گرفتی!"
+    else:
+        if cur.get("acted"):
+            return "در این نوبت اکشن اصلی را قبلاً گرفتی! می‌توانی بونس‌اکشن بگیری یا `/skip` کنی."
 
     target = _find_target(combat, target_name)
     if not target:
@@ -728,82 +782,148 @@ def attack(session: Session, uid: int, target_name: str) -> str:
 
     from .rules import WEAPONS
     weapon = WEAPONS[ch.weapon]
+    if is_bonus_offhand and ch.weapon not in ("dagger", "scimitar", "handaxe", "rapier", "shortsword"):
+        return "حمله دست دوم فقط با سلاح سبک (خنجر، شمشیر خمیده، تبر دستی و...) ممکن است!"
     weapon_range = WEAPON_RANGES.get(ch.weapon, {"type": "melee", "reach": 1.5})
     is_ranged = weapon_range.get("type") == "ranged"
-    dmg_type = "piercing" if "bow" in ch.weapon or "arrow" in ch.weapon or "dagger" in ch.weapon else \
+    dmg_type = "piercing" if "bow" in ch.weapon or "dagger" in ch.weapon or "arrow" in ch.weapon else \
                "slashing" if "axe" in ch.weapon or "sword" in ch.weapon or "scimitar" in ch.weapon else \
                "bludgeoning" if "mace" in ch.weapon or "hammer" in ch.weapon or "staff" in ch.weapon else "bludgeoning"
     # اگر دور هستی و سلاح نزدیک، باید اول move کنی
     if cur.get("distance", 0) > 0 and weapon_range["type"] == "melee":
         return f"فاصله تو تا دشمن زیاد است! اول با `/move near` نزدیک شو."
-    if cur.get("distance", 0) == 0 and weapon_range["type"] == "ranged" and not cur.get("disengage_active", False):
-        # حمله دوربرد در نزدیکی دشمن با ضعف (حمله فرصت نمی‌دهد اما ضعف دارد)
-        pass
-    # Rogue: Sneak Attack اگر مزیت داری یا هم‌گروهی کنار هدف است
+
+    # تعداد حمله بر اساس Extra Attack (برای اکشن اصلی؛ بونس حمله فقط یکی می‌زند)
+    n_attacks = 1
+    if not is_bonus_offhand:
+        if ch.cls in ("fighter", "barbarian", "paladin", "ranger", "monk") and ch.level >= 5:
+            n_attacks = 2
+        if ch.cls == "fighter" and ch.level >= 11:
+            n_attacks = 3
+        if ch.cls == "fighter" and ch.level >= 20:
+            n_attacks = 4
+
+    # بررسی مزیت برای Sneak Attack: هر حمله‌ای که با مزیت است یا هدف کنار یال است
     has_ally_adjacent = False
     for p in combat["participants"]:
         if p.get("kind") == "player" and p.get("uid") != str(uid) \
-           and p.get("alive", True) and not p.get("dead") and not p.get("downed") \
            and p.get("hp", 0) > 0 and p.get("distance", 0) == target.get("distance", 0):
             has_ally_adjacent = True
             break
-
-    # Extra Attack
-    n_attacks = 1
-    if ch.cls in ("fighter", "barbarian", "paladin", "ranger", "monk") and ch.level >= 5:
-        n_attacks = 2
-    if ch.cls == "fighter" and ch.level >= 11:
-        n_attacks = 3
-    if ch.cls == "fighter" and ch.level >= 20:
-        n_attacks = 4
+    has_adv, has_dis, _, _ = _calc_attack_adv_dis(cur, target, is_ranged)
 
     parts = []
     killed = False
-    cur["acted"] = True
+    if is_bonus_offhand:
+        cur["bonus_acted"] = True
+        ch.bonus_action_available = False
+        if not cur.get("_main_attack_done"):
+            return "حمله دست دوم (Offhand) فقط بعد از اینکه اکشن اصلی را با حمله انجام دادی ممکن است!"
+    else:
+        cur["acted"] = True
+        cur["_main_attack_done"] = True
     ch.hidden = False
     cur["hidden"] = False
-    # الهام بارد
-    extra_dmg = ""
-    if ch.inspiration:
-        sa_dice = max(1, (ch.level + 1) // 2)
-        if ch.cls == "rogue" and (has_ally_adjacent or cur.get("hidden")):
-            extra_dmg = f"{sa_dice}d6"
-    # خشم بربر آسیب اضافه
-    rage_bonus = ch.rage_dmg_bonus if ch.rage_active else 0
+    # بونس آسیب خشم بربر
+    rage_dmg = ch.rage_dmg_bonus if ch.rage_active else 0
+    atk_bonus = ch.attack_bonus()
+    static_dmg_mod = ch.stat_mod(weapon["stat"])
+    if is_bonus_offhand:
+        static_dmg_mod = 0  # حمله دست دوم پاداش توانایی به آسیب نمی‌گیرد (جز استثنائاتی که ساده‌سازی می‌کنیم)
+    # آسیب mark (hunter's mark/hex)
+    marked_dice = []
+    if cur.get("marked_target") == target["name"]:
+        marked_dice.append("1d6")
+
     for atk_i in range(n_attacks):
         if target.get("hp", 0) <= 0 or not target.get("alive", True):
             break
-        sa = 0
-        extra = ""
-        if ch.cls == "rogue" and (has_ally_adjacent or cur.get("hidden") or cur.get("helped_by")) and atk_i == 0:
-            sa_dice = max(1, (ch.level + 1) // 2)
-            sa = sum(roll_dice(sa_dice, 6))
-            extra = f"{sa_dice}d6"
-        if rage_bonus:
-            extra_dmg_int = rage_bonus
-        else:
-            extra_dmg_int = 0
-        if sa:
-            extra_dmg_int += sa
-        # تایپ صحیح
-        if extra:
-            extra = f"{ch.stat_mod(weapon['stat'])+extra_dmg_int:+d}+{sa}d6"
-        hit_msg, downed = _resolve_one_attack(session, cur, target, ch.attack_bonus(),
-                                              dmg_expr=weapon["dmg"], dmg_type=dmg_type,
-                                              is_ranged=is_ranged, extra_dmg=extra_dmg_int if extra_dmg_int else None)
+        extra_dice = []
+        # Sneak Attack راگ: فقط در اولین حمله هر نوبت که مزیت دارد یا هم‌گروهی نزدیک است
+        if ch.cls == "rogue" and atk_i == 0 and (has_adv or has_ally_adjacent or cur.get("helped_by") or cur.get("hidden")):
+            sa_dice_count = max(1, (ch.level + 1) // 2)
+            extra_dice.append(f"{sa_dice_count}d6")
+            parts.append(f"🗡️ **حمله غافلگیرانه!**")
+        extra_dice.extend(marked_dice)
+        hit_msg, downed = _resolve_one_attack(
+            session, cur, target, atk_bonus,
+            dmg_expr=weapon["dmg"], dmg_type=dmg_type,
+            is_ranged=is_ranged,
+            extra_dmg_dice=extra_dice if extra_dice else None,
+            dmg_modifier=static_dmg_mod + rage_dmg,
+        )
         parts.append(hit_msg)
         if target.get("hp", 0) <= 0:
             target["alive"] = False
             combat["xp_pool"] += target["xp"]
             killed = True
+            break
+    # پاک کردن کمک هم‌گروهی بعد از حمله
+    if cur.get("helped_by"):
+        cur["helped_by"] = None
     result = "\n".join(parts)
     if killed:
         result += f"\n☠️ **{target['name']} نابود شد!** (+{target['xp']} XP به خزانه گروه)"
-    # خشم بربر: اگر حمله زدی خشم ادامه پیدا می‌کند
+    # خشم بربر: حمله زدی پس ادامه پیدا می‌کند
     if ch.rage_active:
         ch.rage_turns += 1
+    if is_bonus_offhand:
+        result = "🗡️ **حمله دست دوم (Two-Weapon Fighting)!**\n" + result
     session.add_log(ch.name, result.replace("\n", " ")[:400])
     return result
+
+
+def offhand_attack(session: Session, uid: int, target_name: str = "") -> str:
+    """حمله با دست دوم به عنوان بونس‌اکشن."""
+    combat = _combat(session)
+    if not target_name:
+        # هدف آخرین هدف attacked
+        for p in reversed(combat.get("participants", [])):
+            if p["kind"] == "monster" and p.get("alive"):
+                target_name = p["name"]
+                break
+    return attack(session, uid, target_name, is_bonus_offhand=True)
+
+
+def divine_smite(session: Session, uid: int, slot_level: int = 1) -> str:
+    """Divine Smite پالادین: بعد از ضربه، اسلات می‌سوزانی تا آسیب تابشی اضافه بزنی (بونس‌اکشن یا در لحظه ضربه).
+    برای سادگی به عنوان بونس‌اکشن است که آسیب را روی آخرین هدف می‌ریزد.
+    """
+    combat = _combat(session)
+    ch = session.get_char(uid)
+    if not ch:
+        return "کاراکترت پیدا نشد."
+    if ch.cls != "paladin":
+        return "این قابلیت فقط برای پالادین است."
+    cur = combat["participants"][combat["turn"]]
+    if cur.get("uid") != str(uid):
+        return "نوبت تو نیست."
+    if cur.get("bonus_acted"):
+        return "بونس‌اکشنت را استفاده کردی."
+    if not ch.spend_slot(slot_level):
+        return f"جایگاه طلسم سطح {slot_level} نداری!"
+    # پیدا کردن آخرین هدفی که ضربه زده شد
+    target = None
+    for p in combat["participants"]:
+        if p["kind"] == "monster" and p.get("alive") and p.get("distance", 0) == 0:
+            target = p
+            break
+    if not target:
+        # اسلات برگشته
+        ch.spell_slots_used[slot_level] = max(0, ch.spell_slots_used.get(slot_level, 1) - 1)
+        return "هیچ هدف نزدیک برای اسمایت پیدا نشد."
+    # محاسبه آسیب اسمایت: 2d8 برای undead/fiend یک d8 اضافه (در ساده‌سازی 2d8 + 1d8 در slot بالاتر)
+    dmg = sum(roll_dice(2 + (slot_level - 1), 8))
+    target["hp"] = max(0, target["hp"] - dmg)
+    cur["bonus_acted"] = True
+    ch.bonus_action_available = False
+    msg = f"✨ **Divine Smite!** انرژی الهی از سلاح {ch.name} به {target['name']} می‌تابد! 💥 {dmg} آسیب تابشی!"
+    if target["hp"] <= 0:
+        target["alive"] = False
+        combat["xp_pool"] += target["xp"]
+        msg += f"\n☠️ **{target['name']} از نور الهی سوخت و نابود شد!** (+{target['xp']} XP)"
+    session.add_log(ch.name, msg)
+    return msg
 
 
 def move_action(session: Session, uid: int, where: str) -> str:
@@ -1133,7 +1253,8 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
     else:
         cur["acted"] = True
     parts = []
-    spell_dc = 8 + ch.spell_mod() + proficiency_bonus(ch.level)
+    spell_atk_bonus = ch.spell_mod() + proficiency_bonus(ch.level)
+    spell_dc = 8 + spell_atk_bonus
     # ----- طلسم‌های التیام -----
     if "heal" in spell["kind"]:
         target = None
@@ -1202,7 +1323,7 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
         return f"هدف پیدا نشد. دشمنان: {names}"
     is_ranged_spell = "ranged" in spell["kind"] or spell_key in ("firebolt", "eldritchblast", "rayoffrost", "guidingbolt", "hex", "huntersmark")
     if "attack" in spell["kind"]:
-        hit_msg, downed = _resolve_one_attack(session, cur, target, ch.spell_mod() + proficiency_bonus(ch.level),
+        hit_msg, downed = _resolve_one_attack(session, cur, target, spell_atk_bonus,
                                               dmg_expr=spell["dmg"], dmg_type=spell.get("damage_type", "force"),
                                               is_ranged=is_ranged_spell)
         parts.append(f"{spell['emoji']} {ch.name} «{spell['fa']}» می‌اندازد!")
@@ -1237,13 +1358,30 @@ def cast(session: Session, uid: int, spell_key: str, target_name: str = "") -> s
         target["hp"] = max(0, target["hp"] - actual_dmg)
     # ----- افکت‌های mark (نشان شکارچی/نفرین) -----
     if spell_key in ("huntersmark", "hex"):
-        parts.append(f"🎯 {target['name']} علامت خورد! تمام حملات بعدی به او آسیب اضافه خواهند داشت.")
         cur["marked_target"] = target["name"]
+        ch.conditions.append("concentrating")
+        parts.append(f"🎯 {target['name']} علامت خورد! تمام حملات بعدی به او 1d6 آسیب اضافی خواهند زد (تا زمانی که تمرکز داری).")
     # ----- Mage Armor -----
     if spell_key == "magearmor":
-        ch.ac = max(ch.ac, 13 + ability_mod(ch.abilities["DEX"]))
-        cur["ac"] = ch.ac
+        new_ac = 13 + ability_mod(ch.abilities["DEX"])
+        if ch.armor == "none":
+            ch.ac = new_ac
+            cur["ac"] = ch.ac
         parts.append(f"🧙 زره جادویی فعال شد! AC الان {ch.ac} است.")
+    # ----- Shield Spell (Reaction) -----
+    if spell_key == "shield":
+        # این به عنوان ری‌اکشن در مقابل حمله فراخوانی می‌شود، +5 AC می‌دهد تا شروع نوبت بعد
+        ch.ac += 5
+        cur["ac"] += 5
+        cur.setdefault("temp_ac_boost", 0)
+        cur["temp_ac_boost"] += 5
+        cur["reaction_available"] = False
+        ch.reaction_available = False
+        parts.append(f"🛡️ سپر جادویی فعال شد! AC تا شروع نوبت بعد ۵+ می‌شود (الان {ch.ac}).")
+    # ----- Misty Step -----
+    if spell_key == "mistystep":
+        cur["distance"] = 1 if cur.get("distance", 0) == 0 else 0
+        parts.append(f"💨 در مه ناپدید شدی و در موقعیت جدید ظاهر شدی!")
     # بررسی کشته شدن هدف
     if target.get("hp", 0) <= 0 and target.get("alive", True):
         target["alive"] = False

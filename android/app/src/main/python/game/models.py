@@ -75,11 +75,23 @@ class Character:
             self.max_hp = hit_die + (level - 1) * avg + con_mod * level
         self.max_hp = max(self.max_hp, level)
         self.hp = self.max_hp
-        # زره پیش‌فرض (بعداً با equipment.eqip_armor به‌روز می‌شود)
+        # زره پیش‌فرض (بعداً با equipment.equip_armor به‌روز می‌شود)
         self.armor = "medium" if CLASSES[cls].get("armor") else "none"
         # محاسبه اولیه AC
         armor_bonus = 2 if CLASSES[cls]["armor"] else 0
-        self.ac = 10 + ability_mod(self.abilities["DEX"]) + armor_bonus
+        dex_mod = ability_mod(self.abilities["DEX"])
+        base_ac = 10 + dex_mod + armor_bonus
+        # Unarmored Defense: بربر 10+DEX+CON، مانک 10+DEX+WIS
+        if cls == "barbarian":
+            base_ac = 10 + dex_mod + con_mod
+        elif cls == "monk":
+            wis_mod = ability_mod(self.abilities["WIS"])
+            base_ac = 10 + dex_mod + wis_mod
+        self.ac = base_ac
+        # بونوس سپر: اگر weapon انتخابی shield است +2 AC
+        self.shield_equipped = (weapon == "shield")
+        if self.shield_equipped:
+            self.ac += 2
 
     def _initial_spell_slots(self) -> dict:
         if self.cls not in ("wizard", "cleric", "druid", "bard", "sorcerer", "warlock", "paladin", "ranger"):

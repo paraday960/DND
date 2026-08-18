@@ -9,6 +9,7 @@ import config
 from game.combat import (
     attack, cast, dodge, dash, disengage, help_action, hide, shove,
     second_wind, action_surge, rage, bardic_inspiration, move_action,
+    offhand_attack, divine_smite,
     end_combat, start_combat, advance, is_player_turn,
 )
 from game.adventure import death_save, inventory_text, rest, skill_check, use_item
@@ -684,6 +685,35 @@ async def move_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = move_action(session, update.effective_user.id, where)
     _save(update, context, session)
     await update.message.reply_text(text)
+
+
+async def offhand_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    target = " ".join(context.args or [])
+    text = offhand_attack(session, update.effective_user.id, target)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+    if "نابود شد" in text:
+        await _maybe_advance(update, context, session)
+
+
+async def smite_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session, err = _need_session(update, context)
+    if err:
+        await update.message.reply_text(err); return
+    slot = 1
+    if context.args:
+        try:
+            slot = int(context.args[0])
+        except ValueError:
+            slot = 1
+    text = divine_smite(session, update.effective_user.id, slot)
+    _save(update, context, session)
+    await update.message.reply_text(text)
+    if "نابود شد" in text:
+        await _maybe_advance(update, context, session)
 
 
 # ---------- تجربه و سطح ----------

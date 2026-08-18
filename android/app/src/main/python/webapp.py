@@ -15,8 +15,12 @@ from urllib.parse import parse_qsl
 from flask import Flask, jsonify, request, send_from_directory
 
 import config
-from game.combat import (advance, attack, cast, dodge, end_combat,
-                         is_player_turn, run_initial_monsters, start_combat)
+from game.combat import (advance, attack, cast, dodge, dash, disengage,
+                         help_action, hide, shove, second_wind, action_surge,
+                         rage, bardic_inspiration, move_action,
+                         offhand_attack, divine_smite,
+                         end_combat, is_player_turn, run_initial_monsters,
+                         start_combat)
 from game.adventure import (death_save, inventory_text, rest,
                              skill_check, use_item)
 from game.dice import (
@@ -680,6 +684,61 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     @app.post("/api/combat/dodge")
     def api_combat_dodge():
         return _combat_action(lambda room, uid: dodge(room, uid))
+
+    @app.post("/api/combat/dash")
+    def api_combat_dash():
+        return _combat_action(lambda room, uid: dash(room, uid))
+
+    @app.post("/api/combat/disengage")
+    def api_combat_disengage():
+        return _combat_action(lambda room, uid: disengage(room, uid))
+
+    @app.post("/api/combat/help")
+    def api_combat_help():
+        d = request.json or {}
+        return _combat_action(lambda room, uid: help_action(room, uid, d.get("target", "")))
+
+    @app.post("/api/combat/hide")
+    def api_combat_hide():
+        return _combat_action(lambda room, uid: hide(room, uid))
+
+    @app.post("/api/combat/shove")
+    def api_combat_shove():
+        d = request.json or {}
+        return _combat_action(lambda room, uid: shove(room, uid, d.get("target", "")))
+
+    @app.post("/api/combat/secondwind")
+    def api_combat_secondwind():
+        return _combat_action(lambda room, uid: second_wind(room, uid))
+
+    @app.post("/api/combat/actionsurge")
+    def api_combat_actionsurge():
+        return _combat_action(lambda room, uid: action_surge(room, uid))
+
+    @app.post("/api/combat/rage")
+    def api_combat_rage():
+        return _combat_action(lambda room, uid: rage(room, uid))
+
+    @app.post("/api/combat/inspire")
+    def api_combat_inspire():
+        d = request.json or {}
+        return _combat_action(lambda room, uid: bardic_inspiration(room, uid, d.get("target", "")))
+
+    @app.post("/api/combat/move")
+    def api_combat_move():
+        d = request.json or {}
+        return _combat_action(lambda room, uid: move_action(room, uid, d.get("where", "near")))
+
+    @app.post("/api/combat/offhand")
+    def api_combat_offhand():
+        d = request.json or {}
+        return _combat_action(lambda room, uid: offhand_attack(room, uid, d.get("target", "")))
+
+    @app.post("/api/combat/smite")
+    def api_combat_smite():
+        d = request.json or {}
+        slot = int(d.get("slot", 1))
+        return _combat_action(lambda room, uid: divine_smite(room, uid, slot))
 
     @app.post("/api/combat/deathsave")
     def api_combat_deathsave():

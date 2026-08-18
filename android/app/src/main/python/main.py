@@ -230,6 +230,8 @@ def build_app(store=None, narrator=None) -> Application:
     app.add_handler(CommandHandler("inspire", handlers.inspire_cmd))
     app.add_handler(CommandHandler("secondwind", handlers.secondwind_cmd))
     app.add_handler(CommandHandler("actionsurge", handlers.actionsurge_cmd))
+    app.add_handler(CommandHandler("offhand", handlers.offhand_cmd))
+    app.add_handler(CommandHandler("smite", handlers.smite_cmd))
     app.add_handler(CommandHandler("skip", handlers.skip_cmd))
     app.add_handler(CommandHandler("deathsave", handlers.deathsave_cmd))
     app.add_handler(CommandHandler("combatend", handlers.combatend_cmd))
