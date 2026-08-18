@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>🐉 مینی‌گیم D&D</title>
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<meta name="theme-color" content="#0b0e14">
 <style>
   :root{
     --bg:#0b0e14; --card:#151b28; --card2:#1b2334; --line:#273043;
@@ -24,7 +27,8 @@
     padding:12px 16px;background:rgba(11,14,20,.85);backdrop-filter:blur(10px);
     border-bottom:1px solid var(--line);
   }
-  .logo{font-weight:800;font-size:17px;color:var(--gold2);letter-spacing:.3px}
+  .logo-icon{width:32px;height:32px;border-radius:8px;box-shadow:0 0 12px rgba(212,175,55,.45);vertical-align:middle;margin-inline-end:6px;}
+  .logo{font-weight:800;font-size:17px;color:var(--gold2);letter-spacing:.3px;display:flex;align-items:center}
   .logo small{display:block;font-size:10px;color:var(--muted);font-weight:400}
   .room-pill{
     margin-inline-start:auto;font-size:12px;background:var(--card2);
@@ -175,7 +179,7 @@
 <body>
 
 <header>
-  <div class="logo">🐉 دانجن‌مستر AI<small>مینی‌گیم D&D — تا ۸ بازیکن</small></div>
+  <div class="logo"><img class="logo-icon" src="icon.png" alt=""> دانجن‌مستر AI<small>مینی‌گیم D&D — تا ۸ بازیکن</small></div>
   <div id="roomPill" class="room-pill hidden">اتاق <b id="pillCode"></b></div>
 </header>
 

@@ -705,4 +705,8 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     def index():
         return send_from_directory(WEB_DIR, "index.html")
 
+    @app.get("/<path:filename>")
+    def static_files(filename):
+        return send_from_directory(WEB_DIR, filename)
+
     return app
