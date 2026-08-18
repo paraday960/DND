@@ -93,18 +93,83 @@ def _post_json(url: str, body: dict, headers: dict = None, timeout: int = 45) ->
 
 
 def _extract_json(text: str) -> dict:
-    """سخت‌گیرانه‌ترین پارس JSON: بلوک بین { } را پیدا و تلاش می‌کند."""
+    """پارس JSON مقاوم به markdown code-fence، توضیحات اضافی، trailing comma و بریده‌شدن خروجی."""
     if not text:
         return None
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        return None
-    for candidate in (match.group(0), text.strip()):
+    cleaned = text.strip()
+    # 1) بلوک ```json ... ``` یا ``` ... ```
+    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL)
+    if fence:
+        candidate = fence.group(1)
         try:
             return json.loads(candidate)
         except json.JSONDecodeError:
-            continue
-    return None
+            cleaned = candidate  # ادامه با متن داخل بلوک
+    # 2) اولین { تا آخرین }
+    brace_start = cleaned.find("{")
+    brace_end = cleaned.rfind("}")
+    if brace_start != -1 and brace_end != -1 and brace_end > brace_start:
+        candidate = cleaned[brace_start:brace_end + 1]
+        # 2a) اصلاح خطاهای رایج قبل از پارس
+        fixed = _quick_json_fix(candidate)
+        for cand in (candidate, fixed):
+            try:
+                return json.loads(cand)
+            except json.JSONDecodeError:
+                continue
+        # 2b) خوردن تدریجی از انتها برای خروجی‌های بریده (truncated)
+        for cut in range(len(candidate), 50, -max(1, len(candidate)//40)):
+            chunk = candidate[:cut].rstrip(",\n \t")
+            if not chunk.endswith("}"):
+                # بستن همه آکولاد باز
+                opens = chunk.count("{") - chunk.count("}")
+                if opens > 0:
+                    chunk = chunk.rstrip(",\n \t") + "}" * opens
+            try:
+                return json.loads(chunk)
+            except json.JSONDecodeError:
+                # با اصلاح سریع
+                try:
+                    return json.loads(_quick_json_fix(chunk))
+                except json.JSONDecodeError:
+                    continue
+    # 3) متن کامل
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        return None
+
+
+def _quick_json_fix(s: str) -> str:
+    """چند اشتباه رایج خروجی LLM را قبل از json.loads اصلاح می‌کند."""
+    s = re.sub(r"//[^\n]*", "", s)
+    s = re.sub(r"/\*.*?\*/", "", s, flags=re.DOTALL)
+    s = re.sub(r",(\s*[}\]])", r"\1", s)
+    return s
+
+
+def _clean_narration(text: str) -> str:
+    """زباله‌های متداول در پاسخ AI را حذف می‌کند تا خروجی تمیز باشد."""
+    if not text:
+        return text
+    t = text.strip()
+    # حذف پیش‌درآمدهای «اینجا ادامه می‌دهم» یا اعتراف به هوش‌مصنوعی بودن
+    for _ in range(3):
+        changed = False
+        for b in (
+            "به عنوان یک هوش مصنوعی", "من به عنوان مدل زبان",
+            "به عنوان دانجن‌مستر", "به عنوان دانجن مستر",
+            "در اینجا به ادامه داستان می‌پردازم", "در ادامه داستان:",
+            "حتماً! ", "البته! ", "خواهش می‌کنم! ",
+        ):
+            if t.startswith(b):
+                parts = t.split("\n", 1)
+                t = parts[1].strip() if len(parts) > 1 else t[len(b):].strip()
+                changed = True
+        if not changed:
+            break
+    t = re.sub(r"```(?:json|python)?\s*.*?```", "", t, flags=re.DOTALL).strip()
+    return t
 
 
 def _normalize_scenario(data: dict, MONSTERS: dict, players: int, level: int) -> dict:
@@ -307,9 +372,13 @@ class Narrator:
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ],
-                "temperature": 0.9,
+                "temperature": 0.85,
                 "max_tokens": max_tokens,
             }
+            # Mistral/OpenRouter از JSON mode پشتیبانی می‌کنند؛ اگر درخواست‌مان
+            # به سناریو (JSON) باشد آن را فعال می‌کنیم تا خروجی با ```json برنگردد.
+            if self.provider in ("mistral", "openrouter") and max_tokens >= 1500:
+                body["response_format"] = {"type": "json_object"}
             headers = {"Authorization": f"Bearer {self.api_key}"}
             if self.provider == "openrouter":
                 headers["HTTP-Referer"] = "https://t.me/"
@@ -340,62 +409,83 @@ class Narrator:
         user_msg = (
             f"بافت بازی:\n{context}\n\n"
             f"اقدام بازیکن: {action}\n\n"
-            "حالا روایت کن. اگر این اقدام وضعیت دنیا را تغییر می‌دهد (مثل روشن کردن مشعل، "
-            "باز کردن در، جابجایی مکان، برداشتن آیتم) در روایتت به‌وضوح آن تغییر را منعکس کن و "
-            "همان وضعیت جدید را در ادامه داستان در نظر بگیر."
+            "حالا روایت کن. قوانین پاسخ:\n"
+            "- حداکثر ۳ پاراگراف کوتاه و سینمایی.\n"
+            "- نتیجه اکشن بازیکن را واضح و صریح بگو (موفق/شکست، چه دید/چه شد).\n"
+            "- اگر تاس لازم است بنویس مثل 🎲 «پرتاب ادراک (DC 13)» یا «آسیب 1d6+2» — خودم پرتاب می‌کنم.\n"
+            "- هرگز پیام سیستمی یا خروجی دیتابیس ننویس؛ فقط روایت دانجن‌مستر.\n"
+            "- اگر اکشن باعث تغییر دنیا می‌شود (مشعل روشن/در باز/جابجایی مکان) در روایت منعکس کن."
         )
-        try:
-            text = self._call(SYSTEM_PROMPT, user_msg)
-            if text:
-                low = text.lower()
-                if "مشعل" in action or "روشن" in action or "افروز" in action or "آتش" in action:
-                    if any(w in text for w in ["روشن", "شعله", "نور", "آتش", "افروخت"]):
-                        if hasattr(session, "world"):
-                            session.world["light"] = "torch"
-                if "تاریک" in text and "تاریکی" in text and hasattr(session, "world"):
-                    if session.world.get("light") != "torch":
-                        session.world["light"] = "dark"
-                session.add_log("DM", text.replace("\n", " ")[:400])
-                return text.strip()
-        except Exception:
-            pass
+        text = None
+        for attempt in range(2):
+            try:
+                raw = self._call(SYSTEM_PROMPT, user_msg, max_tokens=600)
+                if raw and len(raw.strip()) > 20:
+                    text = raw.strip()
+                    break
+            except Exception:
+                continue
+        if text:
+            text = _clean_narration(text)
+            # به‌روزرسانی خودکار state دنیا بر اساس محتوای روایت
+            if any(w in text for w in ["مشعل روشن", "مشعل را روشن", "شعله\u200cی مشعل", "روشن می\u200cکنی"]) or \
+               (("مشعل" in action or "روشن" in action) and any(w in text for w in ["روشن", "شعله", "نور", "آتش"])):
+                if hasattr(session, "world"):
+                    session.world["light"] = "torch"
+            if ("تاریک" in text and "تاریکی" in text and hasattr(session, "world") and
+                    session.world.get("light") != "torch"):
+                session.world["light"] = "dark"
+            session.add_log("DM", text.replace("\n", " ")[:400])
+            return text
         return self._fallback_narrate(session, action)
 
     def scenario(self, session: Session, request: str = "") -> dict:
-        """ساخت سناریوی کامل توسط هوش مصنوعی (یا آفلاین)."""
+        """ساخت سناریوی کامل توسط هوش مصنوعی (یا آفلاین) با چند بار تلاش."""
         from .rules import MONSTERS
         chars = [p["char"] for p in session.players.values() if p.get("char")]
         players = max(1, len(chars))
         level = max(1, min(20, (sum(c.level for c in chars) // players) if chars else 1))
-        user_msg = SCENARIO_PROMPT.format(players=players, level=level)
+        # پرامپت کوتاه‌تر برای جلوگیری از طولانی شدن و truncate خروجی
+        concise_prompt = (
+            "تو طراح سناریوی D&D 5e هستی. برای گروه {players} نفره سطح {level} یک سناریو جذاب "
+            "فقط در JSON فارسی بساز. ساختار دقیق (همه فیلدها الزامی‌اند، خروجی را حتماً با آکولاد ببند، "
+            "طول کل پاسخ کمتر از ۱۲۰۰ توکن باشد، هیچ توضیح اضافه ننویس):\n"
+            "{{\n"
+            "  \"title\": \"عنوان کوتاه\",\n"
+            "  \"hook\": \"توصیف سینمایی کوتاه در ۱ پاراگراف\",\n"
+            "  \"goal\": \"هدف در ۱ جمله\",\n"
+            "  \"locations\": [{{\"name\":\"...\",\"description\":\"کوتاه\",\"encounter_hint\":\"...\"}}],\n"
+            "  \"npcs\": [{{\"name\":\"...\",\"role\":\"...\",\"secret\":\"...\"}}],\n"
+            "  \"encounters\": [{{\"name\":\"goblin|wolf|bandit|skeleton|zombie|orc|giant_spider|harpy|troll|dragon_young\",\"count\":1-3,\"ac\":int,\"hp\":int,\"dmg\":\"1d6+2\",\"xp\":int,\"location\":\"...\"}}],\n"
+            "  \"treasure\": [{{\"item\":\"...\",\"qty\":int,\"description\":\"...\"}}],\n"
+            "  \"traps\": [{{\"name\":\"...\",\"location\":\"...\",\"trigger\":\"...\",\"detect_dc\":10-16,\"disarm_dc\":10-16,\"damage\":\"1d6\",\"effect\":\"...\"}}],\n"
+            "  \"branches\": [{{\"text\":\"...\",\"consequence\":\"...\"}}],\n"
+            "  \"twist\": \"یک پیچ داستانی کوتاه\",\n"
+            "  \"boss\": {{\"name\":\"...\",\"count\":1,\"ac\":int,\"hp\":int,\"dmg\":\"...\",\"xp\":int,\"ability\":\"...\",\"location\":\"...\"}}\n"
+            "}}\n\n"
+            "قوانین سخت: سطح ۱ فقط از دشمنان goblin/wolf/bandit/skeleton/zombie استفاده کند و مجموع count≤6 باشد. "
+            "حداکثر ۴ مکان، ۲-۳ NPC، ۱-۲ تله، ۲ شاخه. فقط JSON خام (بدون ```، بدون توضیح اضافه، بدون کامنت)."
+        ).format(players=players, level=level)
         if request.strip():
-            user_msg += f"\n\nالزامات اضافه از طرف DM: {request}"
-        try:
-            text = self._call("", user_msg, max_tokens=2000)
-            data = _extract_json(text) if text else None
-            if data and data.get("title"):
-                data = _normalize_scenario(data, MONSTERS, players, level)
-                if data.get("encounters"):
-                    session.scenario = data
-                    locs = data.get("locations") or []
-                    if locs and isinstance(locs, list):
-                        first_loc = locs[0].get("name") if isinstance(locs[0], dict) else str(locs[0])
-                        session.world["location"] = first_loc
-                        session.world["locations"] = [
-                            (l.get("name") if isinstance(l, dict) else str(l)) for l in locs
-                        ]
-                        session.world["visited"] = [first_loc]
-                    session.world.setdefault("flags", {})["scenario_built"] = True
-                    return data
-        except Exception:
-            pass
-        from .rules import MONSTERS as _M
-        chars = [p["char"] for p in session.players.values() if p.get("char")]
-        _p = max(1, len(chars))
-        _l = max(1, min(20, (sum(c.level for c in chars) // _p) if chars else 1))
-        fb = _normalize_scenario(self._fallback_scenario(session), _M, _p, _l)
-        # همگام‌سازی world در fallback هم انجام شود
-        locs = fb.get("locations") or []
+            concise_prompt += f"\n\nدرخواست ویژه DM: {request}"
+        data = None
+        for attempt in range(3):
+            try:
+                raw = self._call("", concise_prompt, max_tokens=2200)
+                if not raw:
+                    continue
+                cand = _extract_json(raw)
+                if cand and isinstance(cand, dict) and cand.get("title") and cand.get("encounters"):
+                    data = _normalize_scenario(cand, MONSTERS, players, level)
+                    if data.get("encounters"):
+                        break
+            except Exception:
+                continue
+        if data is None:
+            from .rules import MONSTERS as _M
+            data = _normalize_scenario(self._fallback_scenario(session), _M, players, level)
+        # همگام‌سازی world
+        locs = data.get("locations") or []
         if locs:
             first_loc = locs[0].get("name") if isinstance(locs[0], dict) else str(locs[0])
             session.world["location"] = first_loc
@@ -403,9 +493,10 @@ class Narrator:
                 (l.get("name") if isinstance(l, dict) else str(l)) for l in locs
             ]
             session.world["visited"] = [first_loc]
+            session.world["light"] = "dark"
         session.world.setdefault("flags", {})["scenario_built"] = True
-        session.scenario = fb
-        return fb
+        session.scenario = data
+        return data
 
     def recap(self, session: Session) -> str:
         """خلاصه وضعیت فعلی ماجرا."""
