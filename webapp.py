@@ -17,12 +17,16 @@ from flask import Flask, jsonify, request, send_from_directory
 import config
 from game.combat import (advance, attack, cast, dodge, end_combat,
                          is_player_turn, run_initial_monsters, start_combat)
-from game.adventure import death_save, inventory_text, rest, skill_check, use_item
+from game.adventure import (death_save, inventory_text, rest,
+                             skill_check, use_item)
 from game.dice import (
     DiceError, roll_advantage, roll_disadvantage, roll_expression,
 )
+from game.map import move_to, describe as map_describe
+from game.world import try_disarm_trap
 from game.models import Character, Session
-from game.rules import ABILITIES, CLASSES, MONSTERS, RACES, SPELLS, WEAPONS
+from game.rules import (ABILITIES, ABILITY_FA, CLASSES, MONSTERS,
+                        RACES, SPELLS, WEAPONS)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, "web")
@@ -145,22 +149,63 @@ def build_app(store, narrator, telegram_app=None, loop=None):
             "name": ch.name,
             "race_key": ch.race, "race": RACES[ch.race]["fa"], "race_emoji": RACES[ch.race]["emoji"],
             "cls_key": ch.cls, "cls": CLASSES[ch.cls]["fa"], "cls_emoji": CLASSES[ch.cls]["emoji"],
+            "emoji": CLASSES[ch.cls]["emoji"],
             "level": ch.level, "xp": ch.xp,
             "xp_next": ch.xp_needed_for(ch.level + 1) if ch.level < 20 else None,
             "can_level_up": ch.can_level_up(),
             "hp": ch.hp, "max_hp": ch.max_hp, "ac": ch.ac, "gold": ch.gold,
             "weapon": WEAPONS[ch.weapon]["fa"], "weapon_emoji": WEAPONS[ch.weapon]["emoji"],
             "weapon_dmg": WEAPONS[ch.weapon]["dmg"], "attack_bonus": ch.attack_bonus(),
-            "abilities": [{"key": a, "fa": ABILITIES_FA[a], "value": ch.abilities[a],
+            "abilities": [{"key": a, "fa": ABILITY_FA[a], "value": ch.abilities[a],
                            "mod": ch.stat_mod(a)} for a in ABILITIES],
             "features": ch.features(),
             "proficiencies": ch.proficiencies,
-            "inventory": ch.inventory,
-            "conditions": ch.conditions,
+            "inventory": dict(ch.inventory),
+            "conditions": list(ch.conditions),
             "inspiration": ch.inspiration,
         }
 
-    from game.rules import ABILITY_FA as ABILITIES_FA
+    def _loc_name(l):
+        if isinstance(l, dict):
+            return l.get("name", str(l))
+        return str(l)
+
+    def _npc_name(n):
+        if isinstance(n, dict):
+            role = f" ({n.get('role','')})" if n.get("role") else ""
+            return f"{n.get('name','؟')}{role}"
+        return str(n)
+
+    def scenario_view(s):
+        """یک نسخه‌ی فیلترشده از سناریو برای ارسال به مرورگر (بدون پیچ/راز/NPC secret)."""
+        if not s:
+            return None
+        return {
+            "title": s.get("title"), "hook": s.get("hook"), "goal": s.get("goal"),
+            "locations": [
+                {"name": _loc_name(l),
+                 "description": l.get("description","") if isinstance(l,dict) else "",
+                 "encounter_hint": l.get("encounter_hint","") if isinstance(l,dict) else ""}
+                for l in (s.get("locations") or [])
+            ],
+            "npcs": [{"name": (n.get("name") if isinstance(n,dict) else str(n)),
+                      "role": (n.get("role") if isinstance(n,dict) else "")}
+                     for n in (s.get("npcs") or [])],
+            "encounters": [{
+                "name": e.get("name","؟"), "count": e.get("count",1),
+                "ac": e.get("ac"), "hp": e.get("hp"), "xp": e.get("xp"),
+                "is_boss": bool(e.get("is_boss")),
+                "location": e.get("location","")}
+                for e in (s.get("encounters") or [])],
+            "treasure": s.get("treasure"),
+            "traps": [{"name": t.get("name",""), "location": t.get("location",""),
+                       "detect_dc": t.get("detect_dc",13)}
+                      for t in (s.get("traps") or []) if not t.get("triggered")],
+            "branches": s.get("branches") or [],
+            "boss": ({"name": s["boss"].get("name",""),
+                      "ability": s["boss"].get("ability","")}
+                     if isinstance(s.get("boss"),dict) else None),
+        }
 
     def combat_of(room, uid=None) -> dict:
         c = room.combat
@@ -172,12 +217,26 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         for i, p in enumerate(parts):
             is_dead = bool(p.get("dead"))
             is_downed = bool(p.get("downed"))
+            hp = p.get("hp", 0)
+            max_hp = p.get("max_hp")
+            if max_hp is None:
+                # هیولاها HP اولیه خود را در _key/starting_hp ذخیره نکرده‌اند —
+                # از hp اولیه در participant ساخته‌شده استفاده می‌کنیم.
+                max_hp = max(p.get("hp", 1), 1)
+                # به یاد داشته باش مقدار اولیه را در max_hp اولیه‌ی participant
+                if not p.get("_max_hp_cached"):
+                    p["_max_hp_cached"] = max_hp
+                else:
+                    max_hp = p["_max_hp_cached"]
+            alive = (not is_dead) and p.get("alive", True) and hp > 0
             out_parts.append({
-                "name": p["name"], "kind": p["kind"], "hp": p.get("hp", 0),
-                "max_hp": p.get("max_hp", p.get("hp", 0)), "ac": p["ac"],
-                "alive": (not is_dead) and p.get("alive", True) and p.get("hp", 0) > 0,
-                "downed": is_downed, "dead": is_dead,
-                "init": p["init"], "conditions": p.get("conditions", []), "turn": i == idx,
+                "name": p["name"], "kind": p["kind"], "hp": hp, "max_hp": max_hp,
+                "ac": p["ac"],
+                "alive": alive, "downed": is_downed, "dead": is_dead,
+                "init": p.get("init",0), "conditions": list(p.get("conditions",[])),
+                "turn": i == idx,
+                "is_boss": bool(p.get("is_boss")),
+                "emoji": p.get("emoji","👹" if p["kind"]=="monster" else "🧙"),
                 "is_player": p["kind"] == "player",
                 "is_me": p["kind"] == "player" and uid is not None and p.get("uid") == str(uid),
             })
@@ -210,6 +269,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         my_sheet = None
         if member and room.get_char(user.get("id")):
             my_sheet = sheet_of(room.get_char(user.get("id")))
+        world = getattr(room, "world", None) or {}
         return {
             "room": {
                 "code": room.code, "name": room.name, "dm_name": room.dm_name,
@@ -217,12 +277,15 @@ def build_app(store, narrator, telegram_app=None, loop=None):
                 "count": len(room.players), "char_count": room.char_count(),
                 "is_member": member, "is_dm": member and room.dm_id == user.get("id"),
                 "players": players,
+                "location": world.get("location", ""),
+                "locations": world.get("locations", []),
+                "light": world.get("light", "dark"),
             },
             "me": {"uid": user.get("id"), "name": user.get("first_name", ""),
                    "is_member": member,
                    "has_char": member and room.get_char(user.get("id")) is not None,
                    "char": my_sheet},
-            "scenario": room.scenario,
+            "scenario": scenario_view(room.scenario),
             "log": room.log[-40:],
             "combat": combat_of(room, user.get("id")),
         }
@@ -460,14 +523,60 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         text = rest(room, user["id"], d.get("kind", "short"))
         persist(room); return api_ok({"text": text, "state": build_state(room, user)})
 
-    @app.post("/api/combat/deathsave")
+    @app.post("/api/deathsave")
     def api_deathsave():
+        """خارج از نبرد: درمان/احیای ساده. داخل نبرد: به هندلر نبرد ارجاع می‌شود."""
         user, err = need_user()
         if err: return err
         d = request.json or {}; room = room_of(d.get("room", ""))
         if not room: return api_err("اتاق پیدا نشد!")
+        ch = room.get_char(user["id"])
+        if not ch: return api_err("کاراکتر نداری!")
+        if room.combat:
+            return api_combat_deathsave()
         text = death_save(room, user["id"])
         persist(room); return api_ok({"text": text, "state": build_state(room, user)})
+
+    # ---------- حرکت/نقشه/محیط ----------
+    @app.post("/api/move")
+    def api_move():
+        user, err = need_user()
+        if err: return err
+        d = request.json or {}; room = room_of(d.get("room", ""))
+        if not room: return api_err("اتاق پیدا نشد!")
+        if room.combat: return api_err("در نبرد نمی‌توانی حرکت کنی.")
+        direction = (d.get("direction") or d.get("text") or "جلو").strip()
+        from game.map import init_world
+        init_world(room)
+        text = move_to(room, direction)
+        room.add_log(user.get("first_name","بازیکن"), f"حرکت: {direction}")
+        persist(room)
+        return api_ok({"text": text, "state": build_state(room, user)})
+
+    @app.post("/api/where/look")
+    def api_look():
+        user, err = need_user()
+        if err: return err
+        d = request.json or {}; room = room_of(d.get("room", ""))
+        if not room: return api_err("اتاق پیدا نشد!")
+        from game.map import init_world
+        init_world(room)
+        text = map_describe(room)
+        return api_ok({"text": text, "state": build_state(room, user)})
+
+    @app.post("/api/disarm")
+    def api_disarm():
+        user, err = need_user()
+        if err: return err
+        d = request.json or {}; room = room_of(d.get("room", ""))
+        if not room: return api_err("اتاق پیدا نشد!")
+        ch = room.get_char(user["id"])
+        if not ch: return api_err("کاراکتر نداری!")
+        try: dc = int(d.get("dc", 0) or 0)
+        except (TypeError, ValueError): dc = 0
+        text = try_disarm_trap(room, ch, d.get("name",""), dc or None)
+        persist(room)
+        return api_ok({"text": text, "state": build_state(room, user)})
 
     @app.post("/api/inventory/use")
     def api_use_item():

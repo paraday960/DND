@@ -4,7 +4,7 @@ import random
 
 from .dice import DiceError, parse_dice, roll_dice, roll_d20
 from .models import Session
-from .rules import MONSTERS, SPELLS, WEAPONS, ability_mod
+from .rules import CLASSES, MONSTERS, SPELLS, WEAPONS, ability_mod
 
 
 # جدول گنج/لوت تصادفی پس از پیروزی
@@ -190,6 +190,7 @@ def start_combat(session: Session) -> str:
         init = roll_d20() + ability_mod(ch.abilities["DEX"])
         combat["participants"].append({
             "kind": "player", "uid": uid, "name": ch.name,
+            "emoji": CLASSES.get(ch.cls, {}).get("emoji", "🧙"),
             "init": init, "hp": ch.hp, "max_hp": ch.max_hp,
             "ac": ch.ac, "alive": True, "downed": not alive,
             "conditions": list(ch.conditions),
@@ -205,10 +206,14 @@ def start_combat(session: Session) -> str:
             for i in range(count):
                 mkey = name.lower()
                 base_atk = base.get("atk_bonus", _default_atk_bonus(mkey, base))
+                is_boss = bool(e.get("is_boss"))
+                mname = base.get("fa", name)
+                suffix = " 👑" if is_boss and count == 1 else ""
                 monsters.append({
                     "kind": "monster",
                     "_key": mkey,
-                    "name": f"{base.get('fa', name)} {i + 1}" if count > 1 else base.get("fa", name),
+                    "name": (f"{mname} {i + 1}" if count > 1 else mname) + suffix,
+                    "emoji": base.get("emoji", "👹"),
                     "init": roll_d20() + int(e.get("init_bonus", base_atk - 2)),
                     "hp": int(e.get("hp", base.get("hp", 10))),
                     "max_hp": int(e.get("hp", base.get("hp", 10))),
@@ -217,15 +222,18 @@ def start_combat(session: Session) -> str:
                     "atk_bonus": int(e.get("atk_bonus", base_atk)),
                     "xp": int(e.get("xp", base.get("xp", 50))),
                     "alive": True, "conditions": [],
+                    "is_boss": is_boss,
+                    "ability": e.get("ability", ""),
                 })
     if not monsters:
         # نبرد پیش‌فرض برای وقتی سناریویی نیست
         for i in range(2):
             monsters.append({
                 "kind": "monster", "_key": "goblin", "name": f"گابلین {i + 1}",
+                "emoji": MONSTERS.get("goblin", {}).get("emoji", "👹"),
                 "init": roll_d20() + 2, "hp": 7, "max_hp": 7, "ac": 15,
                 "dmg": "1d6+2", "atk_bonus": 2, "xp": 50,
-                "alive": True, "conditions": [],
+                "alive": True, "conditions": [], "is_boss": False,
             })
     combat["participants"].extend(monsters)
 
