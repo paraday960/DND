@@ -824,7 +824,8 @@ class ApiHandler(BaseHTTPRequestHandler):
                          "weapons": v["weapons"]} for k, v in CLASSES.items()],
             "weapons": {k: [{"key": w, "fa": WEAPONS[w]["fa"], "emoji": WEAPONS[w]["emoji"],
                              "dmg": WEAPONS[w]["dmg"]} for w in v["weapons"]] for k, v in CLASSES.items()},
-            "spells": [{"key": k, "fa": v["fa"], "emoji": v["emoji"], "dmg": v["dmg"], "kind": v["kind"]}
+            "spells": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
+                        "dmg": v.get("dmg", v.get("heal", "")), "kind": v["kind"]}
                        for k, v in SPELLS.items()],
             "monsters": [{"key": k, "fa": v["fa"], "emoji": v["emoji"]} for k, v in MONSTERS.items()],
         }

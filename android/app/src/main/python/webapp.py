@@ -19,6 +19,8 @@ from game.combat import (advance, attack, cast, dodge, dash, disengage,
                          help_action, hide, shove, second_wind, action_surge,
                          rage, bardic_inspiration, move_action,
                          offhand_attack, divine_smite,
+                         jump_action, help_up, throw_action, dip_weapon,
+                         cunning_action, hellish_rebuke,
                          end_combat, is_player_turn, run_initial_monsters,
                          start_combat)
 from game.adventure import (death_save, inventory_text, rest,
@@ -249,6 +251,13 @@ def build_app(store, narrator, telegram_app=None, loop=None):
                 "alive": alive, "downed": is_downed, "dead": is_dead,
                 "init": p.get("init",0), "conditions": list(p.get("conditions",[])),
                 "turn": i == idx,
+                "acted": bool(p.get("acted", False)),
+                "bonus_acted": bool(p.get("bonus_acted", False)),
+                "uid": str(p.get("uid","")) if p.get("uid") is not None else None,
+                "distance": p.get("distance", 0),
+                "height": p.get("height", 0),
+                "cover": p.get("cover", "none"),
+                "surface": p.get("surface", "none"),
                 "is_boss": bool(p.get("is_boss")),
                 "emoji": p.get("emoji","👹" if p["kind"]=="monster" else "🧙"),
                 "is_player": p["kind"] == "player",
@@ -257,7 +266,9 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         cur = parts[idx]
         return {
             "round": c.get("round", 1),
+            "turn": idx,
             "current": cur["name"],
+            "current_uid": str(cur.get("uid","")) if cur.get("uid") is not None else None,
             "current_is_player": cur["kind"] == "player",
             "is_my_turn": cur["kind"] == "player" and uid is not None and cur.get("uid") == str(uid),
             "participants": out_parts,
@@ -739,6 +750,36 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         d = request.json or {}
         slot = int(d.get("slot", 1))
         return _combat_action(lambda room, uid: divine_smite(room, uid, slot))
+
+    @app.post("/api/combat/jump")
+    def api_combat_jump():
+        d = request.json or {}
+        return _combat_action(lambda room, uid: jump_action(room, uid, d.get("where", "near")))
+
+    @app.post("/api/combat/helpup")
+    def api_combat_helpup():
+        d = request.json or {}
+        return _combat_action(lambda room, uid: help_up(room, uid, d.get("target", "")))
+
+    @app.post("/api/combat/throw")
+    def api_combat_throw():
+        d = request.json or {}
+        item = d.get("item", "torch") or "torch"
+        return _combat_action(lambda room, uid: throw_action(room, uid, item, d.get("target", "")))
+
+    @app.post("/api/combat/dip")
+    def api_combat_dip():
+        d = request.json or {}
+        return _combat_action(lambda room, uid: dip_weapon(room, uid, d.get("element", "fire")))
+
+    @app.post("/api/combat/cunning")
+    def api_combat_cunning():
+        d = request.json or {}
+        return _combat_action(lambda room, uid: cunning_action(room, uid, d.get("what", "disengage")))
+
+    @app.post("/api/combat/rebuke")
+    def api_combat_rebuke():
+        return _combat_action(lambda room, uid: hellish_rebuke(room, uid))
 
     @app.post("/api/combat/deathsave")
     def api_combat_deathsave():

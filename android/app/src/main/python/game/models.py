@@ -154,7 +154,7 @@ class Character:
         """استراحت کوتاه (۱ ساعت): hit dice می‌خوری، منابع per-short ریست می‌شوند."""
         # ریست منابعی که per short هستند
         for k, v in self.resources.items():
-            if v.get("per") == "short":
+            if isinstance(v, dict) and v.get("per") == "short":
                 v["used"] = 0
         # Warlock اسلات‌ها با استراحت کوتاه برمی‌گردند
         if self.cls == "warlock":
@@ -163,10 +163,10 @@ class Character:
         if self.race == "half_orc":
             self.resources["relentless_used"] = False
         if self.race == "dragonborn" and "breath" in self.resources:
-            self.resources["breath"]["used"] = 0
+            if isinstance(self.resources["breath"], dict):
+                self.resources["breath"]["used"] = 0
         # خستگی کم نمیشه
         self.conditions = [c for c in self.conditions if c not in ("frightened", "charmed")]
-        # هاله بارد/الهام و غیره هم ریست میشن
 
     def reset_long_rest(self):
         """استراحت طولانی (۸ ساعت): همه چیز ریست میشه، HP کامل، اسلات‌ها کامل، منابع long."""
@@ -175,9 +175,11 @@ class Character:
         self.death_saves = {"success": 0, "fail": 0}
         self.conditions = []
         self.spell_slots_used = {}
-        # همه منابع ریست
+        # منابع دیکشنری ریست
         for k, v in self.resources.items():
-            v["used"] = 0
+            if isinstance(v, dict):
+                v["used"] = 0
+        # منابع بولین ریست
         if self.race == "half_orc":
             self.resources["relentless_used"] = False
         if self.race == "halfling":

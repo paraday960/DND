@@ -771,45 +771,49 @@ def auto_act(session: Session, mon: dict) -> str:
         parts.append(f"👑 **{mon['name']}** از قابلیت ویژه استفاده می‌کند: _{mon['ability']}_!")
         # ۱) احضار هم‌دست (کلمات کلیدی: احضار، صدا زدن، کمک، summon)
         if any(k in ability for k in ("احضار", "کمک", "صدا زدن", "مینیون", "سرباز", "summon", "call")):
-            from .dice import roll_dice
-            add_count = 1 + roll_dice(2)  # ۲-۳ هم‌دست
+            add_count = 1 + random.randint(1, 2)  # ۲-۳ هم‌دست
             from .rules import MONSTERS
-            minion_opts = [k for k in ("goblin", "skeleton", "kobold", "bandit", "wolf", "giant_rat") if k in MONSTERS]
+            minion_opts = [k for k in ("goblin", "skeleton", "bandit", "wolf", "giant_rat") if k in MONSTERS]
             if minion_opts:
                 for _ in range(add_count):
                     mk = random.choice(minion_opts)
                     template = MONSTERS[mk]
-                    init = roll_dice(20) + 2
+                    init = roll_d20() + 2
                     parts.append(f"👹 **{template['fa']}** به میدان می‌رسد!")
                     session.combat["participants"].append({
-                        "kind": "monster", "name": template["fa"],
-                        "key": mk, "hp": template["hp"], "max_hp": template["hp"],
-                        "ac": template["ac"], "atk": template["atk"],
+                        "kind": "monster", "_key": mk, "name": template["fa"],
+                        "hp": template["hp"], "max_hp": template["hp"],
+                        "ac": template["ac"],
+                        "dmg": template.get("dmg", "1d6+2"),
                         "atk_bonus": template.get("atk_bonus", 2),
                         "xp": template["xp"] // 2,
-                        "alive": True, "conditions": [], "init": init - 2,  # بعد از باس
+                        "alive": True, "conditions": [], "init": init - 2,
                         "emoji": template.get("emoji", "👹"),
+                        "distance": 0, "height": 0, "cover": "none", "surface": "none",
+                        "acted": False, "bonus_acted": False,
+                        "reaction_available": True, "disengage_active": False,
+                        "_attacks_this_turn": 0, "surprised": False,
+                        "_main_attack_done": False, "temp_ac_boost": 0,
+                        "is_boss": False,
                     })
                 # لیست initiative را دوباره مرتب کن
                 session.combat["participants"].sort(key=lambda p: -p["init"])
         # ۲) ضربه AoE / فریاد ترس (کلمات: فریاد، غرش، وحشت، ترس، AoE، همه)
         elif any(k in ability for k in ("فریاد", "غرش", "وحشت", "ترس", "aoc", "همه", "بمب", "انفجار")):
-            from .dice import roll_dice
-            dmg = roll_dice(8) + mon.get("atk_bonus", 3)
+            dmg = _roll_damage("1d8") + mon.get("atk_bonus", 3)
             parts.append(f"💥 موجی از قدرت همه بازیکنان را در بر می‌گیرد!")
             for p in session.combat["participants"]:
                 if p["kind"] == "player" and p.get("alive") and p.get("hp", 0) > 0:
-                    # WIS save half
                     ch = session.get_char(int(p.get("uid", 0)))
                     if ch:
                         from .rules import ability_mod
-                        save = roll_dice(20) + ability_mod(ch.abilities.get("WIS", 10))
+                        save = roll_d20() + ability_mod(ch.abilities.get("WIS", 10))
                         if save >= 13:
                             d = max(1, dmg // 2)
                             parts.append(f"🛡️ {ch.name} با موفقیت مقاومت می‌کند و {d} آسیب می‌خورد.")
                         else:
                             d = dmg
-                            p["conditions"] = list(set(p.get("conditions", []) + ["ترسیده"]))
+                            p["conditions"] = list(set(p.get("conditions", []) + ["frightened"]))
                             parts.append(f"😱 {ch.name} ترسیده و {d} آسیب می‌خورد!")
                         p["hp"] = max(0, p["hp"] - d)
                         if p["hp"] <= 0:
@@ -1056,43 +1060,6 @@ def divine_smite(session: Session, uid: int, slot_level: int = 1) -> str:
         msg += f"\n☠️ **{target['name']} از نور الهی سوخت و نابود شد!** (+{target['xp']} XP)"
     session.add_log(ch.name, msg)
     return msg
-
-
-def move_action(session: Session, uid: int, where: str) -> str:
-    """حرکت در نبرد: near/far/flee — مدیریت فاصله و حمله فرصت."""
-    if not is_player_turn(session, uid):
-        return "هنوز نوبت تو نیست."
-    cur = session.combat["participants"][session.combat["turn"]]
-    ch = get_participant_ch(session, cur)
-    if cur.get("downed") or cur.get("dead"):
-        return "نمی‌توانی حرکت کنی."
-    where = where.strip().lower()
-    cur_dist = cur.get("distance", 0)
-    msgs = []
-    if where in ("near", "جلو", "نزدیک"):
-        new_dist = 0
-        if cur_dist == 0:
-            return "همین الان در نزدیکی هستی!"
-        cur["distance"] = 0
-        msgs.append(f"🏃 {cur['name']} به سمت دشمنان دوید و در خط مقدم قرار گرفت!")
-    elif where in ("far", "عقب", "دور"):
-        new_dist = 1
-        if cur_dist > 0:
-            return "همین الان دور هستی!"
-        # حمله فرصت
-        opp = _trigger_opportunity_attacks(session, cur, cur_dist, new_dist)
-        msgs.extend(opp)
-        cur["distance"] = 1
-        msgs.append(f"🏹 {cur['name']} به عقب رفت و در فاصله دور ایستاد (برای کمان/طلسم مناسب).")
-    elif where in ("flee", "فرار"):
-        new_dist = 2
-        opp = []
-        if not cur.get("disengage_active", False):
-            opp = _trigger_opportunity_attacks(session, cur, cur_dist, 0)
-        msgs.extend(opp)
-        cur["distance"] = 2
-        msgs.append(f"🏃💨 {cur['name']} سعی در فرار از میدان نبرد دارد! (در صورتی که در ۲ نوبت متوالی flee بزنی فرار می‌کنی)")
-    return "\n".join(msgs)
 
 
 def dash(session: Session, uid: int) -> str:
@@ -1491,34 +1458,6 @@ def hide(session: Session, uid: int) -> str:
     else:
         session.add_log(cur["name"], f"پنهان نشد: رول {roll} در برابر {avg_pp}")
         return f"👀 نتوانستی پنهان شوی! (رول {roll} کمتر از {avg_pp}) دشمنان هنوز تو را می‌بینند."
-
-
-def shove(session: Session, uid: int, target_name: str = "") -> str:
-    """اکشن Shove: چک STR (Athletics) روبروی هدف؛ می‌توانی هدف را به زمین بیندازی (prone)."""
-    if not is_player_turn(session, uid):
-        return "هنوز نوبت تو نیست."
-    cur = session.combat["participants"][session.combat["turn"]]
-    ch = get_participant_ch(session, cur)
-    if not ch:
-        return "کاراکترت پیدا نشد."
-    if cur.get("downed") or cur.get("dead"):
-        return "نمی‌توانی کسی را هل بدهی."
-    target = _find_target(session.combat, target_name) if target_name else None
-    if not target:
-        names = ", ".join(p["name"] for p in session.combat["participants"]
-                         if p["kind"] == "monster" and p["alive"])
-        return f"هدف پیدا نشد. دشمنان: {names}"
-    cur["acted"] = True
-    mod = ch.stat_mod("STR") + (proficiency_bonus(ch.level) if "athletics" in ch.proficiencies else 0)
-    my_roll = roll_d20() + mod
-    target_mod = _default_atk_bonus(_monster_key(target), MONSTERS.get(_monster_key(target), {}))
-    target_roll = roll_d20() + target_mod
-    if my_roll > target_roll:
-        target.setdefault("conditions", []).append("prone")
-        session.add_log(cur["name"], f"{target['name']} را هل داد و به زمین انداخت")
-        return f"💪 {cur['name']} با قدرت {target['name']} را هل داد و روی زمین انداخت! (رول {my_roll} در مقابل {target_roll}) هدف الان وضعیت prone دارد."
-    else:
-        return f"🦵 هل دادن {cur['name']} موفق نبود! (رول {my_roll} در مقابل {target_roll}) {target['name']} مقاومت کرد."
 
 
 def second_wind(session: Session, uid: int) -> str:
