@@ -7,36 +7,24 @@
 <link rel="icon" type="image/png" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
 <meta name="theme-color" content="#1a0f07">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700;800&display=swap" rel="stylesheet">
 <style>
 /* ============================================================
-   D&D Mini-game — Parchment / Board-game style (v2.55+)
+   D&D Mini-game — Parchment / Board-game style (v2.56)
    ============================================================ */
-@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700;800&display=swap');
-
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 html,body{height:100%;}
 :root{
-  --leather:#1a0f07;
-  --leather2:#261810;
-  --leather3:#34221a;
-  --gold:#d4af37;
-  --gold2:#f4d264;
-  --gold3:#8a6d1d;
-  --parch:#f2e3c0;
-  --parch2:#e8d4a6;
-  --parch-dark:#c9ad74;
-  --ink:#2b1e0e;
-  --ink2:#5a4020;
-  --red:#b8352f;
-  --red-dim:#7d231f;
-  --green:#3e8a4d;
-  --blue:#4f85c4;
-  --purple:#8b6cc7;
-  --orange:#c97a2f;
-  --shadow:0 6px 22px rgba(0,0,0,.45);
-  --shadow-sm:0 2px 8px rgba(0,0,0,.3);
-  --radius:14px;
-  --radius-lg:22px;
+  --leather:#1a0f07; --leather2:#261810; --leather3:#34221a;
+  --gold:#d4af37; --gold2:#f4d264; --gold3:#8a6d1d;
+  --parch:#f2e3c0; --parch2:#e8d4a6; --parch-dark:#c9ad74;
+  --ink:#2b1e0e; --ink2:#5a4020;
+  --red:#b8352f; --red-dim:#7d231f;
+  --green:#3e8a4d; --blue:#4f85c4; --purple:#8b6cc7; --orange:#c97a2f;
+  --shadow:0 6px 22px rgba(0,0,0,.45); --shadow-sm:0 2px 8px rgba(0,0,0,.3);
+  --radius:14px; --radius-lg:22px;
 }
 html,body{
   background:
@@ -46,21 +34,22 @@ html,body{
     var(--leather);
   color:var(--parch);
   font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif;
-  font-size:15px;
-  line-height:1.7;
+  font-size:15px; line-height:1.7;
   min-height:100dvh;
-  padding-bottom:96px;
+  padding-bottom:88px;
   -webkit-font-smoothing:antialiased;
   overscroll-behavior-y:contain;
 }
+body.modal-open{overflow:hidden;}
 
 /* ===== Header ===== */
 header{
   position:sticky;top:0;z-index:30;
   display:flex;align-items:center;gap:10px;
   padding:12px 14px;
-  background:linear-gradient(180deg,rgba(26,15,7,.96),rgba(36,22,13,.92));
+  background:linear-gradient(180deg,rgba(26,15,7,.97),rgba(36,22,13,.94));
   backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
   border-bottom:2px solid var(--gold3);
   box-shadow:0 4px 18px rgba(0,0,0,.5);
 }
@@ -79,6 +68,7 @@ header{
   box-shadow:inset 0 1px 0 rgba(255,220,120,.25), 0 3px 8px rgba(0,0,0,.4);
   cursor:pointer;
   transition:.15s;
+  -webkit-user-select:none;user-select:none;
 }
 .room-pill:active{transform:scale(.96);}
 .room-pill b{font-family:ui-monospace,monospace;letter-spacing:2px;color:#fff8e0;}
@@ -87,7 +77,7 @@ header{
 main{padding:14px 12px 18px;max-width:720px;margin:0 auto;}
 .hidden{display:none !important;}
 
-/* ===== Cards (parchment) ===== */
+/* ===== Cards ===== */
 .card{
   position:relative;
   background:
@@ -140,12 +130,13 @@ h1,h2,h3{font-weight:800;letter-spacing:-.2px;color:var(--ink);}
   border:none;border-radius:12px;
   padding:14px 16px;
   font-family:inherit;font-size:14px;font-weight:700;
-  cursor:pointer;transition:.15s transform,.15s box-shadow,.15s filter;
+  cursor:pointer;transition:.12s transform,.12s box-shadow,.12s filter;
   color:#2a1a08;flex:1;min-width:0;
   position:relative;
   display:inline-flex;align-items:center;justify-content:center;gap:8px;
   text-align:center;
   min-height:48px;
+  -webkit-user-select:none;user-select:none;
 }
 .btn:active{transform:scale(.97);filter:brightness(.92);}
 .btn:disabled{opacity:.5;cursor:not-allowed;transform:none;filter:grayscale(.3);}
@@ -165,12 +156,15 @@ h1,h2,h3{font-weight:800;letter-spacing:-.2px;color:var(--ink);}
 }
 .btn.dark:active{box-shadow:0 1px 0 #180f08;transform:translateY(2px) scale(.98);}
 .btn.red{background:linear-gradient(180deg,#d75850,#94251e);color:#fff;box-shadow:0 4px 0 #5a1613; border:1px solid #6e1d18;}
+.btn.red:active{box-shadow:0 1px 0 #5a1613;transform:translateY(2px) scale(.98);}
 .btn.green{background:linear-gradient(180deg,#57b06b,#2f6d3c);color:#fff;box-shadow:0 4px 0 #1a4223; border:1px solid #1f4a27;}
+.btn.green:active{box-shadow:0 1px 0 #1a4223;transform:translateY(2px) scale(.98);}
 .btn.blue{background:linear-gradient(180deg,#6fa8ea,#2d63a6);color:#fff;box-shadow:0 4px 0 #173f6d; border:1px solid #1f4d80;}
 .btn.purple{background:linear-gradient(180deg,#a589e2,#6f4cb8);color:#fff;box-shadow:0 4px 0 #3f2972; border:1px solid #4c3182;}
 .btn.orange{background:linear-gradient(180deg,#eba266,#b25e1f);color:#fff;box-shadow:0 4px 0 #6e380f; border:1px solid #7a3f12;}
+.btn.orange:active{box-shadow:0 1px 0 #6e380f;transform:translateY(2px) scale(.98);}
 .btn.ghost{
-  background:rgba(255,255,255,.1);
+  background:rgba(255,255,255,.08);
   color:var(--parch);border:1.5px solid rgba(212,175,55,.4);
   box-shadow:inset 0 0 0 1px rgba(0,0,0,.2);
 }
@@ -206,6 +200,7 @@ input,select,textarea{
   outline:none;
   box-shadow:inset 0 2px 4px rgba(0,0,0,.08), 0 1px 0 rgba(255,255,255,.5);
   transition:.15s;
+  -webkit-appearance:none;appearance:none;
 }
 input::placeholder,textarea::placeholder{color:#8a6a3399;}
 input:focus,select:focus,textarea:focus{
@@ -229,15 +224,15 @@ label.field-label{display:block;font-size:12px;font-weight:700;color:var(--ink2)
   scroll-behavior:smooth;
   -webkit-overflow-scrolling:touch;
 }
-.feed::-webkit-scrollbar{width:8px;}
+.feed::-webkit-scrollbar{width:6px;}
 .feed::-webkit-scrollbar-thumb{background:rgba(139,90,30,.35);border-radius:4px;}
 .msg{
   border-radius:16px;padding:12px 14px;font-size:14.5px;line-height:2;
-  animation:fadeUp .3s ease both;
   word-break:break-word;
   white-space:pre-wrap;
   border:1.5px solid;
 }
+.msg.new{animation:fadeUp .3s ease both;}
 .msg.dm{
   background:
     radial-gradient(circle at 10% 0%, rgba(255,240,190,.35), transparent 45%),
@@ -296,8 +291,20 @@ label.field-label{display:block;font-size:12px;font-weight:700;color:var(--ink2)
   padding:8px 12px;border-radius:999px;
   font-family:inherit;font-size:12.5px;font-weight:700;
   cursor:pointer;transition:.15s;
+  -webkit-user-select:none;user-select:none;
 }
 .chip:active{transform:scale(.95);background:rgba(255,220,120,.2);}
+
+/* ===== Spinner ===== */
+.spinner{
+  width:16px;height:16px;border:2px solid rgba(42,26,8,.3);
+  border-top-color:#2a1a08;border-radius:50%;
+  display:inline-block;animation:spin .7s linear infinite;
+}
+.btn.dark .spinner,.btn.ghost .spinner,.btn.red .spinner,.btn.green .spinner,.btn.blue .spinner,.btn.purple .spinner,.btn.orange .spinner{
+  border-color:rgba(244,210,100,.25);border-top-color:var(--gold2);
+}
+@keyframes spin{to{transform:rotate(360deg);}}
 
 /* ===== Combat ===== */
 .combat-list{display:flex;flex-direction:column;gap:10px;}
@@ -403,12 +410,13 @@ label.field-label{display:block;font-size:12px;font-weight:700;color:var(--ink2)
 }
 .card.dark .feat-list li{background:rgba(0,0,0,.25);color:var(--parch);}
 
-/* ===== Tab bar ===== */
+/* ===== Tab bar (4 tabs) ===== */
 nav.tabbar{
   position:fixed;bottom:0;left:0;right:0;z-index:25;
-  display:grid;grid-template-columns:repeat(5,1fr);
+  display:grid;grid-template-columns:repeat(4,1fr);
   background:linear-gradient(180deg,rgba(30,20,12,.96),rgba(15,10,6,.98));
   backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
   border-top:2px solid var(--gold3);
   padding-bottom:env(safe-area-inset-bottom);
   box-shadow:0 -6px 18px rgba(0,0,0,.5);
@@ -420,6 +428,7 @@ nav.tabbar{
   display:flex;flex-direction:column;align-items:center;gap:2px;
   transition:.15s;
   position:relative;
+  -webkit-user-select:none;user-select:none;
 }
 .tab .ic{font-size:22px;filter:grayscale(.5);transition:.15s;}
 .tab.active{color:var(--gold2);}
@@ -436,7 +445,7 @@ nav.tabbar{
 
 /* ===== Toast ===== */
 #toast{
-  position:fixed;bottom:110px;left:50%;transform:translateX(-50%) translateY(20px);
+  position:fixed;bottom:100px;left:50%;transform:translateX(-50%) translateY(20px);
   background:linear-gradient(180deg,#3a2815,#1a100a);
   color:var(--gold2);font-weight:700;font-size:13px;
   padding:12px 18px;border-radius:999px;
@@ -450,7 +459,7 @@ nav.tabbar{
 /* ===== Dice roller overlay ===== */
 #dice-overlay{
   position:fixed;inset:0;z-index:150;
-  background:rgba(10,6,2,.7);backdrop-filter:blur(3px);
+  background:rgba(10,6,2,.7);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
   display:none;place-items:center;
 }
 #dice-overlay.show{display:grid;}
@@ -469,12 +478,12 @@ nav.tabbar{
   50%{transform:rotate(180deg) scale(1.15);}
   100%{transform:rotate(360deg) scale(1);}
 }
-#dice-result{margin-top:14px;color:var(--gold2);font-weight:800;font-size:15px;text-align:center;max-width:80vw;}
+#dice-result{margin-top:14px;color:var(--gold2);font-weight:800;font-size:15px;text-align:center;max-width:80vw;padding:0 16px;}
 
 /* ===== Modal ===== */
 .modal-backdrop{
   position:fixed;inset:0;z-index:120;
-  background:rgba(10,6,2,.78);backdrop-filter:blur(6px);
+  background:rgba(10,6,2,.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
   display:none;align-items:flex-end;justify-content:center;
   padding:0;
 }
@@ -490,13 +499,16 @@ nav.tabbar{
   box-shadow:0 -10px 40px rgba(0,0,0,.5);
   animation:slideUp .28s ease;
   padding-bottom:calc(24px + env(safe-area-inset-bottom));
+  position:relative;
+  -webkit-overflow-scrolling:touch;
 }
 @keyframes slideUp{from{transform:translateY(40px);opacity:0;}to{transform:none;opacity:1;}}
-.modal h2{margin-bottom:10px;color:var(--ink);font-size:18px;}
+.modal h2{margin-bottom:10px;color:var(--ink);font-size:18px;padding-inline-end:40px;}
 .modal .close{
   position:absolute;top:12px;inset-inline-end:14px;
   background:rgba(0,0,0,.1);border:none;color:var(--ink);
-  width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer;
+  width:32px;height:32px;border-radius:50%;font-size:20px;cursor:pointer;
+  display:grid;place-items:center;line-height:1;
 }
 .scenario-text{
   font-size:15px;line-height:2.3;
@@ -506,7 +518,25 @@ nav.tabbar{
   white-space:pre-wrap;
   max-height:60dvh;overflow-y:auto;
   margin:10px 0;
+  -webkit-overflow-scrolling:touch;
 }
+
+/* Picker modal (target / spell selection) */
+.picker-list{display:flex;flex-direction:column;gap:8px;margin:12px 0;}
+.picker-item{
+  width:100%;text-align:right;
+  background:linear-gradient(180deg,#fff6de,#ecd9a8);
+  border:1.5px solid #8a6a33;
+  border-radius:12px;padding:12px 16px;
+  font-family:inherit;font-size:14px;font-weight:700;color:var(--ink);
+  cursor:pointer;
+  display:flex;align-items:center;gap:10px;
+  transition:.12s;
+  min-height:48px;
+}
+.picker-item:active{transform:scale(.98);background:#f5e4b8;}
+.picker-item .pi-emoji{font-size:22px;}
+.picker-item .pi-meta{font-size:11px;color:var(--ink2);font-weight:500;margin-top:2px;}
 
 /* ===== Utility ===== */
 .row{display:flex;gap:8px;align-items:center;}
@@ -514,11 +544,14 @@ nav.tabbar{
 .card.dark .muted{color:#c8b68a;}
 .divider{height:1px;background:linear-gradient(90deg,transparent,rgba(139,90,30,.4),transparent);margin:10px 0;}
 .spacer{flex:1;}
+.loading{text-align:center;padding:24px 12px;color:var(--gold2);font-weight:700;}
 
 @media (min-width:600px){
   main{padding:20px 18px;}
   .btn-row .btn{flex:1 1 auto;}
   .abilities{grid-template-columns:repeat(6,1fr);}
+  .modal-backdrop{align-items:center;}
+  .modal{border-radius:22px;max-height:86vh;}
 }
 </style>
 </head>
@@ -662,9 +695,19 @@ nav.tabbar{
   </div>
 </div>
 
+<!-- Generic picker modal (target / spell selection) -->
+<div id="picker-modal" class="modal-backdrop" onclick="if(event.target===this)closePicker(null)">
+  <div class="modal">
+    <button class="close" onclick="closePicker(null)">×</button>
+    <h2 id="picker-title">انتخاب</h2>
+    <div class="picker-list" id="picker-list"></div>
+    <button class="btn ghost" onclick="closePicker(null)">❌ انصراف</button>
+  </div>
+</div>
+
 <!-- Scenario modal -->
 <div id="scenario-modal" class="modal-backdrop" onclick="if(event.target===this)closeModal()">
-  <div class="modal" style="position:relative;">
+  <div class="modal">
     <button class="close" onclick="closeModal()">×</button>
     <h2>🐉 دانجن‌مستر می‌گوید...</h2>
     <div id="scenario-modal-text" class="scenario-text"></div>
@@ -673,18 +716,19 @@ nav.tabbar{
 </div>
 
 <script>
+"use strict";
 /* ============================================================
    Globals / bootstrap
    ============================================================ */
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
-let S = null;         // current state
-let META = null;      // /api/meta result
+let S = null;
+let META = null;
 let roomCode = localStorage.getItem('dnd_room') || '';
-let selTarget = null;
-let selSpell = null;
 let polling = null;
 let activeTab = 'story';
+let lastRenderedLogLen = 0;
+let pickerCallback = null;
 
 const TG = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
 if (TG) { try { TG.ready(); TG.expand(); } catch(e){} }
@@ -737,7 +781,7 @@ function refreshHomeWelcome() {
 }
 
 /* ============================================================
-   API helper — supports TG initData OR guest auth, and auto-injects body
+   API helper
    ============================================================ */
 async function api(path, body, opts) {
   opts = opts || {};
@@ -748,9 +792,10 @@ async function api(path, body, opts) {
     throw new Error('لطفاً اول وارد شو');
   }
   const url = new URL(path, location.href);
-  const opt = { method: body ? 'POST' : 'GET', headers: Object.assign({
-    'Accept': 'application/json'
-  }, opts.headers || {}) };
+  const opt = {
+    method: body ? 'POST' : 'GET',
+    headers: Object.assign({ 'Accept': 'application/json' }, opts.headers || {})
+  };
 
   if (init) {
     opt.headers['X-Init-Data'] = init;
@@ -788,11 +833,14 @@ async function api(path, body, opts) {
 }
 
 /* ============================================================
-   Toast / dice animation
+   Toast / dice / modal / picker
    ============================================================ */
 function toast(msg) {
-  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
-  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2600);
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), 2600);
 }
 function showDice(face, label) {
   const o = $('#dice-overlay'), d = $('#dice'), l = $('#dice-result');
@@ -802,8 +850,51 @@ function showDice(face, label) {
   clearTimeout(showDice._t);
   showDice._t = setTimeout(()=> o.classList.remove('show'), 1400);
 }
-function esc(s){ return String(s==null?'':s)
-  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function esc(s){
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function lockBody(lock){
+  document.body.classList.toggle('modal-open', !!lock);
+}
+function openModal(id){ $(id).classList.add('show'); lockBody(true); }
+function closeModal(){
+  $$('.modal-backdrop.show').forEach(m => m.classList.remove('show'));
+  lockBody(false);
+}
+
+/* Mobile-friendly picker (replaces prompt()) */
+function openPicker(title, items, cb){
+  // items: [{key, label, sub, emoji}]
+  pickerCallback = cb;
+  $('#picker-title').textContent = title;
+  const list = $('#picker-list');
+  if (!items || !items.length){
+    list.innerHTML = '<div class="hint" style="padding:12px 0;">چیزی برای انتخاب نیست.</div>';
+  } else {
+    list.innerHTML = items.map(it => `
+      <button class="picker-item" data-key="${esc(it.key)}">
+        <span class="pi-emoji">${esc(it.emoji||'•')}</span>
+        <span style="flex:1;">
+          <div>${esc(it.label)}</div>
+          ${it.sub?`<div class="pi-meta">${esc(it.sub)}</div>`:''}
+        </span>
+        <span style="color:var(--gold3);font-size:18px;">◀</span>
+      </button>
+    `).join('');
+    list.querySelectorAll('.picker-item').forEach(b => {
+      b.addEventListener('click', () => closePicker(b.dataset.key));
+    });
+  }
+  openModal('#picker-modal');
+}
+function closePicker(val){
+  $('#picker-modal').classList.remove('show');
+  lockBody(!!$('.modal-backdrop.show'));
+  const cb = pickerCallback; pickerCallback = null;
+  if (cb) cb(val);
+}
 
 /* ============================================================
    Screen / tab navigation
@@ -838,6 +929,8 @@ function anyInputFocused() {
   if (!a) return false;
   const tag = (a.tagName || '').toLowerCase();
   if (tag !== 'input' && tag !== 'select' && tag !== 'textarea') return false;
+  // ignore if inside a closed modal
+  let p = a; while(p){ if(p.classList && p.classList.contains('modal-backdrop') && p.classList.contains('show')) return true; p=p.parentElement; }
   const sg = document.getElementById('screen-game');
   return sg && !sg.classList.contains('hidden');
 }
@@ -848,7 +941,7 @@ function anyInputFocused() {
 function startPolling() {
   if (polling) clearInterval(polling);
   polling = setInterval(() => {
-    if (anyInputFocused()) return; // don't clobber typing
+    if (anyInputFocused()) return;
     loadState().catch(()=>{});
   }, 4000);
 }
@@ -864,11 +957,18 @@ function render() {
   renderCombat();
   renderChar();
   renderParty();
+  // badge + turn toast
   if (S.combat) {
     $('#combatBadge').classList.remove('hidden');
-    if (activeTab !== 'combat') toast('⚔️ نوبت تو در نبرد!');
+    if (S.combat.is_my_turn && activeTab !== 'combat') {
+      if (!render._lastMyTurnToast || Date.now() - render._lastMyTurnToast > 30000) {
+        toast('⚔️ نوبت تو در نبرد!');
+        render._lastMyTurnToast = Date.now();
+      }
+    }
   } else {
     $('#combatBadge').classList.add('hidden');
+    render._lastMyTurnToast = 0;
   }
 }
 
@@ -879,7 +979,8 @@ function renderScenario() {
   const box = $('#scenarioCard');
   const sc = (S && S.scenario) ? S.scenario : null;
   if (!sc || !sc.title) { box.innerHTML = ''; return; }
-  const preview = (sc.text || '').slice(0, 280);
+  const preview = (sc.hook || sc.text || '').slice(0, 280);
+  const fullText = (sc.title ? sc.title + '\n\n' : '') + (sc.hook||'') + (sc.goal ? '\n\n🎯 هدف: ' + sc.goal : '');
   box.innerHTML = `
     <div class="card" style="padding:14px 16px;">
       <div style="display:flex;gap:10px;align-items:flex-start;">
@@ -887,34 +988,56 @@ function renderScenario() {
         <div style="flex:1;">
           <div style="font-size:11px;color:var(--ink2);font-weight:700;letter-spacing:1px;">سناریوی فعال</div>
           <div style="font-size:17px;font-weight:800;margin:2px 0 6px;color:var(--ink);">${esc(sc.title)}</div>
-          <div style="font-size:13px;color:var(--ink2);line-height:2;">${esc(preview)}${sc.text && sc.text.length > 280 ? '...' : ''}</div>
-          <div class="row" style="margin-top:10px;">
+          <div style="font-size:13px;color:var(--ink2);line-height:2;">${esc(preview)}${(sc.hook||sc.text||'').length > 280 ? '...' : ''}</div>
+          <div class="row" style="margin-top:10px;flex-wrap:wrap;">
             <button class="btn dark mini" onclick="openScenario()">📜 متن کامل</button>
-            <button class="btn ghost mini" onclick="genScenario()">🔄 سناریوی جدید</button>
+            ${S.room.is_dm ? '<button class="btn ghost mini" onclick="genScenario()">🔄 سناریوی جدید</button>' : ''}
           </div>
         </div>
       </div>
     </div>
   `;
+  // cache full text on element
+  box._full = fullText;
 }
 function openScenario() {
-  if (!S || !S.scenario || !S.scenario.text) return;
-  $('#scenario-modal-text').textContent = S.scenario.title + '\n\n' + S.scenario.text;
-  $('#scenario-modal').classList.add('show');
+  if (!S || !S.scenario || !S.scenario.title) return;
+  const text = ($('#scenarioCard')._full) ||
+               (S.scenario.title + '\n\n' + (S.scenario.hook||'') + (S.scenario.goal ? '\n\n🎯 هدف: '+S.scenario.goal : ''));
+  $('#scenario-modal-text').textContent = text;
+  openModal('#scenario-modal');
 }
-function closeModal() { $('#scenario-modal').classList.remove('show'); }
 
 function renderFeed() {
   const feed = $('#feed');
-  const wasAtBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
-  feed.innerHTML = (S.log||[]).map(m => {
-    const who = esc(m.who), what = esc(m.what || '');
-    const cls = who === 'DM' ? 'dm' : (who === 'سیستم' ? 'sys' : 'act');
-    const whoLine = (cls==='dm')
-      ? '<span class="who">🐉 دانجن‌مستر</span>'
-      : (cls==='sys' ? '' : `<span class="who">🧙 ${who}</span>`);
-    return `<div class="msg ${cls}">${whoLine}<div class="text">${what}</div></div>`;
-  }).join('');
+  const log = (S && S.log) ? S.log : [];
+  const wasAtBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 120;
+
+  if (log.length >= lastRenderedLogLen) {
+    // Append only new messages (preserves scroll, no re-animation)
+    for (let i = lastRenderedLogLen; i < log.length; i++) {
+      const m = log[i];
+      const who = esc(m.who||'');
+      const what = esc(m.what || '');
+      const cls = who === 'DM' ? 'dm' : (who === 'سیستم' ? 'sys' : 'act');
+      const whoLine = (cls==='dm')
+        ? '<span class="who">🐉 دانجن‌مستر</span>'
+        : (cls==='sys' ? '' : `<span class="who">🧙 ${who}</span>`);
+      const div = document.createElement('div');
+      div.className = 'msg ' + cls + ' new';
+      div.innerHTML = `${whoLine}<div class="text">${what}</div>`;
+      feed.appendChild(div);
+    }
+    lastRenderedLogLen = log.length;
+    // Remove old messages beyond 80 to keep DOM light
+    while (feed.children.length > 80) feed.removeChild(feed.firstChild);
+  } else {
+    // Reset (e.g. new room)
+    feed.innerHTML = '';
+    lastRenderedLogLen = 0;
+    return renderFeed();
+  }
+
   if (wasAtBottom) setTimeout(() => { feed.scrollTop = feed.scrollHeight; }, 30);
 }
 
@@ -923,11 +1046,12 @@ function renderFeed() {
    ============================================================ */
 async function createRoom() {
   const name = ($('#inpRoomName').value || '').trim();
-  const btn = $('#btnCreate'); btn.disabled = true; btn.textContent = '⏳ در حال ساخت...';
+  const btn = $('#btnCreate'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> در حال ساخت...';
   try {
     const d = await api('/api/room/create', { name: name || 'ماجرای جدید' });
     roomCode = d.code;
     localStorage.setItem('dnd_room', roomCode);
+    lastRenderedLogLen = 0;
     await loadState();
     showGame(); startPolling();
     switchTab('char');
@@ -942,6 +1066,7 @@ async function joinRoom() {
     const d = await api('/api/room/join', { code });
     roomCode = d.code;
     localStorage.setItem('dnd_room', roomCode);
+    lastRenderedLogLen = 0;
     await loadState();
     showGame(); startPolling();
     toast('✅ وارد اتاق شدی!');
@@ -953,11 +1078,17 @@ async function loadState() {
   try {
     const d = await api('/api/room/state?room=' + encodeURIComponent(roomCode));
     const wasCombat = S && S.combat;
+    const wasMyTurn = wasCombat && S.combat.is_my_turn;
     S = d;
-    if (!S.room) { roomCode=''; localStorage.removeItem('dnd_room'); showHome(); return null; }
-    if (S.me && !S.me.is_member) { showHome(); $('#inpCode').value = roomCode; toast('عضو اتاق نیستی'); roomCode=''; localStorage.removeItem('dnd_room'); return null; }
+    if (!S.room) { roomCode=''; localStorage.removeItem('dnd_room'); showHome(); lastRenderedLogLen = 0; return null; }
+    if (S.me && !S.me.is_member) {
+      showHome(); $('#inpCode').value = roomCode;
+      toast('عضو اتاق نیستی'); roomCode=''; localStorage.removeItem('dnd_room');
+      lastRenderedLogLen = 0;
+      return null;
+    }
     render();
-    if (!wasCombat && S.combat) switchTab('combat');
+    if (!wasCombat && S.combat && S.combat.is_my_turn) switchTab('combat');
     if (wasCombat && !S.combat && activeTab === 'combat') {
       toast('🏁 نبرد تمام شد');
       switchTab('story');
@@ -976,14 +1107,16 @@ async function sendAction() {
   const scrollBox = $('#feed');
   try {
     const d = await api('/api/story', { room: roomCode, action: act });
-    S = d.state; inp.value = '';
+    S = d.state;
     render();
+    inp.value = '';
     setTimeout(()=>scrollBox.scrollTop = scrollBox.scrollHeight, 50);
   } catch(e) { toast(e.message); }
-  finally { btn.disabled = false; btn.textContent = 'بفرست ✨'; inp.focus(); }
+  finally { btn.disabled = false; btn.innerHTML = 'بفرست ✨'; inp.focus(); }
 }
 async function genScenario() {
   if (!S.me || !S.me.has_char) { toast('⚠️ اول کاراکترت را بساز'); switchTab('char'); return; }
+  if (!S.room.is_dm) { toast('⚠️ فقط میزبان می‌تواند سناریو بسازد'); return; }
   if (S.combat) { toast('⚠️ در نبرد نمی‌توان سناریوی جدید ساخت'); return; }
   toast('🐉 دانجن‌مستر در حال نوشتن سناریو...');
   const btn = document.querySelector('#scenarioCard button');
@@ -1005,7 +1138,7 @@ async function whereNow() {
 async function lookAround() {
   try {
     const d = await api('/api/where/look', { room: roomCode });
-    S = d.state; S.log = S.log || [];
+    if (!S.log) S.log = [];
     S.log.push({ who:'سیستم', what:d.text || '' });
     renderFeed();
   } catch(e) { toast(e.message); }
@@ -1040,7 +1173,7 @@ function copyInvite() {
    ============================================================ */
 function renderCombat() {
   const box = $('#combatBox');
-  if (!S) return;
+  if (!S) { box.innerHTML = ''; return; }
   if (!S.combat) {
     box.innerHTML = `
       <div class="card">
@@ -1048,37 +1181,45 @@ function renderCombat() {
         <div style="text-align:center;padding:18px 8px;">
           <div style="font-size:48px;">🕊️</div>
           <div style="margin-top:6px;font-weight:700;">در حال حاضر نبردی در جریان نیست.</div>
-          <div class="muted" style="margin-top:6px;">برای شروع نبرد از دکمه ⚔️ زیر استفاده کن، یا در ماجرا وارد درگیری شو.</div>
+          <div class="muted" style="margin-top:6px;">برای شروع نبرد از دکمه زیر استفاده کن، یا در ماجرا وارد درگیری شو.</div>
+          ${S.room.is_dm ? `
           <div style="margin-top:14px;" class="row" style="justify-content:center;">
             <button class="btn red mini" onclick="startCombat()">⚔️ شروع نبرد</button>
-          </div>
+          </div>` : ''}
         </div>
       </div>`;
     return;
   }
   const c = S.combat;
-  const isMyTurn = c.turn && c.turn.uid === S.me.uid;
+  const isMyTurn = !!c.is_my_turn;
+  const parts = c.participants || [];
+
+  // sort by initiative (desc)
+  const sorted = parts.slice().sort((a,b) => (b.init||0) - (a.init||0));
   let html = `
     <div class="card">
       <div class="sec-title danger">⚔️ نبرد در جریان — دور ${c.round || 1}</div>
       <div class="combat-list">`;
-  const all = [ ...(c.enemies||[]).map(e=>({...e,_enemy:true})), ...(c.party||[]) ];
-  // sort by initiative order if available
-  all.sort((a,b) => (b.initiative||0) - (a.initiative||0));
-  all.forEach((m, i) => {
-    const isActive = c.turn && ((m._enemy && c.turn.uid === m.uid) || (!m._enemy && c.turn.uid === m.uid));
+
+  sorted.forEach(m => {
+    const isActive = (c.current_uid != null && String(m.uid) === String(c.current_uid));
+    const isEnemy = !m.is_player;
     const hpPct = Math.max(0, Math.min(100, m.hp && m.max_hp ? (m.hp/m.max_hp*100) : 0));
     const cls = hpPct < 25 ? 'crit' : hpPct < 55 ? 'low' : '';
     const tags = [];
-    if (m.conditions && m.conditions.length) m.conditions.forEach(c => tags.push(`<span class="tag bad">${esc(c)}</span>`));
-    if (m.dodge) tags.push('<span class="tag good">دفاع</span>');
-    if (m.raging) tags.push('<span class="tag">خشم</span>');
+    if (m.conditions && m.conditions.length) {
+      m.conditions.forEach(c => {
+        const cl = c.toLowerCase();
+        const emojis = {blinded:'👁️‍🗨️',charmed:'💞',frightened:'😱',grappled:'🫴',poisoned:'🤢',prone:'🤸',restrained:'🪢',stunned:'💫',unconscious:'😵',invisible:'👻',deafened:'🔇',incapacitated:'🚫',paralyzed:'⚡'};
+        tags.push(`<span class="tag bad">${emojis[cl]||'•'} ${esc(COND_FA[cl]||c)}</span>`);
+      });
+    }
     html += `
-      <div class="combatant ${m._enemy?'enemy':''} ${isActive?'active':''} ${m.hp<=0?'dead':''}">
-        <div class="avatar">${esc(m.emoji || (m._enemy ? '👹' : m.cls_emoji || '🧙'))}</div>
+      <div class="combatant ${isEnemy?'enemy':''} ${isActive?'active':''} ${(!m.alive || m.hp<=0)?'dead':''}">
+        <div class="avatar">${esc(m.emoji || (isEnemy ? '👹' : '🧙'))}</div>
         <div class="c-info">
-          <div class="c-name">${esc(m.name)} ${m.hp<=0?'💀':''} <span class="muted" style="font-weight:400;font-size:11px;">init ${m.initiative||'-'}</span></div>
-          <div class="c-meta">${esc(m._enemy?'دشمن':'بازیکن')} • ${m.hp<=0?'بیهوش':`${m.ac||'-'} AC`}</div>
+          <div class="c-name">${esc(m.name)} ${(!m.alive || m.hp<=0)?'💀':''} <span class="muted" style="font-weight:400;font-size:11px;">init ${m.init||'-'}</span></div>
+          <div class="c-meta">${esc(isEnemy?'دشمن':'بازیکن')} • ${(!m.alive||m.hp<=0)?'بیهوش':`${m.ac||'-'} AC`}</div>
           <div class="hp-bar"><div class="hp-fill ${cls}" style="width:${hpPct}%"></div></div>
           <div class="hp-text">❤️ ${Math.max(0,m.hp||0)} / ${m.max_hp||0}</div>
           ${tags.length?`<div class="tags">${tags.join('')}</div>`:''}
@@ -1086,9 +1227,10 @@ function renderCombat() {
       </div>`;
   });
   html += '</div>';
+
   if (isMyTurn) {
     html += `
-      <div class="sec-title main-ac" style="margin-top:16px;">⚔️ اکشن اصلی</div>
+      <div class="sec-title" style="margin-top:16px;color:var(--gold2);">⚔️ اکشن اصلی</div>
       <div class="chips">
         <button class="chip" onclick="doAttack()">🗡️ حمله</button>
         <button class="chip" onclick="showCastMenu()">✨ طلسم</button>
@@ -1118,91 +1260,131 @@ function renderCombat() {
         <button class="btn orange" onclick="doSkip()">⏭️ رد نوبت</button>
       </div>`;
   } else {
-    const who = c.turn && c.turn.name ? c.turn.name : '...';
-    html += `<div class="hint" style="margin-top:12px;">⏳ نوبت <b>${esc(who)}</b> منتظر بمان.</div>`;
+    const who = c.current || '...';
+    html += `<div class="hint" style="margin-top:12px;">⏳ نوبت <b>${esc(who)}</b> — منتظر بمان.</div>`;
   }
-  html += `
-    <div class="btn-row" style="margin-top:14px;">
-      <button class="btn dark mini" onclick="endCombat()">🏁 پایان نبرد (تست)</button>
-    </div></div>`;
+  if (S.room.is_dm) {
+    html += `
+      <div class="btn-row" style="margin-top:14px;">
+        <button class="btn dark mini" onclick="endCombat()">🏁 پایان نبرد</button>
+      </div>`;
+  }
+  html += '</div>';
   box.innerHTML = html;
 }
-function pickTarget(promptText, cb) {
-  const enemies = (S.combat && S.combat.enemies) || [];
-  if (enemies.length === 0) { cb(null); return; }
-  if (enemies.length === 1) { cb(enemies[0].uid); return; }
-  const names = enemies.map((e,i)=>`${i+1}) ${e.name}`).join('\n');
-  const idx = prompt(promptText + '\n\n' + names + '\n\nشماره دشمن را وارد کن:');
-  if (!idx) { cb(null); return; }
-  const n = parseInt(idx, 10) - 1;
-  if (isNaN(n) || n < 0 || n >= enemies.length) { toast('⚠️ انتخاب نامعتبر'); cb(null); return; }
-  cb(enemies[n].uid);
+
+function pickTarget(opts, cb) {
+  // opts: {prompt, includeAllies?:bool, allowNone?:bool}
+  if (!S.combat) { cb(null); return; }
+  const parts = S.combat.participants || [];
+  let list;
+  if (opts && opts.includeAllies) {
+    list = parts.filter(p => p.alive && p.hp > 0 && String(p.uid) !== String(S.me.uid));
+  } else {
+    list = parts.filter(p => !p.is_player && p.alive && p.hp > 0);
+  }
+  if (!list.length) { cb(null); return; }
+  const items = list.map(p => ({
+    key: String(p.uid),
+    label: p.name,
+    emoji: p.emoji || (p.is_player?'🧙':'👹'),
+    sub: p.is_player ? 'هم‌گروهی' : 'دشمن'
+  }));
+  if (opts && opts.allowNone) {
+    items.unshift({key:'', label:'— بدون هدف —', emoji:'🚫', sub:''});
+  }
+  if (items.length === 1 && !opts.allowNone) { cb(items[0].key); return; }
+  openPicker(opts.prompt || 'انتخاب هدف', items, cb);
 }
+
 async function _combatAct(endpoint, body, errMsg) {
   try {
     const d = await api('/api/combat/' + endpoint, Object.assign({ room: roomCode }, body || {}));
-    S = d.state; render();
-    (d.messages||[]).forEach(m => S.log.push({who:'سیستم', what:m}));
+    S = d.state;
+    render();
+    (d.messages||[]).forEach(m => { if(!S.log)S.log=[]; S.log.push({who:'سیستم', what:m}); });
     renderFeed();
-  } catch(e) { toast(e.message || errMsg); }
+  } catch(e) { toast(e.message || errMsg || 'خطا'); }
 }
 async function doAttack() {
-  pickTarget('کدام دشمن؟', (uid) => { if (uid) _combatAct('attack', { target: uid }); });
+  pickTarget({prompt:'کدام دشمن را هدف می‌گیری؟'}, (uid) => { if (uid) _combatAct('attack', { target: uid }); });
 }
 async function doDodge(){ await _combatAct('dodge'); }
 async function doDash(){ await _combatAct('dash'); }
 async function doDisengage(){ await _combatAct('disengage'); }
 async function doHelp(){
-  pickTarget('به کدام هم‌تیمی کمک کنم؟ (یا خالی برای حیوان/خودت)', (uid) => {
+  pickTarget({prompt:'به کدام هم‌تیمی کمک کنم؟', includeAllies:true, allowNone:true}, (uid) => {
     _combatAct('help', { target: uid || '' });
   });
 }
 async function doHide(){ await _combatAct('hide'); }
-async function doShove(){ pickTarget('کدام دشمن را هل بدهم؟', uid => { if(uid) _combatAct('shove', {target: uid}); }); }
+async function doShove(){
+  pickTarget({prompt:'کدام دشمن را هل بدهم؟'}, uid => { if(uid) _combatAct('shove', {target: uid}); });
+}
 async function doSkip(){ await _combatAct('skip'); }
 async function endCombat(){ await _combatAct('end'); switchTab('story'); }
 async function startCombat(){ await _combatAct('start'); switchTab('combat'); }
+
 function showCastMenu(){
   const spells = (META && META.spells) || [];
   const mine = (S.me && S.me.char && S.me.char.spells) || [];
   const list = mine.length ? mine : spells.slice(0, 20);
   if (!list.length) return toast('طلسمی در دسترس نیست');
-  const names = list.map((s,i)=>`${i+1}) ${s.fa || s.key || s.name || s}`).join('\n');
-  const idx = prompt('کدام طلسم؟\n\n' + names + '\n\nشماره:');
-  if (!idx) return;
-  const n = parseInt(idx,10)-1;
-  if (isNaN(n) || n < 0 || n >= list.length) return toast('⚠️ نامعتبر');
-  const sp = list[n];
-  const key = sp.key || sp;
-  pickTarget('هدف؟ (خالی برای بدون هدف)', uid => {
-    _combatAct('cast', { spell: key, target: uid || '' });
+  const items = list.map((s,i) => ({
+    key: s.key || s,
+    label: s.fa || s.key || s.name || s,
+    emoji: s.emoji || '✨',
+    sub: (s.level?`سطح ${s.level}`:'' ) + (s.dmg?' • '+s.dmg:'')
+  }));
+  openPicker('کدام طلسم؟', items, (key) => {
+    if (!key) return;
+    pickTarget({prompt:'هدف طلسم؟', includeAllies:true, allowNone:true}, uid => {
+      _combatAct('cast', { spell: key, target: uid || '' });
+    });
   });
 }
+
 const BONUS_MAP = {
   'rage':'rage', 'bardic_inspiration':'inspire', 'offhand_attack':'offhand',
   'divine_smite':'smite', 'cunning_action':'cunning', 'hellish_rebuke':'rebuke',
   'jump_action':'jump', 'throw_action':'throw', 'dip_weapon':'dip',
   'help_up':'helpup', 'secondwind':'secondwind', 'actionsurge':'actionsurge'
 };
+// BONUS acts that need an ally target
+const BONUS_TARGET_NEED = {
+  'help_up': { includeAllies:true, prompt:'کدام هم‌تیمی را بلند کنم؟' },
+  'bardic_inspiration': { includeAllies:true, prompt:'به کدام هم‌تیمی الهام بدهم؟', allowNone:true },
+  'offhand_attack': { includeAllies:false, prompt:'کدام دشمن؟' },
+  'throw_action': { includeAllies:false, prompt:'به کدام دشمن پرتاب کنم؟' },
+};
 async function doBonus(name) {
   const ep = BONUS_MAP[name] || name;
-  await _combatAct(ep, { target: '' });
+  const tNeed = BONUS_TARGET_NEED[name];
+  if (tNeed) {
+    pickTarget(tNeed, (uid) => {
+      _combatAct(ep, { target: uid || '' });
+    });
+  } else {
+    await _combatAct(ep, { target: '' });
+  }
 }
 
 /* ============================================================
-   Character sheet
+   Character sheet — preserves form DOM to avoid wiping typing
    ============================================================ */
+let charFormBuilt = false;
 function fillWeapons(selectedWeapon) {
   const cl = document.getElementById('chClass'); if (!cl) return;
   const cls = cl.value;
-  const ws = (META.weapons[cls]||[]);
+  const ws = (META && META.weapons && META.weapons[cls]) || [];
   const wEl = document.getElementById('chWeapon'); if (!wEl) return;
-  wEl.innerHTML = ws.map(w=>`<option value="${w.key}" ${w.key===selectedWeapon?'selected':''}>${w.emoji||'⚔️'} ${w.fa||w.key} (${w.dmg||'-'})</option>`).join('');
+  wEl.innerHTML = ws.map(w=>`<option value="${esc(w.key)}" ${w.key===selectedWeapon?'selected':''}>${esc(w.emoji||'⚔️')} ${esc(w.fa||w.key)} (${esc(w.dmg||'-')})</option>`).join('');
 }
 async function createChar() {
+  const nameEl = $('#chName');
   const body = {
     room: roomCode,
-    name: $('#chName').value.trim(),
+    name: (nameEl.value||'').trim(),
     race: $('#chRace').value,
     cls: $('#chClass').value,
     weapon: $('#chWeapon').value
@@ -1210,7 +1392,9 @@ async function createChar() {
   if (!body.name) return toast('⚠️ اسم شخصیت را بنویس');
   try {
     const d = await api('/api/char/create', body);
-    S = d.state; render();
+    S = d.state;
+    charFormBuilt = false;
+    render();
     switchTab('story');
     toast('🎉 کاراکتر ساخته شد! برو سراغ ماجرا');
   } catch(e) { toast(e.message); }
@@ -1227,36 +1411,46 @@ function renderChar() {
   const box = $('#charBox');
   if (!S || !S.me) return;
   if (!S.me.has_char) {
-    if (!META) return;
-    const races = META.races.map(r => `<option value="${r.key}">${r.emoji||'🧑'} ${r.fa} (${r.bonus})</option>`).join('');
-    const classes = META.classes.map(c => `<option value="${c.key}">${c.emoji||'⚔️'} ${c.fa} (HD ${c.hit_die})</option>`).join('');
-    const defRace = localStorage.getItem('dnd_last_race') || META.races[0].key;
-    const defCls = localStorage.getItem('dnd_last_cls') || META.classes[0].key;
-    const prevName = document.getElementById('chName') ? document.getElementById('chName').value : (localStorage.getItem('dnd_guest_name') || '');
-    box.innerHTML = `
-      <div class="card">
-        <div class="sec-title">🧙 ساخت شخصیت</div>
-        <form onsubmit="event.preventDefault();createChar();return false;">
-          <label class="field-label">نام شخصیت</label>
-          <input id="chName" placeholder="مثلاً: الفریک شجاع" maxlength="24" autocomplete="off" value="${esc(prevName)}">
-          <label class="field-label">نژاد</label>
-          <select id="chRace" onchange="localStorage.setItem('dnd_last_race',this.value)">${races}</select>
-          <label class="field-label">کلاس</label>
-          <select id="chClass" onchange="fillWeapons();localStorage.setItem('dnd_last_cls',this.value)">${classes}</select>
-          <label class="field-label">سلاح</label>
-          <select id="chWeapon"></select>
-          <button type="submit" class="btn gold" style="margin-top:6px;">⚔️ ساختن ماجراجو</button>
-        </form>
-        <p class="hint">
-          امتیازات به‌صورت استاندارد (15,14,13,12,10,8) + پاداش نژاد توزیع می‌شوند.<br>
-          ۱۲ کلاس، ۸ نژاد، و ده‌ها طلسم/قابلیت پشتیبانی می‌شود.
-        </p>
-      </div>`;
-    document.getElementById('chRace').value = defRace;
-    document.getElementById('chClass').value = defCls;
-    fillWeapons(localStorage.getItem('dnd_last_weapon'));
+    if (!META) {
+      box.innerHTML = '<div class="card"><div class="loading">⏳ در حال بارگذاری...</div></div>';
+      return;
+    }
+    // Only build the form once — after that just leave the DOM alone so typing isn't wiped
+    if (!charFormBuilt || !document.getElementById('chName')) {
+      const races = META.races.map(r => `<option value="${esc(r.key)}">${esc(r.emoji||'🧑')} ${esc(r.fa)} (${esc(r.bonus)})</option>`).join('');
+      const classes = META.classes.map(c => `<option value="${esc(c.key)}">${esc(c.emoji||'⚔️')} ${esc(c.fa)} (HD ${esc(c.hit_die)})</option>`).join('');
+      const prevName = (localStorage.getItem('dnd_guest_name') || '');
+      box.innerHTML = `
+        <div class="card">
+          <div class="sec-title">🧙 ساخت شخصیت</div>
+          <form onsubmit="event.preventDefault();createChar();return false;">
+            <label class="field-label" for="chName">نام شخصیت</label>
+            <input id="chName" name="chName" placeholder="مثلاً: الفریک شجاع" maxlength="24" autocomplete="off" value="${esc(prevName)}">
+            <label class="field-label" for="chRace">نژاد</label>
+            <select id="chRace" name="chRace" onchange="localStorage.setItem('dnd_last_race',this.value)">${races}</select>
+            <label class="field-label" for="chClass">کلاس</label>
+            <select id="chClass" name="chClass" onchange="fillWeapons();localStorage.setItem('dnd_last_cls',this.value)">${classes}</select>
+            <label class="field-label" for="chWeapon">سلاح</label>
+            <select id="chWeapon" name="chWeapon"></select>
+            <button type="submit" class="btn gold" style="margin-top:6px;">⚔️ ساختن ماجراجو</button>
+          </form>
+          <p class="hint">
+            امتیازات به‌صورت استاندارد (15,14,13,12,10,8) + پاداش نژاد توزیع می‌شوند.<br>
+            ۱۲ کلاس، ۸ نژاد، و ده‌ها طلسم/قابلیت پشتیبانی می‌شود.
+          </p>
+        </div>`;
+      const defRace = localStorage.getItem('dnd_last_race') || META.races[0].key;
+      const defCls = localStorage.getItem('dnd_last_cls') || META.classes[0].key;
+      document.getElementById('chRace').value = defRace;
+      document.getElementById('chClass').value = defCls;
+      fillWeapons(localStorage.getItem('dnd_last_weapon'));
+      charFormBuilt = true;
+    }
     return;
   }
+  // If we have a char, the form can be discarded
+  charFormBuilt = false;
+
   const ch = S.me.char;
   const ab = (ch.abilities||[]).map(a => `
     <div class="ability">
@@ -1313,14 +1507,13 @@ function renderParty() {
   const box = $('#partyBox');
   if (!S || !S.room) return;
   const players = S.room.players || [];
-  const invite = `${location.origin}${location.pathname}?c=${S.room.code}`;
   let rows = players.map(p => {
     const ch = p.char;
-    return `<div class="p-row" style="display:flex;gap:10px;align-items:center;padding:8px;border-bottom:1px dashed rgba(139,90,30,.25);">
-      <div style="font-size:28px;">${ch? (ch.cls_emoji||'🧙') : '🚪'}</div>
+    return `<div class="p-row" style="display:flex;gap:10px;align-items:center;padding:10px 8px;border-bottom:1px dashed rgba(139,90,30,.25);">
+      <div style="font-size:28px;width:42px;text-align:center;">${ch? esc(ch.emoji||ch.cls_emoji||'🧙') : '🚪'}</div>
       <div style="flex:1;min-width:0;">
-        <div style="font-weight:800;color:var(--ink);">${esc(p.name)} ${p.is_dm?'<span class="tag">👑 DM</span>':''}</div>
-        <div style="font-size:12px;color:var(--ink2);">
+        <div style="font-weight:800;color:var(--ink);font-size:14px;">${esc(p.name)} ${p.is_dm?'<span class="tag">👑 DM</span>':''}</div>
+        <div style="font-size:12px;color:var(--ink2);line-height:1.8;">
           ${ch ? `${esc(ch.race||'')} ${esc(ch.cls||'')} • سطح ${ch.level||1} • ❤️ ${ch.hp||0}/${ch.max_hp||0} • AC ${ch.ac||0}` : 'بدون کاراکتر — منتظر...'}
         </div>
       </div>
@@ -1328,18 +1521,18 @@ function renderParty() {
     </div>`;
   }).join('');
   box.innerHTML = `
-    <div class="card code-box">
+    <div class="card">
       <div class="sec-title">🔑 کد اتاق — برای دوستانت بفرست</div>
       <div style="display:flex;gap:10px;align-items:center;margin:8px 0;">
         <div style="flex:1;background:rgba(0,0,0,.15);border:1.5px dashed #8a6a33;border-radius:10px;padding:12px;text-align:center;font-family:ui-monospace,monospace;font-size:22px;font-weight:800;letter-spacing:4px;color:var(--ink);">${esc(S.room.code)}</div>
       </div>
-      <div style="display:flex;gap:8px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn dark mini" onclick="copyInvite()">📋 کپی لینک دعوت</button>
       </div>
       <p class="hint">هر بازیکن با این کد (یا لینک) وارد اتاق می‌شود. حداکثر ۸ بازیکن.</p>
     </div>
     <div class="card">
-      <div class="sec-title">👥 ماجراجویان (${players.length}/۸ — ${S.room.char_count||0} کاراکتر)</div>
+      <div class="sec-title">👥 ماجراجویان (${players.length}/${S.room.max_players||8} — ${S.room.char_count||0} کاراکتر)</div>
       ${rows}
     </div>`;
 }
@@ -1347,45 +1540,54 @@ function renderParty() {
 /* ============================================================
    Init
    ============================================================ */
-async function init() {
-  // Load meta (works without auth)
-  try {
-    const r = await fetch('/api/meta');
-    const j = await r.json();
-    if (j && j.ok) META = j.data;
-  } catch(e) { /* offline */ }
-
-  // Auto-login via URL
-  const params = new URLSearchParams(location.search);
-  const cFromUrl = params.get('c') || params.get('room') || '';
-  if (cFromUrl) { $('#inpCode').value = cFromUrl.toUpperCase(); sessionStorage.setItem('dnd_pending_join', cFromUrl.toUpperCase()); }
-
-  const mode = hasAuth();
-  if (!mode) {
-    showScreen('login');
-    if (TG) { document.getElementById('tgHint').classList.remove('hidden'); }
-    const n = document.getElementById('inpGuestName');
-    if (n) n.focus();
-    return;
-  }
-  refreshHomeWelcome();
-  if (roomCode) {
-    try { await loadState(); if (S && S.room && S.me && S.me.is_member) { showGame(); startPolling(); return; } }
-    catch (e) { /* fall through to home */ }
-  }
-  showScreen('home');
-}
-
 const COND_FA = {
   blinded:'کور',charmed:'افسون',frightened:'ترسیده',grappled:'گرفتار',poisoned:'مسموم',
   prone:'زمین‌خورده',restrained:'مقید',stunned:'شکه',unconscious:'بیهوش',invisible:'نامرئی',
   deafened:'ناشنوا',incapacitated:'بی‌اقدام',paralyzed:'فلج',dodge:'دفاع فعال',raging:'خشم',concentrating:'تمرکز'
 };
 
+async function init() {
+  // Start loading meta in the background
+  const metaPromise = fetch('/api/meta').then(r => r.json()).then(j => {
+    if (j && j.ok) META = j.data;
+  }).catch(()=>{});
+
+  // Auto-login via URL
+  const params = new URLSearchParams(location.search);
+  const cFromUrl = params.get('c') || params.get('room') || '';
+  if (cFromUrl) {
+    const codeInp = $('#inpCode');
+    if (codeInp) codeInp.value = cFromUrl.toUpperCase();
+    sessionStorage.setItem('dnd_pending_join', cFromUrl.toUpperCase());
+  }
+
+  const mode = hasAuth();
+  if (!mode) {
+    showScreen('login');
+    if (TG) { const tgH = document.getElementById('tgHint'); if (tgH) tgH.classList.remove('hidden'); }
+    const n = document.getElementById('inpGuestName');
+    if (n) n.focus();
+    await metaPromise;
+    return;
+  }
+  refreshHomeWelcome();
+  if (roomCode) {
+    try { await loadState(); if (S && S.room && S.me && S.me.is_member) { await metaPromise; showGame(); startPolling(); return; } }
+    catch (e) { /* fall through */ }
+  }
+  await metaPromise;
+  showScreen('home');
+}
+
 window.addEventListener('load', init);
-// Prevent Enter from submitting forms accidentally inside story-input (the form already captures it)
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && $('#scenario-modal').classList.contains('show')) closeModal();
+  if (e.key === 'Escape') {
+    const open = document.querySelector('.modal-backdrop.show');
+    if (open) {
+      if (open.id === 'picker-modal') closePicker(null);
+      else closeModal();
+    }
+  }
 });
 </script>
 </body>

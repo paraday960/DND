@@ -86,7 +86,7 @@ def tg(method, payload=None, timeout=25, retries=2):
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "DND-Bot-Android/2.55",
+                "User-Agent": "DND-Bot-Android/2.56",
                 "Connection": "close",
             }
             req = urllib.request.Request(url, data=data, headers=headers)
@@ -1124,7 +1124,7 @@ class ApiHandler(BaseHTTPRequestHandler):
     def _api_meta(self):
         from game.rules import RACES, CLASSES, WEAPONS, SPELLS, MONSTERS
         return {
-            "version": "2.55",
+            "version": "2.56",
             "races": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
                        "bonus": ", ".join("%+d" % b for b in v["bonus"].values())} for k, v in RACES.items()],
             "classes": [{"key": k, "fa": v["fa"], "emoji": v["emoji"], "hit_die": v["hit_die"],
@@ -1794,7 +1794,7 @@ def http_server_loop(store, narrator, port):
             }
             BONUS_FN = {"rage","bardic_inspiration","offhand_attack","divine_smite",
                         "cunning_action","hellish_rebuke","jump_action","throw_action",
-                        "dip_weapon","help_up"}
+                        "dip_weapon","help_up","second_wind","action_surge"}
             ERROR_PREFIXES = ("هنوز نوبت","نمی‌توانی","این قابلیت فقط","تعداد","هم‌گروهی",
                               "کاراکترت","سلاح","هدف پیدا نشد","اکشن اصلی","بونس‌اکشن",
                               "نبردی","جایگاه","نفس اژدها را","فقط می‌توانی","تو زمین",
@@ -2004,7 +2004,7 @@ def register_quick_tunnel():
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 DND-Bot/2.54",
+            "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 DND-Bot/2.56",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as r:

@@ -455,7 +455,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     @app.get("/api/meta")
     def api_meta():
         return api_ok({
-            "version": "2.55",
+            "version": "2.56",
             "races": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
                        "bonus": ", ".join(f"{b:+d}" for b in v["bonus"].values())}
                       for k, v in RACES.items()],
@@ -794,7 +794,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         # اکشن‌های بونس‌اکشن بر اساس نام تابع تشخیص داده می‌شوند و نوبت را نمی‌سوزانند
         BONUS_FN_NAMES = {"rage", "bardic_inspiration", "offhand_attack", "divine_smite",
                          "cunning_action", "hellish_rebuke", "jump_action", "throw_action",
-                         "dip_weapon", "help_up"}
+                         "dip_weapon", "help_up", "second_wind", "action_surge"}
         is_bonus = advance_after is False or getattr(action_fn, "__name__", "") in BONUS_FN_NAMES
         result_text = action_fn(room, user["id"])
         # پیام‌های خطا با این کلمات شروع می‌شوند → نوبت نسوزان
