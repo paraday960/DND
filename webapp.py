@@ -47,22 +47,14 @@ def _rand_chat_id() -> int:
 def validate_init_data(init_data: str):
     """اعتبارسنجی initData تلگرام — کلید مخفی از توکن ربات ساخته می‌شود.
 
-    هش تلگرام روی مقادیر «خام» (درصد-کد شده) محاسبه می‌شود؛ decode کردن آن‌ها
-    (parse_qsl) برای نام فارسی و کاراکترهای خاص هش را خراب می‌کند.
+    مطابق مستندات رسمی تلگرام: باید مقادیر URL-decode شده (parse_qsl) استفاده شوند.
     """
     try:
         if not init_data or not config.BOT_TOKEN:
             return None
-        received = None
-        fields = {}
-        for part in init_data.split("&"):
-            if "=" not in part:
-                continue
-            k, v = part.split("=", 1)
-            if k == "hash":
-                received = v
-            else:
-                fields[k] = v
+        # parse_qsl به‌صورت پیش‌فرض درصد-کدها را decode می‌کند (رفتار رسمی تلگرام)
+        fields = dict(parse_qsl(init_data, keep_blank_values=True))
+        received = fields.pop("hash", None)
         if not received:
             return None
         secret = hmac.new(b"WebAppData", config.BOT_TOKEN.encode(), hashlib.sha256).digest()
@@ -72,9 +64,13 @@ def validate_init_data(init_data: str):
             import logging
             logging.getLogger("webapp").warning(
                 "initData hash mismatch (token len=%d, fields=%s, recv=%s, calc=%s)",
-                len(config.BOT_TOKEN), ",".join(sorted(fields)), received[:12], calc[:12])
+                len(config.BOT_TOKEN), ",".join(sorted(fields))[:200], received[:12], calc[:12])
             return None
-        return json.loads(urllib.parse.unquote(fields.get("user", "{}")))
+        user_str = fields.get("user", "{}")
+        try:
+            return json.loads(user_str)
+        except Exception:
+            return {"id": 0, "first_name": "بازیکن"}
     except Exception as e:
         import logging
         logging.getLogger("webapp").warning("validate_init_data error: %s", e)
@@ -120,11 +116,24 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         return jsonify({"ok": False, "error": msg}), code
 
     def get_user():
-        init = request.headers.get("X-Init-Data") or request.args.get("init_data") or ""
+        init = (request.headers.get("X-Init-Data")
+                or request.args.get("init_data")
+                or request.args.get("tgWebAppData")
+                or "")
         if init:
             user = validate_init_data(init)
             if user:
                 return user
+        # پشتیبانی از فرم پست (برای iframe و webviewهای خاص)
+        if request.is_json:
+            try:
+                body_init = (request.get_json(silent=True) or {}).get("init_data", "")
+                if body_init:
+                    user = validate_init_data(body_init)
+                    if user:
+                        return user
+            except Exception:
+                pass
         if config.WEBAPP_DEV:
             uid = request.args.get("user_id") or request.headers.get("X-User-Id")
             name = (request.args.get("user_name")

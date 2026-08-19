@@ -727,21 +727,13 @@ def bot_loop(store):
 # ==================== سرور مینی‌گیم ====================
 
 def validate_init_data(init_data, bot_token):
-    # نکته مهم: هش تلگرام روی مقادیر «خام» (درصد-کد شده) محاسبه می‌شود.
-    # parse_qsl مقادیر را decode می‌کند و برای نام فارسی/کاراکترهای خاص هش را خراب می‌کند.
+    # مطابق مستندات رسمی تلگرام: parse_qsl مقادیر را URL-decode می‌کند
+    # (این رفتار صحیح برای محاسبه هش است).
     try:
         if not init_data or not bot_token:
             return None
-        received = None
-        fields = {}
-        for part in init_data.split("&"):
-            if "=" not in part:
-                continue
-            k, v = part.split("=", 1)
-            if k == "hash":
-                received = v
-            else:
-                fields[k] = v
+        fields = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
+        received = fields.pop("hash", None)
         if not received:
             return None
         secret = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
@@ -749,7 +741,11 @@ def validate_init_data(init_data, bot_token):
         calc = hmac.new(secret, dcs.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(calc, received):
             return None
-        return json.loads(urllib.parse.unquote(fields.get("user", "{}")))
+        user_str = fields.get("user", "{}")
+        try:
+            return json.loads(user_str)
+        except Exception:
+            return {"id": 0, "first_name": "بازیکن"}
     except Exception:
         return None
 
@@ -771,11 +767,25 @@ class ApiHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _user(self):
-        init = self.headers.get("X-Init-Data") or ""
+        init = (self.headers.get("X-Init-Data")
+                or urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get(
+                    "init_data", [None])[0]
+                or urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get(
+                    "tgWebAppData", [None])[0]
+                or "")
         if init:
             u = validate_init_data(init, os.environ.get("BOT_TOKEN", ""))
             if u:
                 return u
+        # init_data در body (برای iframe/webview خاص)
+        try:
+            body_init = (self._body() or {}).get("init_data", "")
+            if body_init:
+                u = validate_init_data(body_init, os.environ.get("BOT_TOKEN", ""))
+                if u:
+                    return u
+        except Exception:
+            pass
         if self.dev:
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             uid_raw = (q.get("user_id") or [None])[0]

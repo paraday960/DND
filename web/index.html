@@ -330,12 +330,35 @@ const COND_FA = {
 const CANT_ACT = new Set(["stunned","unconscious","paralyzed","incapacitated"]);
 
 async function api(path, body) {
+  const init = (TG && TG.initData) ? TG.initData : '';
   const opt = { method: body ? 'POST' : 'GET', headers: {} };
-  if (TG && TG.initData) opt.headers['X-Init-Data'] = TG.initData;
-  if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
-  const r = await fetch(path, opt);
-  const j = await r.json().catch(() => ({ ok: false, error: 'پاسخ نامعتبر' }));
-  if (!j.ok) throw new Error(j.error || 'خطا');
+  if (init) {
+    opt.headers['X-Init-Data'] = init;
+    // همچنین initData را به‌عنوان کوئری پارامتر بفرست (برای webviewهایی که هدر را فیلتر می‌کنند)
+    const sep = path.includes('?') ? '&' : '?';
+    path = path + sep + 'tgWebAppData=' + encodeURIComponent(init);
+  }
+  if (body) {
+    opt.headers['Content-Type'] = 'application/json';
+    // در POST هم initData داخل body بفرست
+    if (init) body = { ...body, init_data: init };
+    opt.body = JSON.stringify(body);
+  }
+  let r;
+  try {
+    r = await fetch(path, opt);
+  } catch(e) {
+    throw new Error('اتصال برقرار نیست — اینترنت/تونل را چک کن');
+  }
+  const j = await r.json().catch(() => ({ ok: false, error: 'پاسخ نامعتبر از سرور' }));
+  if (!j.ok) {
+    if (r.status === 401) {
+      // در صورتی که تلگرام نتوانست هویت را تشخیص دهد، کاربر را به خانه ببر
+      showHome();
+      toast('⚠️ جلسه تلگرام شناسایی نشد — مینی‌گیم را از دکمه تلگرام دوباره باز کن');
+    }
+    throw new Error(j.error || 'خطا');
+  }
   return j.data;
 }
 function toast(msg) {
