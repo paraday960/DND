@@ -86,7 +86,7 @@ def tg(method, payload=None, timeout=25, retries=2):
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "DND-Bot-Android/2.46",
+                "User-Agent": "DND-Bot-Android/2.47",
                 "Connection": "close",
             }
             req = urllib.request.Request(url, data=data, headers=headers)
@@ -153,7 +153,7 @@ WELCOME = ("🐉 به دانجن‌مستر هوشمند خوش اومدی!\n\n"
 _mb_lock = threading.Lock()
 _menu_button_set = False  # آیا در این چرخه دکمه منو ست شده است؟
 
-HELP = ("📚 راهنما (v2.46):\n"
+HELP = ("📚 راهنما (v2.47):\n"
         "🎮 /start — منوی اصلی + دکمه مینی‌گیم\n"
         "🔗 /link — لینک قابل‌کپی مینی‌گیم (برای مرورگر/دیباگ)\n"
         "📊 /status — وضعیت زنده بات و تونل\n"
@@ -242,7 +242,7 @@ def cmd_link(store, chat, uid, uname, args):
         ]]
     }
     send(chat,
-         "🔗 **لینک مینی‌گیم (v2.46):**\n\n"
+         "🔗 **لینک مینی‌گیم (v2.47):**\n\n"
          + url + "\n\n"
          "_اگر مینی‌گیم در تلگرام باز نمی‌شود، لینک را کپی و در مرورگر باز کنید._",
          kb_link)
@@ -344,7 +344,7 @@ def register_menu_button(url, notify=False):
                 if owner and owner.get("chat_id"):
                     try:
                         send(owner["chat_id"],
-                             "✅ مینی‌گیم v2.46 آنلاین شد!\n"
+                             "✅ مینی‌گیم v2.47 آنلاین شد!\n"
                              "🔗 " + url + "\n\n"
                              "🎮 از /link برای گرفتن لینک قابل‌کپی استفاده کن.",
                              webapp_kb(url))
@@ -361,7 +361,7 @@ def cmd_status(store, chat, uid, uname, args):
     import sys as _sys
     url = tunnel_url()
     import platform
-    lines = ["📊 **وضعیت بات D&D v2.46**", ""]
+    lines = ["📊 **وضعیت بات D&D v2.47**", ""]
     lines.append("🤖 ربات: " + ("✅ آنلاین" if _polling_alive() else "⚠️ نامشخص"))
     lines.append("🌐 تونل: " + ("✅ متصل — " + url if url else "❌ قطع"))
     if url:
@@ -1069,7 +1069,7 @@ class ApiHandler(BaseHTTPRequestHandler):
     def _api_meta(self):
         from game.rules import RACES, CLASSES, WEAPONS, SPELLS, MONSTERS
         return {
-            "version": "2.46",
+            "version": "2.47",
             "races": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
                        "bonus": ", ".join("%+d" % b for b in v["bonus"].values())} for k, v in RACES.items()],
             "classes": [{"key": k, "fa": v["fa"], "emoji": v["emoji"], "hit_die": v["hit_die"],
@@ -1949,7 +1949,7 @@ def register_quick_tunnel():
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "DND-Bot-Android/2.46",
+            "User-Agent": "DND-Bot-Android/2.47",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as r:
@@ -1973,32 +1973,54 @@ def resolve_edge_ips():
     return ips
 
 
+def _start_cloudflared_direct(cf, port, edges, cf_log):
+    """روش ساده quick tunnel: cloudflared tunnel --url http://127.0.0.1:PORT
+    اصلاً api.trycloudflare.com/tunnel را صدا نمی‌زند (بنابراین 429 نمی‌خورد).
+    URL از خط‌های استاوت/استدرر خود باینری خوانده می‌شود."""
+    cmd = [cf, "tunnel",
+           "--edge-ip-version", "4",
+           "--no-autoupdate",
+           "--url", "http://127.0.0.1:%d" % port]
+    for ip in edges[:4]:
+        cmd += ["--edge", "%s:7844" % ip]
+    # stdout را به PIPE وصل می‌کنیم تا URL را ازش بخوانیم
+    proc = subprocess.Popen(
+        cmd,
+        stdout=cf_log, stderr=subprocess.STDOUT,
+        env={"HOME": FILES_DIR, "PATH": "/system/bin:/system/xbin"},
+    )
+    return proc
+
+
+def _read_cf_url_from_log(cf_log_path, deadline):
+    """فایل لاگ cloudflared را می‌خواند و در جستجوی https://.*trycloudflare.com می‌گردد."""
+    import re
+    pat = re.compile(r"https://[a-zA-Z0-9\-]+\.trycloudflare\.com")
+    last_size = 0
+    while time.time() < deadline:
+        try:
+            sz = os.path.getsize(cf_log_path)
+            if sz > last_size:
+                with open(cf_log_path, "rb") as f:
+                    f.seek(max(0, last_size - 200))
+                    chunk = f.read().decode("utf-8", errors="replace")
+                m = pat.search(chunk)
+                if m:
+                    return m.group(0).rstrip("/")
+                last_size = sz
+        except Exception:
+            pass
+        time.sleep(0.5)
+    return None
+
+
 def tunnel_loop(port, native_dir=None):
     global _menu_button_set
+    retry_delay = 5  # تأخیر اولیه تلاش مجدد (ثانیه) — برای backoff نمایی زیاد می‌شود
     while not stopped():
         proc = None
         log("🌐 شروع تونل امن مینی‌گیم...")
         try:
-            info = register_quick_tunnel()
-            url = "https://" + info["hostname"]
-            creds_path = os.path.join(FILES_DIR, "cf_creds.json")
-            cfg_path = os.path.join(FILES_DIR, "cf_config.yml")
-            with open(creds_path, "w", encoding="utf-8") as f:
-                json.dump({"AccountTag": info["account_tag"],
-                           "TunnelID": info["id"],
-                           "TunnelSecret": info["secret"]}, f)
-            with open(cfg_path, "w", encoding="utf-8") as f:
-                f.write(
-                    "tunnel: %s\n"
-                    "credentials-file: %s\n"
-                    "protocol: http2\n"
-                    "no-autoupdate: true\n"
-                    "ingress:\n"
-                    "  - hostname: %s\n"
-                    "    service: http://127.0.0.1:%d\n"
-                    "  - service: http_status:404\n"
-                    % (info["id"], creds_path, info["hostname"], port)
-                )
             edges = resolve_edge_ips()
             if not edges:
                 log("⚠️ DNS در دسترس نیست — اینترنت گوشی را بررسی کن")
@@ -2006,27 +2028,83 @@ def tunnel_loop(port, native_dir=None):
                 continue
             cf = ensure_cloudflared(native_dir)
             if not cf:
+                log("❌ cloudflared در دسترس نیست — ۳۰ ثانیه صبر...")
                 time.sleep(30)
                 continue
-            cmd = [cf, "tunnel", "--config", cfg_path,
-                   "--edge-ip-version", "4", "--no-autoupdate"]
-            for ip in edges[:4]:
-                cmd += ["--edge", "%s:7844" % ip]
-            cmd += ["run", info["id"]]
-            cf_log = open(os.path.join(FILES_DIR, "cf.log"), "ab")
-            proc = subprocess.Popen(
-                cmd, stdout=cf_log, stderr=subprocess.STDOUT,
-                env={"HOME": FILES_DIR, "PATH": "/system/bin:/system/xbin"})
-            # ❗ مهم: قبل از نوشتن URL منتظر بمانیم تا تونل واقعاً وصل شود
-            # معمولاً ۲-۶ ثانیه طول می‌کشد. حداکثر ۳۰ ثانیه انتظار.
+
+            # روش اصلی: quick tunnel مستقیم (بدون API call → بدون 429)
+            cf_log_path = os.path.join(FILES_DIR, "cf.log")
+            # فایل لاگ را از صفر پاک کن
+            try:
+                open(cf_log_path, "wb").close()
+            except Exception:
+                pass
+            cf_log = open(cf_log_path, "ab")
+            proc = _start_cloudflared_direct(cf, port, edges, cf_log)
+
+            # ۱) از لاگ URL را پیدا کن (تا ۴۵ ثانیه)
+            url = _read_cf_url_from_log(cf_log_path, time.time() + 45)
+            if not url and proc.poll() is not None:
+                log("⚠️ cloudflared قبل از دادن URL خارج شد — خروجی:")
+                try:
+                    with open(cf_log_path, "rb") as f:
+                        tail = f.read().decode("utf-8", errors="replace")[-600:]
+                        for line in tail.splitlines()[-10:]:
+                            log("  cf> " + line.strip()[:200])
+                except Exception:
+                    pass
+                raise RuntimeError("cloudflared اجرا نشد")
+            if not url:
+                # fallback: روش قدیمی را امتحان کن (register API)
+                log("⚠️ URL در خروجی cloudflared پیدا نشد — روش API را امتحان می‌کنم...")
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+                proc = None
+                time.sleep(2)
+                info = register_quick_tunnel()
+                url = "https://" + info["hostname"]
+                # باینری را با config فایل دوباره اجرا کن
+                creds_path = os.path.join(FILES_DIR, "cf_creds.json")
+                cfg_path = os.path.join(FILES_DIR, "cf_config.yml")
+                with open(creds_path, "w", encoding="utf-8") as f:
+                    json.dump({"AccountTag": info.get("account_tag", ""),
+                               "TunnelID": info["id"],
+                               "TunnelSecret": info["secret"]}, f)
+                with open(cfg_path, "w", encoding="utf-8") as f:
+                    f.write(
+                        "tunnel: %s\n"
+                        "credentials-file: %s\n"
+                        "protocol: http2\n"
+                        "no-autoupdate: true\n"
+                        "ingress:\n"
+                        "  - hostname: %s\n"
+                        "    service: http://127.0.0.1:%d\n"
+                        "  - service: http_status:404\n"
+                        % (info["id"], creds_path, info["hostname"], port)
+                    )
+                open(cf_log_path, "wb").close()
+                cf_log = open(cf_log_path, "ab")
+                cmd = [cf, "tunnel", "--config", cfg_path,
+                       "--edge-ip-version", "4", "--no-autoupdate"]
+                for ip in edges[:4]:
+                    cmd += ["--edge", "%s:7844" % ip]
+                cmd += ["run", info["id"]]
+                proc = subprocess.Popen(
+                    cmd, stdout=cf_log, stderr=subprocess.STDOUT,
+                    env={"HOME": FILES_DIR, "PATH": "/system/bin:/system/xbin"})
+                time.sleep(3)
+
+            # ۲) healthcheck تا ۳۰ بار تا واقعاً وصل شود
             url_ready = False
             for _ in range(30):
-                if proc.poll() is not None:
-                    break  # پروسه مرد
+                if proc and proc.poll() is not None:
+                    break
                 time.sleep(1)
                 try:
                     req = urllib.request.Request(
-                        url + "/healthz",
+                        url.rstrip("/") + "/healthz",
                         headers={"User-Agent": "DND-Bot-healthcheck/1.0", "Connection": "close"},
                     )
                     with urllib.request.urlopen(req, timeout=4) as r:
@@ -2039,38 +2117,68 @@ def tunnel_loop(port, native_dir=None):
                 log("⚠️ تونل وصل نشد — تلاش مجدد...")
                 try: proc.terminate()
                 except Exception: pass
-                time.sleep(5)
+                proc = None
+                retry_delay = min(retry_delay * 2, 120)
+                log("⏳ %d ثانیه صبر می‌کنم..." % retry_delay)
+                time.sleep(retry_delay)
                 continue
-            # حالا فایل را بنویس و لاگ کن
+            # موفق! تأخیر را ریست کن
+            retry_delay = 5
+            # فایل URL را بنویس
             with open(os.path.join(FILES_DIR, "tunnel_url.txt"), "w", encoding="utf-8") as f:
                 f.write(url)
-            _menu_button_set = False  # برای آپدیت منو با آدرس جدید
+            _menu_button_set = False
             log("✅ آدرس مینی‌گیم: " + url)
-            # دکمه منو را ست کن (notify=True ⇒ پیام اطلاع‌رسانی به مالک اگر لاگین باشد)
             register_menu_button(url, notify=True)
-            while not stopped() and proc.poll() is None:
-                # هر ۵ ثانیه چک کن که پروسه زنده است
+            # مانیتورینگ
+            consecutive_fail = 0
+            while not stopped() and (proc is None or proc.poll() is None):
                 time.sleep(5)
-                # همچنین چک کن که URL هنوز پاسخ می‌دهد
                 try:
-                    req = urllib.request.Request(url + "/healthz",
-                        headers={"User-Agent": "DND-check/1.0"},)
+                    req = urllib.request.Request(url.rstrip("/") + "/healthz",
+                        headers={"User-Agent": "DND-check/1.0", "Connection": "close"})
                     with urllib.request.urlopen(req, timeout=5) as r:
-                        pass
+                        if r.status == 200:
+                            consecutive_fail = 0
+                            continue
                 except Exception:
-                    log("⚠️ تونل پاسخ نمی‌دهد — ری‌استارت...")
+                    pass
+                consecutive_fail += 1
+                if consecutive_fail >= 3:
+                    log("⚠️ تونل ۳ بار متوالی پاسخ نداد — ری‌استارت...")
                     break
             if not stopped():
                 log("⚠️ تونل قطع شد — اتصال مجدد...")
+        except urllib.error.HTTPError as e:
+            code = getattr(e, "code", 0)
+            msg = str(e)
+            if code == 429:
+                retry_delay = min(retry_delay * 2, 180)
+                log("⚠️ کلادفلر محدودیت نرخ داد (429) — %d ثانیه صبر..." % retry_delay)
+            else:
+                log("خطای HTTP تونل (%d): %s" % (code, msg))
+                retry_delay = min(retry_delay + 5, 60)
         except Exception as e:
             log("خطای تونل: %s" % e)
+            retry_delay = min(retry_delay * 2 if retry_delay >= 10 else retry_delay + 5, 120)
         finally:
             if proc is not None:
                 try:
                     proc.terminate()
                 except Exception:
                     pass
-        time.sleep(10)
+                try:
+                    time.sleep(1)
+                    proc.kill()
+                except Exception:
+                    pass
+                proc = None
+        if not stopped():
+            log("⏳ %d ثانیه تا تلاش مجدد..." % retry_delay)
+            # sleep قابل لغو (stopped را چک می‌کند)
+            wait_end = time.time() + retry_delay
+            while not stopped() and time.time() < wait_end:
+                time.sleep(1)
 
 
 # ==================== نقطه ورود ====================
