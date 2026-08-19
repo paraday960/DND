@@ -238,9 +238,10 @@
     <div class="card hero">
       <h1>🐉 ورود به دانجن‌انددراگون</h1>
       <p>این مینی‌گیم را می‌توانی <b>هم در تلگرام</b> بازی کنی هم <b>مستقیم در مرورگر</b>. لطفاً نام خود را وارد کن:</p>
-      <input id="inpGuestName" placeholder="اسم شخصیت/بازیکن (مثلاً: آرش)" maxlength="24"
-             onkeydown="if(event.key==='Enter')guestLogin()">
-      <button class="btn gold" id="btnGuestLogin" onclick="guestLogin()">⚔️ ورود به بازی</button>
+      <form onsubmit="event.preventDefault();guestLogin();return false">
+        <input id="inpGuestName" placeholder="اسم شخصیت/بازیکن (مثلاً: آرش)" maxlength="24" autocomplete="off" autofocus>
+        <button type="submit" class="btn gold" id="btnGuestLogin">⚔️ ورود به بازی</button>
+      </form>
       <p class="hint">اسم شما فقط روی این گوشی ذخیره می‌شود و نیازی به ثبت‌نام نیست.</p>
       <div id="tgHint" class="hidden" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
         <p style="color:var(--muted);font-size:12px">💡 در تلگرام باز کردی؟ اگر خودکار شناسایی نشد دوباره از دکمه مینی‌گیم تلگرام باز کن یا همین‌جا نام بزن و بازی کن.</p>
@@ -253,13 +254,15 @@
     <div class="card hero">
       <h1>🐉 مینی‌گیم دانجن‌انددراگون</h1>
       <p id="welcomeText">با هوش مصنوعی به سبک Baldur's Gate 3 — سناریو بساز، ماجرا برو، نبرد نوبتی با سیستم اکشن سه‌گانه! ⚔️</p>
-      <input id="inpRoomName" placeholder="اسم اتاق (مثلاً: سفر به کوهستان مه‌آلود)" maxlength="40">
-      <button class="btn gold" id="btnCreate" onclick="createRoom()">🎮 ساخت اتاق جدید (میزبان)</button>
+      <form onsubmit="event.preventDefault();createRoom();return false" style="margin:0">
+        <input id="inpRoomName" placeholder="اسم اتاق (مثلاً: سفر به کوهستان مه‌آلود)" maxlength="40" autocomplete="off">
+        <button type="submit" class="btn gold" id="btnCreate">🎮 ساخت اتاق جدید (میزبان)</button>
+      </form>
       <div class="or">— یا —</div>
-      <div class="join-row">
-        <input id="inpCode" placeholder="کد اتاق دوستت" maxlength="8" style="text-transform:uppercase">
-        <button class="btn blue" onclick="joinRoom()">🔗 ورود</button>
-      </div>
+      <form class="join-row" onsubmit="event.preventDefault();joinRoom();return false" style="display:flex;gap:8px">
+        <input id="inpCode" placeholder="کد اتاق دوستت" maxlength="8" style="text-transform:uppercase;margin:0" autocomplete="off">
+        <button type="submit" class="btn blue" style="flex-shrink:0">🔗 ورود</button>
+      </form>
       <p class="hint">کد اتاق را با دوستانت به اشتراک بگذار؛ هر ۸ نفر<br>داخل همین مینی‌گیم با هم بازی می‌کنید!<br><small style="color:var(--muted)">برای خروج/تغییر نام: <a href="javascript:guestLogout()" style="color:var(--gold2)">اینجا بزن</a></small></p>
     </div>
   </section>
@@ -273,9 +276,10 @@
       <div class="sec-title">📜 دفترچه ماجرا</div>
       <div class="feed" id="feed"></div>
       <div class="story-input">
-        <input id="inpAction" placeholder="اقدامت را بنویس... مثلاً: درِ کهنه را باز می‌کنم" maxlength="200"
-               onkeydown="if(event.key==='Enter')sendAction()">
-        <button class="btn gold" id="btnStory" onclick="sendAction()">بفرست ✨</button>
+        <form onsubmit="event.preventDefault();sendAction();return false" style="display:flex;gap:8px">
+          <input id="inpAction" placeholder="اقدامت را بنویس... مثلاً: درِ کهنه را باز می‌کنم" maxlength="200" autocomplete="off">
+          <button type="submit" class="btn gold" id="btnStory">بفرست ✨</button>
+        </form>
       </div>
       <div class="chips" style="margin-top:10px">
         <button class="chip dice" onclick="quickRoll('d20')">🎲 d20</button>
@@ -1140,18 +1144,37 @@ function renderChar() {
   const box = $('#charBox');
   if (!S.me || !S.me.has_char) {
     if (!META) return;
-    const races = META.races.map(r => `<option value="${r.key}">${r.emoji} ${r.fa} (+${r.bonus})</option>`).join('');
-    const classes = META.classes.map(c => `<option value="${c.key}">${c.emoji} ${c.fa} (HP ${c.hit_die})</option>`).join('');
+    // ⚠️ مهم: اگر کاربر داخل فرم کاراکتر در حال تایپ است (فوکوس روی یکی از فیلدها) ریرندر نکن
+    // پولینگ ۳.۵ثانیه‌ای نباید تایپ کاربر را قطع کند
+    const activeId = document.activeElement ? document.activeElement.id : '';
+    const formActive = activeId === 'chName' || activeId === 'chRace' || activeId === 'chClass' || activeId === 'chWeapon';
+    if (formActive && box.querySelector('#chName')) return;
+    // قبل از ریرندر مقادیر فرم را ذخیره کن
+    const prev = {
+      name: document.getElementById('chName') ? document.getElementById('chName').value : '',
+      race: document.getElementById('chRace') ? document.getElementById('chRace').value : '',
+      cls: document.getElementById('chClass') ? document.getElementById('chClass').value : '',
+      weapon: document.getElementById('chWeapon') ? document.getElementById('chWeapon').value : '',
+    };
+    const races = META.races.map(r => `<option value="${r.key}"${r.key===prev.race?' selected':''}>${r.emoji} ${r.fa} (+${r.bonus})</option>`).join('');
+    const classes = META.classes.map(c => `<option value="${c.key}"${c.key===prev.cls?' selected':''}>${c.emoji} ${c.fa} (HP ${c.hit_die})</option>`).join('');
     box.innerHTML = `<div class="card">
       <div class="sec-title">🧙 ساخت کاراکتر</div>
-      <input id="chName" placeholder="نام شخصیتت (مثلاً: آرین)" maxlength="30">
-      <select id="chRace">${races}</select>
-      <select id="chClass" onchange="fillWeapons()">${classes}</select>
-      <select id="chWeapon"></select>
-      <button class="btn gold" onclick="createChar()">⚔️ ساختن ماجراجو</button>
+      <form onsubmit="event.preventDefault();createChar();return false">
+        <input id="chName" placeholder="نام شخصیتت (مثلاً: آرین)" maxlength="30" autocomplete="off" value="${esc(prev.name)}">
+        <select id="chRace">${races}</select>
+        <select id="chClass" onchange="fillWeapons()">${classes}</select>
+        <select id="chWeapon"></select>
+        <button type="submit" class="btn gold">⚔️ ساختن ماجراجو</button>
+      </form>
       <p class="hint">امتیاز توانایی‌ها به‌صورت استاندارد (array 15,14,13,12,10,8) توزیع می‌شود.<br>۱۲ کلاس (جنگجو، جادوگر، روحانی، دزد، بَرد، رنجر، پالادین، راهب، بربر، وارلاک، دروید، ساحر) • ۸ نژاد</p>
     </div>`;
-    fillWeapons();
+    fillWeapons(prev.weapon);
+    // فوکوس را برگردان اگر کاربر قبلاً تایپ می‌کرد
+    if (prev.name && document.activeElement && document.activeElement.id === 'chName') {
+      const n = document.getElementById('chName');
+      if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); }
+    }
     return;
   }
   const ch = S.me.char;
@@ -1183,10 +1206,14 @@ function renderChar() {
     ${lvlBtn}
   </div>`;
 }
-function fillWeapons() {
-  const cls = $('#chClass').value;
-  const ws = (META.weapons[cls]||[]).map(w => `<option value="${w.key}">${w.emoji} ${w.fa} (${w.dmg})</option>`).join('');
-  $('#chWeapon').innerHTML = ws;
+function fillWeapons(selectedWeapon) {
+  const clsEl = document.getElementById('chClass');
+  if (!clsEl) return;
+  const cls = clsEl.value;
+  const sel = (typeof selectedWeapon === 'string' && selectedWeapon) ? selectedWeapon : (document.getElementById('chWeapon') ? document.getElementById('chWeapon').value : '');
+  const ws = (META.weapons[cls]||[]).map(w => `<option value="${w.key}"${w.key===sel?' selected':''}>${w.emoji} ${w.fa} (${w.dmg})</option>`).join('');
+  const wEl = document.getElementById('chWeapon');
+  if (wEl) wEl.innerHTML = ws;
 }
 async function createChar() {
   const body = {
