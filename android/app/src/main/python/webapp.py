@@ -455,7 +455,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     @app.get("/api/meta")
     def api_meta():
         return api_ok({
-            "version": "2.53",
+            "version": "2.54",
             "races": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
                        "bonus": ", ".join(f"{b:+d}" for b in v["bonus"].values())}
                       for k, v in RACES.items()],

@@ -501,12 +501,25 @@ async function loadState() {
 }
 function startPolling() {
   if (polling) clearInterval(polling);
-  polling = setInterval(() => { loadState().catch(()=>{}); }, 3500);
+  // پولینگ هر ۴ ثانیه — کمتر از این، تایپ کاربر در فیلدها را قطع می‌کرد
+  polling = setInterval(() => { loadState().catch(()=>{}); }, 4000);
 }
 
 /* ================= رندر ================= */
+function anyInputFocused() {
+  // آیا کاربر در یکی از فیلدها در حال تایپ است؟
+  const a = document.activeElement;
+  if (!a) return false;
+  const tag = (a.tagName || '').toLowerCase();
+  if (tag !== 'input' && tag !== 'select' && tag !== 'textarea') return false;
+  // داخل صفحه بازی باشه
+  const screenGame = document.getElementById('screen-game');
+  return screenGame && !screenGame.classList.contains('hidden');
+}
 function render() {
   if (!S) return;
+  // اگر کاربر در حال تایپ در فیلدی است، رندر کامل را موقتاً نادیده بگیر
+  if (anyInputFocused()) return;
   $('#roomPill').classList.remove('hidden');
   $('#pillCode').textContent = S.room.code;
   renderScenario(); renderFeed(); renderCombat(); renderChar(); renderParty();
@@ -1144,11 +1157,8 @@ function renderChar() {
   const box = $('#charBox');
   if (!S.me || !S.me.has_char) {
     if (!META) return;
-    // ⚠️ مهم: اگر کاربر داخل فرم کاراکتر در حال تایپ است (فوکوس روی یکی از فیلدها) ریرندر نکن
-    // پولینگ ۳.۵ثانیه‌ای نباید تایپ کاربر را قطع کند
-    const activeId = document.activeElement ? document.activeElement.id : '';
-    const formActive = activeId === 'chName' || activeId === 'chRace' || activeId === 'chClass' || activeId === 'chWeapon';
-    if (formActive && box.querySelector('#chName')) return;
+    // ⚠️ مهم: اگر کاربر داخل فرم کاراکتر در حال تایپ است، ریرندر فرم را نادیده بگیر
+    if (box.querySelector('#chName') && anyInputFocused()) return;
     // قبل از ریرندر مقادیر فرم را ذخیره کن
     const prev = {
       name: document.getElementById('chName') ? document.getElementById('chName').value : '',
