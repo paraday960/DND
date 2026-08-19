@@ -49,30 +49,70 @@ def tunnel_url():
 
 # ==================== تلگرام ====================
 
-def tg(method, payload=None, timeout=40):
+# پایداری شبکه: اجبار IPv4 (الان مشکل اصلی timeout IPv6 است)
+_orig_getaddrinfo = socket.getaddrinfo
+
+def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    try:
+        if host == "api.telegram.org" and family == 0:
+            family = socket.AF_INET
+    except Exception:
+        pass
+    return _orig_getaddrinfo(host, port, family, type, proto, flags)
+
+socket.getaddrinfo = _patched_getaddrinfo
+
+# یک opener سراسری با SSL پیش‌فرض (timeout روی باز کردن درخواست تنظیم می‌شود)
+import ssl as _ssl
+_ssl_ctx = _ssl.create_default_context()
+try:
+    _tg_opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=_ssl_ctx)
+    )
+except Exception:
+    _tg_opener = urllib.request.build_opener()
+
+
+def tg(method, payload=None, timeout=25, retries=2):
+    """درخواست به Bot API با retry، تایم‌اوت کوتاه و IPv4-only."""
     token = os.environ.get("BOT_TOKEN", "")
+    if not token:
+        return None
     url = "https://api.telegram.org/bot%s/%s" % (token, method)
     data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(url, data=data,
-                                 headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read().decode())
-    except urllib.error.HTTPError as e:
-        global _last_409_log
-        if e.code == 409:
-            now = time.time()
-            if now - _last_409_log > 60:
-                _last_409_log = now
-                log("⚠️ خطای 409: نمونه دیگری از ربات با همین توکن در حال اجراست (در Termux، گوشی دیگر یا هاست). آن را متوقف کن — این نسخه خودکار ادامه می‌دهد")
-            time.sleep(8)
-        else:
-            log("TG %s: %s" % (method, e))
-        return None
-    except Exception as e:
-        log("TG %s: %s" % (method, e))
-        return None
-
+    last_err = None
+    for attempt in range(retries + 1):
+        try:
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "DND-Bot-Android/2.42",
+                "Connection": "close",
+            }
+            req = urllib.request.Request(url, data=data, headers=headers)
+            with _tg_opener.open(req, timeout=timeout) as r:
+                body = r.read().decode("utf-8", errors="replace")
+            try:
+                return json.loads(body)
+            except Exception:
+                last_err = "invalid json"
+                continue
+        except urllib.error.HTTPError as e:
+            if e.code == 409:
+                return None
+            if e.code in (500, 502, 503, 504, 429):
+                last_err = "HTTP %s" % e.code
+                time.sleep(1 + attempt * 2)
+                continue
+            return None
+        except Exception as e:
+            last_err = e
+            if attempt < retries:
+                time.sleep(1.5 + attempt * 2)
+                continue
+            # فقط در صورت تکرار مداوم لاگ کن
+            return None
+    return None
 
 def send(chat_id, text, kb=None):
     p = {"chat_id": chat_id, "text": text}
@@ -684,22 +724,22 @@ def bot_loop(store):
     offset = 0
     fail_streak = 0
     last_net_log = 0.0
-    log("🚀 ربات آنلاین — منتظر پیام‌ها...")
+    log("🚀 ربات آنلاین — منتظر پیام‌ها (IPv4-only)...")
     while not stopped():
         try:
-            # به‌جای timeout=20 از 35 استفاده می‌کنیم چون long-polling تلگرام استاندارد
-            # 30s است و اگر 20s ببندیم قبل از پایان پاسخ را می‌بندیم (علت
-            # «Remote end closed connection without response» روی برخی ISPها)
-            data = tg("getUpdates", {"offset": offset, "timeout": 25,
+            # long-poll تلگرام: timeout=15 روی سرور تلگرام، سوکت ۲۵ ثانیه می‌ماند
+            data = tg("getUpdates", {"offset": offset, "timeout": 15,
                                      "allowed_updates": ["message", "callback_query"]},
-                     timeout=40)
+                     timeout=25)
             if not data or not data.get("ok"):
                 fail_streak += 1
-                # کدهای عادی مثل 409 خودش در tg هندل می‌شود؛ اینجا فقط sleep کوتاه
-                time.sleep(2 if fail_streak < 3 else 5)
+                # sleep نمایی کوتاه (بدون لاگ اسپم)
+                time.sleep(min(1 + fail_streak * 0.5, 8))
                 continue
-            # موفقیت آمیز — شمارنده خطا صفر شود
+            # موفق — شمارنده صفر شود
             if fail_streak > 0:
+                if fail_streak >= 3:
+                    log("✅ اتصال به تلگرام دوباره برقرار شد (بعد از %d خطا)" % fail_streak)
                 fail_streak = 0
             for u in data.get("result", []):
                 offset = max(offset, u["update_id"] + 1)
@@ -713,12 +753,11 @@ def bot_loop(store):
         except Exception as e:
             fail_streak += 1
             now = time.time()
-            # برای خطاهای شبکه پشت‌سرهم، تایم استراحت را افزایش می‌دهیم تا باتری/لاگ نپاشد
-            wait = min(2 + fail_streak, 25)
-            should_log = (fail_streak == 1) or (now - last_net_log > 60) or (fail_streak % 5 == 0)
-            if should_log:
+            wait = min(2 + fail_streak, 20)
+            # فقط هر ۶۰ ثانیه یک‌بار لاگ قطعی بده
+            if (fail_streak == 1) or (now - last_net_log > 90):
                 last_net_log = now
-                log("⚠️ اتصال به تلگرام قطع شد (خطای %dم: %s) — اگر اپ ابزار عبور دارد روشن کن، در غیر این صورت منتظر می‌مانم..."
+                log("⚠️ اتصال به تلگرام نامطمئن (خطای %dم: %s) — در حال تلاش مجدد..."
                     % (fail_streak, str(e)[:100]))
             time.sleep(wait)
     log("حلقه ربات متوقف شد")

@@ -19,6 +19,20 @@ from bot import conv, handlers
 from game.narrator import Narrator
 from game.store import Store
 
+
+# ---- پایداری شبکه: اجبار IPv4 برای api.telegram.org (جلوگیری از timeout IPv6) ----
+import socket as _socket
+_orig_getaddrinfo = _socket.getaddrinfo
+def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    try:
+        if host in ("api.telegram.org", "149.154.167.220") and family == 0:
+            family = _socket.AF_INET
+    except Exception:
+        pass
+    return _orig_getaddrinfo(host, port, family, type, proto, flags)
+_socket.getaddrinfo = _patched_getaddrinfo
+# ---- END پایداری ----
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -200,10 +214,12 @@ def build_app(store=None, narrator=None) -> Application:
     app = (
         Application.builder()
         .token(config.BOT_TOKEN)
-        .connect_timeout(10)
-        .read_timeout(15)
+        .connect_timeout(8)
+        .read_timeout(20)
         .write_timeout(15)
-        .get_updates_read_timeout(15)
+        .get_updates_read_timeout(20)
+        .get_updates_connect_timeout(10)
+        .pool_timeout(5)
         .build()
     )
     app.bot_data["store"] = store
