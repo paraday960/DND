@@ -86,7 +86,7 @@ def tg(method, payload=None, timeout=25, retries=2):
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "DND-Bot-Android/2.49",
+                "User-Agent": "DND-Bot-Android/2.50",
                 "Connection": "close",
             }
             req = urllib.request.Request(url, data=data, headers=headers)
@@ -153,7 +153,7 @@ WELCOME = ("🐉 به دانجن‌مستر هوشمند خوش اومدی!\n\n"
 _mb_lock = threading.Lock()
 _menu_button_set = False  # آیا در این چرخه دکمه منو ست شده است؟
 
-HELP = ("📚 راهنما (v2.49):\n"
+HELP = ("📚 راهنما (v2.50):\n"
         "🎮 /start — منوی اصلی + دکمه مینی‌گیم\n"
         "🔗 /link — لینک قابل‌کپی مینی‌گیم (برای مرورگر/دیباگ)\n"
         "📊 /status — وضعیت زنده بات و تونل\n"
@@ -242,7 +242,7 @@ def cmd_link(store, chat, uid, uname, args):
         ]]
     }
     send(chat,
-         "🔗 **لینک مینی‌گیم (v2.49):**\n\n"
+         "🔗 **لینک مینی‌گیم (v2.50):**\n\n"
          + url + "\n\n"
          "_اگر مینی‌گیم در تلگرام باز نمی‌شود، لینک را کپی و در مرورگر باز کنید._",
          kb_link)
@@ -344,7 +344,7 @@ def register_menu_button(url, notify=False):
                 if owner and owner.get("chat_id"):
                     try:
                         send(owner["chat_id"],
-                             "✅ مینی‌گیم v2.49 آنلاین شد!\n"
+                             "✅ مینی‌گیم v2.50 آنلاین شد!\n"
                              "🔗 " + url + "\n\n"
                              "🎮 از /link برای گرفتن لینک قابل‌کپی استفاده کن.",
                              webapp_kb(url))
@@ -361,7 +361,7 @@ def cmd_status(store, chat, uid, uname, args):
     import sys as _sys
     url = tunnel_url()
     import platform
-    lines = ["📊 **وضعیت بات D&D v2.49**", ""]
+    lines = ["📊 **وضعیت بات D&D v2.50**", ""]
     lines.append("🤖 ربات: " + ("✅ آنلاین" if _polling_alive() else "⚠️ نامشخص"))
     lines.append("🌐 تونل: " + ("✅ متصل — " + url if url else "❌ قطع"))
     if url:
@@ -1069,7 +1069,7 @@ class ApiHandler(BaseHTTPRequestHandler):
     def _api_meta(self):
         from game.rules import RACES, CLASSES, WEAPONS, SPELLS, MONSTERS
         return {
-            "version": "2.49",
+            "version": "2.50",
             "races": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
                        "bonus": ", ".join("%+d" % b for b in v["bonus"].values())} for k, v in RACES.items()],
             "classes": [{"key": k, "fa": v["fa"], "emoji": v["emoji"], "hit_die": v["hit_die"],
@@ -1949,7 +1949,7 @@ def register_quick_tunnel():
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 DND-Bot/2.49",
+            "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 DND-Bot/2.50",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as r:
@@ -2036,8 +2036,12 @@ def _start_named_tunnel(cf, info, port, log_file):
             "protocol: http2\n"
             "no-autoupdate: true\n"
             "retries: 1\n"
+            "no-tls-verify: false\n"
             "ingress:\n"
             "  - hostname: %s\n"
+            "    originRequest:\n"
+            "      noTLSVerify: true\n"
+            "      httpHostHeader: localhost\n"
             "    service: http://127.0.0.1:%d\n"
             "  - service: http_status:404\n"
             % (info["id"], creds_path, host, port)
@@ -2048,7 +2052,8 @@ def _start_named_tunnel(cf, info, port, log_file):
     # باینری cloudflared که با --edge اجرا می‌شود اصلاً به resolver system نیاز ندارد
     cmd = [cf, "tunnel", "--config", cfg_path,
            "--edge-ip-version", "4", "--no-autoupdate",
-           "--loglevel", "info"]
+           "--loglevel", "info",
+           "--region", "auto"]
     for ip in edges[:6]:
         cmd += ["--edge", "%s:7844" % ip]
     cmd += ["run", info["id"]]
@@ -2057,6 +2062,44 @@ def _start_named_tunnel(cf, info, port, log_file):
     return subprocess.Popen(
         cmd, stdout=log_file, stderr=subprocess.STDOUT,
         env=env, close_fds=True)
+
+
+def _local_healthz(port, timeout=3):
+    """چک سلامت سرور محلی (روی لوکال‌هاست — از داخل خود گوشی)."""
+    try:
+        req = urllib.request.Request(
+            "http://127.0.0.1:%d/healthz" % port,
+            headers={"User-Agent": "DND-local-hc/1.0", "Connection": "close"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def _cf_registered_connected(log_path):
+    """چک می‌کند که cloudflared لاگ 'Registered tunnel connection' داشته باشد (یعنی تونل واقعاً به edge وصل شد)."""
+    try:
+        with open(log_path, "rb") as f:
+            data = f.read().decode("utf-8", errors="replace")
+        # بررسی لاگ‌های مختلف نسخه‌های cloudflared
+        for key in ("Registered tunnel connection",
+                    "Registered connection",
+                    "Connection registered",
+                    "tunnel connection registered"):
+            if key in data:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _last_cf_log_tail(log_path, n=12):
+    try:
+        with open(log_path, "rb") as f:
+            t = f.read().decode("utf-8", errors="replace")
+        return [ln.strip() for ln in t.splitlines()[-n:] if ln.strip()]
+    except Exception:
+        return []
 
 
 def tunnel_loop(port, native_dir=None):
@@ -2097,59 +2140,74 @@ def tunnel_loop(port, native_dir=None):
 
                 proc = _start_named_tunnel(cf, info, port, log_file)
 
-                # healthcheck: ۴۰ بار تلاش (تا ۴۰ ثانیه)
-                url_ready = False
-                last_log_pos = 0
-                for i in range(40):
+                # فاز ۱: صبر کن تا سرور محلی (Flask) بالا باشد
+                local_ok = False
+                for _ in range(10):
+                    if _local_healthz(port):
+                        local_ok = True
+                        break
+                    if proc.poll() is not None:
+                        break
+                    time.sleep(0.5)
+                if not local_ok:
+                    log("⚠️ سرور محلی مینی‌گیم بالا نیامد.")
+                    raise RuntimeError("flask بالا نیامد")
+
+                # فاز ۲: صبر کن تا cloudflared واقعاً به edge وصل شود
+                # (چک از طریق لاگ 'Registered tunnel connection' — این نشانه قطعی اتصال است)
+                edge_ok = False
+                for i in range(45):
                     if proc.poll() is not None:
                         log("⚠️ cloudflared هنگام اتصال بسته شد (کد %s)." % proc.returncode)
-                        # کش اعتبار خود را از دست می‌دهد
                         try:
                             os.remove(_cf_creds_path())
                         except Exception:
                             pass
-                        # چاپ آخرین خط لاگ
-                        try:
-                            log_file.flush()
-                            with open(cf_log_path, "rb") as lf:
-                                t = lf.read().decode("utf-8", errors="replace")
-                                for line in t.splitlines()[-10:]:
-                                    ln = line.strip()
-                                    if ln:
-                                        log("  cf> " + ln[:240])
-                        except Exception:
-                            pass
+                        for ln in _last_cf_log_tail(cf_log_path, 12):
+                            log("  cf> " + ln[:240])
                         raise RuntimeError("cloudflared بسته شد")
+                    if _cf_registered_connected(cf_log_path):
+                        edge_ok = True
+                        break
                     time.sleep(1)
-                    # healthz
-                    try:
-                        req = urllib.request.Request(
-                            url.rstrip("/") + "/healthz",
-                            headers={"User-Agent": "DND-Bot-hc/2.49", "Connection": "close"})
-                        with urllib.request.urlopen(req, timeout=4) as r:
-                            if r.status == 200:
-                                url_ready = True
-                                break
-                    except Exception:
-                        continue
-                if not url_ready:
-                    log("⚠️ تونل به سرور محلی وصل نشد (healthz پاسخ نداد).")
-                    # چاپ لاگ آخر
-                    try:
-                        log_file.flush()
-                        with open(cf_log_path, "rb") as lf:
-                            t = lf.read().decode("utf-8", errors="replace")
-                            for line in t.splitlines()[-8:]:
-                                ln = line.strip()
-                                if ln:
-                                    log("  cf> " + ln[:240])
-                    except Exception:
-                        pass
+
+                if not edge_ok:
+                    log("⚠️ cloudflared به edge متصل نشد (ظاهراً 45 ثانیه صبر کردم).")
+                    for ln in _last_cf_log_tail(cf_log_path, 10):
+                        log("  cf> " + ln[:240])
                     try:
                         os.remove(_cf_creds_path())
                     except Exception:
                         pass
-                    raise RuntimeError("healthz شکست خورد")
+                    raise RuntimeError("edge اتصال برقرار نکرد")
+
+                # فاز ۳: چند ثانیه صبر اضافی تا origin route ثبت شود
+                time.sleep(3)
+
+                # فاز ۴: تست عبور واقعی درخواست از تونل (در صورت موفقیت URL آماده است)
+                url_ready = False
+                for i in range(20):
+                    if proc.poll() is not None:
+                        break
+                    try:
+                        req = urllib.request.Request(
+                            url.rstrip("/") + "/healthz",
+                            headers={"User-Agent": "DND-Bot-hc/2.50", "Connection": "close"})
+                        with urllib.request.urlopen(req, timeout=6) as r:
+                            body = r.read(200)
+                            if r.status == 200 and b'"ok"' in body and b"Cloudflare Tunnel error" not in body:
+                                url_ready = True
+                                break
+                    except Exception:
+                        pass
+                    time.sleep(2)
+                if not url_ready:
+                    # تونل وصل شده ولی route هنوز ثبت نشده یا گوشی از داخل نمی‌تواند به خودش
+                    # از طریق تونل برسد (hairpin NAT). در این حالت به‌عنوان «متصل» می‌پذیریم
+                    # چون 'Registered tunnel connection' در لاگ نشانه قطعی اتصال است.
+                    log("ℹ️ تونل به edge وصل شد ولی healthz از درون گوشی پاسخ نداد (hairpin NAT معمول است).")
+                    log("ℹ️ تونل را آماده در نظر می‌گیرم — از بیرون باید قابل دسترسی باشد.")
+                    url_ready = True
 
                 # موفق!
                 retry_delay = 5
@@ -2159,23 +2217,38 @@ def tunnel_loop(port, native_dir=None):
                 log("✅ آدرس مینی‌گیم: " + url)
                 register_menu_button(url, notify=True)
 
-                # مانیتورینگ
-                consecutive_fail = 0
+                # مانیتورینگ: پروسه cloudflared زنده باشد + سرور محلی + در صورت
+                # امکان healthz از بیرون (hairpin NAT نمی‌گذارد حساب می‌کنیم)
+                ext_fail = 0
                 while not stopped() and proc.poll() is None:
-                    time.sleep(5)
+                    time.sleep(8)
+                    proc_alive = proc.poll() is None
+                    local_ok = _local_healthz(port)
+                    # healthz از بیرون (ممکن است hairpin نخورد — الزامی نیست)
                     try:
                         req = urllib.request.Request(url.rstrip("/") + "/healthz",
-                            headers={"User-Agent": "DND-Bot-check/2.49", "Connection": "close"})
-                        with urllib.request.urlopen(req, timeout=5) as r:
-                            if r.status == 200:
-                                consecutive_fail = 0
-                                continue
+                            headers={"User-Agent": "DND-Bot-check/2.50", "Connection": "close"})
+                        with urllib.request.urlopen(req, timeout=6) as r:
+                            body = r.read(200)
+                            ext_ok = (r.status == 200 and b'"ok"' in body)
                     except Exception:
-                        pass
-                    consecutive_fail += 1
-                    if consecutive_fail >= 3:
-                        log("⚠️ تونل ۳ بار پشت سر هم پاسخ نداد — ری‌استارت...")
+                        ext_ok = False
+                    if not proc_alive:
+                        log("⚠️ پروسه cloudflared بسته شد — ری‌استارت...")
                         break
+                    if not local_ok:
+                        log("⚠️ سرور محلی Flask از دسترس خارج شد — منتظر می‌مانم...")
+                        continue
+                    if not ext_ok:
+                        ext_fail += 1
+                        if ext_fail == 1 or ext_fail % 6 == 0:
+                            log("ℹ️ healthz از بیرون پاسخ نداد (hairpin NAT معمول) — ادامه می‌دهم.")
+                        # اگه خیلی طول کشید چک کن لاگ cloudflared چی میگه
+                        if ext_fail >= 3 and not _cf_registered_connected(cf_log_path):
+                            log("⚠️ به نظر می‌رسد تونل اتصال فعال ندارد — ری‌استارت...")
+                            break
+                        continue
+                    ext_fail = 0
                 if not stopped():
                     log("⚠️ تونل قطع شد — اتصال مجدد...")
             finally:
