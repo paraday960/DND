@@ -194,6 +194,31 @@ def build_app(store, narrator, telegram_app=None, loop=None):
                         return user
             except Exception:
                 pass
+        # حالت مهمان (وب‌محور): هر کسی با guest_id تصادفی + نام بتواند بازی کند
+        # guest_id در localStorage کلاینت ذخیره می‌شود و هویت پایدار می‌دهد
+        gid = (request.args.get("guest_id")
+               or request.headers.get("X-Guest-Id")
+               or "")
+        gname = (request.args.get("guest_name")
+                 or request.headers.get("X-Guest-Name")
+                 or "")
+        # همچنین از body
+        if (not gid or not gname) and request.is_json:
+            try:
+                b = _json_body() or {}
+                if not gid and b.get("guest_id"):
+                    gid = str(b.get("guest_id"))
+                if not gname and b.get("guest_name"):
+                    gname = str(b.get("guest_name"))
+            except Exception:
+                pass
+        if gid and gname:
+            try:
+                gid_int = int(gid)
+            except (TypeError, ValueError):
+                gid_int = 900000000 + (abs(hash(str(gid))) % 99000000)
+            clean_name = (gname or "میهمان").strip()[:30] or "میهمان"
+            return {"id": gid_int, "first_name": clean_name, "_guest": True}
         # حالت dev ریموت: با هدر X-Dev-Secret که سرور در استارتاپ تولید می‌کند
         # می‌توان از بیرون (مثلاً سندباکس دیباگ) بدون initData تلگرام تست کرد.
         dev_secret = request.headers.get("X-Dev-Secret", "")
@@ -222,7 +247,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     def need_user():
         u = get_user()
         if not u:
-            return None, api_err("شناسایی نشدی — مینی‌گیم را از داخل تلگرام باز کن.", 401)
+            return None, api_err("شناسایی نشدی — لطفاً نام خود را وارد کن تا وارد شوی.", 401)
         return u, None
 
     def _s(v, default=""):
@@ -430,7 +455,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     @app.get("/api/meta")
     def api_meta():
         return api_ok({
-            "version": "2.51",
+            "version": "2.52",
             "races": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
                        "bonus": ", ".join(f"{b:+d}" for b in v["bonus"].values())}
                       for k, v in RACES.items()],

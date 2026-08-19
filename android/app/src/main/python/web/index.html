@@ -233,11 +233,26 @@
 </header>
 
 <main>
-  <!-- صفحه ورود -->
-  <section id="screen-home">
+  <!-- صفحه ورود نام (حالت وب/مهمان) -->
+  <section id="screen-login" class="hidden">
+    <div class="card hero">
+      <h1>🐉 ورود به دانجن‌انددراگون</h1>
+      <p>این مینی‌گیم را می‌توانی <b>هم در تلگرام</b> بازی کنی هم <b>مستقیم در مرورگر</b>. لطفاً نام خود را وارد کن:</p>
+      <input id="inpGuestName" placeholder="اسم شخصیت/بازیکن (مثلاً: آرش)" maxlength="24"
+             onkeydown="if(event.key==='Enter')guestLogin()">
+      <button class="btn gold" id="btnGuestLogin" onclick="guestLogin()">⚔️ ورود به بازی</button>
+      <p class="hint">اسم شما فقط روی این گوشی ذخیره می‌شود و نیازی به ثبت‌نام نیست.</p>
+      <div id="tgHint" class="hidden" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
+        <p style="color:var(--muted);font-size:12px">💡 در تلگرام باز کردی؟ اگر خودکار شناسایی نشد دوباره از دکمه مینی‌گیم تلگرام باز کن یا همین‌جا نام بزن و بازی کن.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- صفحه خانه (بعد از ورود) -->
+  <section id="screen-home" class="hidden">
     <div class="card hero">
       <h1>🐉 مینی‌گیم دانجن‌انددراگون</h1>
-      <p>با هوش مصنوعی به سبک Baldur's Gate 3 — سناریو بساز، ماجرا برو، نبرد نوبتی با سیستم اکشن سه‌گانه! ⚔️</p>
+      <p id="welcomeText">با هوش مصنوعی به سبک Baldur's Gate 3 — سناریو بساز، ماجرا برو، نبرد نوبتی با سیستم اکشن سه‌گانه! ⚔️</p>
       <input id="inpRoomName" placeholder="اسم اتاق (مثلاً: سفر به کوهستان مه‌آلود)" maxlength="40">
       <button class="btn gold" id="btnCreate" onclick="createRoom()">🎮 ساخت اتاق جدید (میزبان)</button>
       <div class="or">— یا —</div>
@@ -245,7 +260,7 @@
         <input id="inpCode" placeholder="کد اتاق دوستت" maxlength="8" style="text-transform:uppercase">
         <button class="btn blue" onclick="joinRoom()">🔗 ورود</button>
       </div>
-      <p class="hint">کد اتاق را با دوستانت به اشتراک بگذار؛ هر ۸ نفر<br>داخل همین مینی‌گیم با هم بازی می‌کنید!</p>
+      <p class="hint">کد اتاق را با دوستانت به اشتراک بگذار؛ هر ۸ نفر<br>داخل همین مینی‌گیم با هم بازی می‌کنید!<br><small style="color:var(--muted)">برای خروج/تغییر نام: <a href="javascript:guestLogout()" style="color:var(--gold2)">اینجا بزن</a></small></p>
     </div>
   </section>
 
@@ -329,28 +344,77 @@ const COND_FA = {
 // شرط‌هایی که اکشن اصلی را می‌سوزانند (برای غیرفعال کردن دکمه‌ها)
 const CANT_ACT = new Set(["stunned","unconscious","paralyzed","incapacitated"]);
 
+function guestCreds() {
+  const gid = localStorage.getItem('dnd_guest_id') || '';
+  const gname = localStorage.getItem('dnd_guest_name') || '';
+  return { gid, gname };
+}
+function hasAuth() {
+  // وقتی در تلگرام هست و initData معتبر داریم OR وقتی نام مهمان ذخیره شده
+  if (TG && TG.initData && TG.initData.length > 10) return 'tg';
+  const {gid,gname} = guestCreds();
+  if (gid && gname) return 'guest';
+  return null;
+}
+function guestLogin() {
+  const nameIn = document.getElementById('inpGuestName');
+  let name = (nameIn.value || '').trim();
+  if (!name) { toast('⚠️ لطفاً یک اسم وارد کن'); nameIn.focus(); return; }
+  name = name.slice(0,24);
+  let gid = localStorage.getItem('dnd_guest_id');
+  if (!gid) { gid = String(Date.now() % 10000000 + 2000000); localStorage.setItem('dnd_guest_id', gid); }
+  localStorage.setItem('dnd_guest_name', name);
+  // dev legacy keys
+  localStorage.setItem('dnd_dev_id', gid);
+  localStorage.setItem('dnd_dev_name', name);
+  showScreen('home');
+  refreshHomeWelcome();
+  // اگر در میانه پیوستن به اتاق بود، برگرده
+  const pendingCode = sessionStorage.getItem('dnd_pending_join') || '';
+  if (pendingCode) { sessionStorage.removeItem('dnd_pending_join'); doJoin(pendingCode); }
+}
+function guestLogout() {
+  localStorage.removeItem('dnd_guest_id');
+  localStorage.removeItem('dnd_guest_name');
+  if (roomCode) { roomCode=''; localStorage.removeItem('dnd_room'); }
+  S = null; META = null;
+  location.reload();
+}
+function refreshHomeWelcome() {
+  const {gname} = guestCreds();
+  const wt = document.getElementById('welcomeText');
+  if (wt && gname) {
+    wt.innerHTML = 'خوش آمدی <b style="color:var(--gold2)">' + gname.replace(/[<>&]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) + '</b>! سناریو بساز، ماجرا برو، نبرد نوبتی با سیستم اکشن سه‌گانه! ⚔️';
+  }
+}
+
 async function api(path, body) {
   let init = (TG && TG.initData) ? TG.initData : '';
-  // در حالت dev/test (بدون تلگرام): از user_id ثابت localStorage استفاده کن
-  const DEV_MODE = !TG || !init;
-  if (DEV_MODE) {
-    let devId = localStorage.getItem('dnd_dev_id');
-    if (!devId) { devId = String(Math.floor(100000 + Math.random() * 900000)); localStorage.setItem('dnd_dev_id', devId); }
-    init = '';  // هیچ initData تلگرامی نیست
-    const sep = path.includes('?') ? '&' : '?';
-    path = path + sep + 'user_id=' + encodeURIComponent(devId)
-         + '&user_name=' + encodeURIComponent(localStorage.getItem('dnd_dev_name') || 'بازیکن آزمایشی');
+  const authMode = hasAuth();
+  if (!authMode) {
+    // اگر در این لحظه auth نداریم، صفحه ورود را نشان بده
+    showScreen('login');
+    const codeInUrl = new URLSearchParams(location.search).get('c') || '';
+    if (codeInUrl) sessionStorage.setItem('dnd_pending_join', codeInUrl);
+    throw new Error('لطفاً اول وارد شو');
   }
   const opt = { method: body ? 'POST' : 'GET', headers: {} };
   if (init) {
     opt.headers['X-Init-Data'] = init;
-    // همچنین initData را به‌عنوان کوئری پارامتر بفرست (برای webviewهایی که هدر را فیلتر می‌کنند)
     const sep = path.includes('?') ? '&' : '?';
     path = path + sep + 'tgWebAppData=' + encodeURIComponent(init);
+  } else {
+    // حالت مهمان (وب/مرورگر)
+    const {gid,gname} = guestCreds();
+    opt.headers['X-Guest-Id'] = gid;
+    opt.headers['X-Guest-Name'] = encodeURIComponent(gname);
+    const sep = path.includes('?') ? '&' : '?';
+    path = path + sep + 'guest_id=' + encodeURIComponent(gid)
+         + '&guest_name=' + encodeURIComponent(gname);
+    if (body) body = { ...body, guest_id: gid, guest_name: gname };
   }
   if (body) {
     opt.headers['Content-Type'] = 'application/json';
-    // در POST هم initData داخل body بفرست
     if (init) body = { ...body, init_data: init };
     opt.body = JSON.stringify(body);
   }
@@ -363,12 +427,13 @@ async function api(path, body) {
   const j = await r.json().catch(() => ({ ok: false, error: 'پاسخ نامعتبر از سرور' }));
   if (!j.ok) {
     if (r.status === 401) {
-      if (DEV_MODE) {
-        toast('⚠️ سرور در حالت DEV نیست — از dev mode نمی‌توان استفاده کرد');
+      if (init) {
+        toast('⚠️ جلسه تلگرام منقضی شد — به حالت مهمان می‌رویم...');
+        localStorage.removeItem('dnd_guest_id'); // force guest login
+        setTimeout(() => { location.reload(); }, 1500);
       } else {
-        // در صورتی که تلگرام نتوانست هویت را تشخیص دهد، صفحه را رفرش کن
-        toast('⚠️ جلسه تلگرام شناسایی نشد — چند ثانیه صبر کن...');
-        setTimeout(() => location.reload(), 1500);
+        toast('⚠️ جلسه مهمان منقضی شد');
+        guestLogout();
       }
     }
     throw new Error(j.error || 'خطا');
@@ -382,16 +447,44 @@ function toast(msg) {
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 /* ================= بارگذاری اولیه ================= */
-async function init() {
-  try { META = await api('/api/meta'); } catch (e) { toast('اتصال برقرار نیست'); }
-  try {
-    const d = await api('/api/meta'); META = d;
-  } catch (e) {}
-  if (roomCode) { try { await loadState(); } catch (e) { showHome(); } }
-  else showHome();
+function showScreen(name) {
+  ['login','home','game'].forEach(s => {
+    const el = document.getElementById('screen-'+s);
+    if (el) el.classList.toggle('hidden', s !== name);
+  });
+  const tb = $('#tabbar');
+  if (tb) tb.classList.toggle('hidden', name !== 'game');
 }
-function showHome() { $('#screen-home').classList.remove('hidden'); $('#screen-game').classList.add('hidden'); $('#tabbar').classList.add('hidden'); }
-function showGame() { $('#screen-home').classList.add('hidden'); $('#screen-game').classList.remove('hidden'); $('#tabbar').classList.remove('hidden'); }
+async function init() {
+  // اول meta را بدون auth بگیر (که نسخه و ... را داشته باشیم)
+  try {
+    const r = await fetch('/api/meta');
+    const j = await r.json(); if (j && j.ok) META = j.data;
+  } catch(e) {}
+  // چک کن لینک دعوت هست؟
+  const params = new URLSearchParams(location.search);
+  const cFromUrl = params.get('c') || params.get('room') || '';
+  if (cFromUrl) { $('#inpCode').value = cFromUrl.toUpperCase(); sessionStorage.setItem('dnd_pending_join', cFromUrl.toUpperCase()); }
+  // آیا کاربر لاگین است؟
+  const mode = hasAuth();
+  if (!mode) {
+    showScreen('login');
+    // اگر در تلگرام باز شده ولی initData هنوز نرسیده، کمی صبر کن و رفرش کن
+    if (TG) {
+      document.getElementById('tgHint').classList.remove('hidden');
+      setTimeout(() => { if (!hasAuth()) { /* همچنان منتظر نام می‌مانیم */ } }, 1500);
+      document.getElementById('inpGuestName').focus();
+    } else {
+      document.getElementById('inpGuestName').focus();
+    }
+    return;
+  }
+  refreshHomeWelcome();
+  if (roomCode) { try { await loadState(); return; } catch (e) {} }
+  showScreen('home');
+}
+function showHome() { showScreen('home'); }
+function showGame() { showScreen('game'); }
 
 async function loadState() {
   if (!roomCode) return null;

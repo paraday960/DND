@@ -86,7 +86,7 @@ def tg(method, payload=None, timeout=25, retries=2):
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "DND-Bot-Android/2.51",
+                "User-Agent": "DND-Bot-Android/2.52",
                 "Connection": "close",
             }
             req = urllib.request.Request(url, data=data, headers=headers)
@@ -153,7 +153,7 @@ WELCOME = ("🐉 به دانجن‌مستر هوشمند خوش اومدی!\n\n"
 _mb_lock = threading.Lock()
 _menu_button_set = False  # آیا در این چرخه دکمه منو ست شده است؟
 
-HELP = ("📚 راهنما (v2.51):\n"
+HELP = ("📚 راهنما (v2.52):\n"
         "🎮 /start — منوی اصلی + دکمه مینی‌گیم\n"
         "🔗 /link — لینک قابل‌کپی مینی‌گیم (برای مرورگر/دیباگ)\n"
         "📊 /status — وضعیت زنده بات و تونل\n"
@@ -248,7 +248,7 @@ def cmd_link(store, chat, uid, uname, args):
                        "`" + secret + "`\n"
                        "_این کلید را به جز برای تست در چت پشتیبانی به کسی ندهید._")
     send(chat,
-         "🔗 **لینک مینی‌گیم (v2.51):**\n\n"
+         "🔗 **لینک مینی‌گیم (v2.52):**\n\n"
          + url + secret_line + "\n\n"
          "_اگر مینی‌گیم در تلگرام باز نمی‌شود، لینک را کپی و در مرورگر باز کنید._",
          kb_link)
@@ -350,7 +350,7 @@ def register_menu_button(url, notify=False):
                 if owner and owner.get("chat_id"):
                     try:
                         send(owner["chat_id"],
-                             "✅ مینی‌گیم v2.51 آنلاین شد!\n"
+                             "✅ مینی‌گیم v2.52 آنلاین شد!\n"
                              "🔗 " + url + "\n\n"
                              "🎮 از /link برای گرفتن لینک قابل‌کپی استفاده کن.",
                              webapp_kb(url))
@@ -367,7 +367,7 @@ def cmd_status(store, chat, uid, uname, args):
     import sys as _sys
     url = tunnel_url()
     import platform
-    lines = ["📊 **وضعیت بات D&D v2.51**", ""]
+    lines = ["📊 **وضعیت بات D&D v2.52**", ""]
     lines.append("🤖 ربات: " + ("✅ آنلاین" if _polling_alive() else "⚠️ نامشخص"))
     lines.append("🌐 تونل: " + ("✅ متصل — " + url if url else "❌ قطع"))
     if url:
@@ -1066,6 +1066,28 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return {"id": uid, "first_name": name, "_dev": True}
         except Exception:
             pass
+        # حالت مهمان (وب‌محور): guest_id+guest_name از query/header/body
+        try:
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            gid = ((q.get("guest_id") or [None])[0]
+                   or self.headers.get("X-Guest-Id")
+                   or "")
+            gname = ((q.get("guest_name") or [None])[0]
+                     or self.headers.get("X-Guest-Name")
+                     or "")
+            if not gid or not gname:
+                b = self._body() or {}
+                gid = gid or str(b.get("guest_id", "") or "")
+                gname = gname or str(b.get("guest_name", "") or "")
+            if gid and gname:
+                try:
+                    gid_int = int(gid)
+                except (TypeError, ValueError):
+                    gid_int = 900000000 + (abs(hash(str(gid))) % 99000000)
+                clean = (gname or "میهمان").strip()[:30] or "میهمان"
+                return {"id": gid_int, "first_name": clean, "_guest": True}
+        except Exception:
+            pass
         return None
 
     _body_cache = None
@@ -1102,7 +1124,7 @@ class ApiHandler(BaseHTTPRequestHandler):
     def _api_meta(self):
         from game.rules import RACES, CLASSES, WEAPONS, SPELLS, MONSTERS
         return {
-            "version": "2.51",
+            "version": "2.52",
             "races": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
                        "bonus": ", ".join("%+d" % b for b in v["bonus"].values())} for k, v in RACES.items()],
             "classes": [{"key": k, "fa": v["fa"], "emoji": v["emoji"], "hit_die": v["hit_die"],
@@ -1283,7 +1305,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         user = self._user()
         if not user:
-            self._json(401, {"ok": False, "error": "شناسایی نشدی — از داخل تلگرام باز کن."})
+            self._json(401, {"ok": False, "error": "شناسایی نشدی — لطفاً نام خود را وارد کن تا وارد شوی."})
             return
         body = self._body()
         code = (body.get("room") or body.get("code") or "").strip().upper()
@@ -1982,7 +2004,7 @@ def register_quick_tunnel():
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 DND-Bot/2.51",
+            "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 DND-Bot/2.52",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as r:
@@ -2225,7 +2247,7 @@ def tunnel_loop(port, native_dir=None):
                     try:
                         req = urllib.request.Request(
                             url.rstrip("/") + "/healthz",
-                            headers={"User-Agent": "DND-Bot-hc/2.51", "Connection": "close"})
+                            headers={"User-Agent": "DND-Bot-hc/2.52", "Connection": "close"})
                         with urllib.request.urlopen(req, timeout=6) as r:
                             body = r.read(200)
                             if r.status == 200 and b'"ok"' in body and b"Cloudflare Tunnel error" not in body:
@@ -2260,7 +2282,7 @@ def tunnel_loop(port, native_dir=None):
                     # healthz از بیرون (ممکن است hairpin نخورد — الزامی نیست)
                     try:
                         req = urllib.request.Request(url.rstrip("/") + "/healthz",
-                            headers={"User-Agent": "DND-Bot-check/2.51", "Connection": "close"})
+                            headers={"User-Agent": "DND-Bot-check/2.52", "Connection": "close"})
                         with urllib.request.urlopen(req, timeout=6) as r:
                             body = r.read(200)
                             ext_ok = (r.status == 200 and b'"ok"' in body)
