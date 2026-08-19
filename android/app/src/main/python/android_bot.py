@@ -86,7 +86,7 @@ def tg(method, payload=None, timeout=25, retries=2):
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "DND-Bot-Android/2.58",
+                "User-Agent": "DND-Bot-Android/2.59",
                 "Connection": "close",
             }
             req = urllib.request.Request(url, data=data, headers=headers)
@@ -1124,7 +1124,7 @@ class ApiHandler(BaseHTTPRequestHandler):
     def _api_meta(self):
         from game.rules import RACES, CLASSES, WEAPONS, SPELLS, MONSTERS
         return {
-            "version": "2.58",
+            "version": "2.59",
             "races": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
                        "bonus": ", ".join("%+d" % b for b in v["bonus"].values())} for k, v in RACES.items()],
             "classes": [{"key": k, "fa": v["fa"], "emoji": v["emoji"], "hit_die": v["hit_die"],
@@ -2060,7 +2060,7 @@ def register_quick_tunnel():
                     headers = {
                         "Content-Type": "application/json",
                         "Accept": "application/json",
-                        "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 DND-Bot/2.58",
+                        "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 DND-Bot/2.59",
                     }
                     if host_hdr:
                         headers["Host"] = host_hdr
@@ -2209,11 +2209,61 @@ def _start_named_tunnel(cf, info, port, log_file):
     for ip in edges[:6]:
         cmd += ["--edge", "%s:7844" % ip]
     cmd += ["run", info["id"]]
+    # GODEBUG=netdns=cgo باعث می‌شود باینری Go از DNS سیستم اندروید (getaddrinfo) استفاده کند
+    # که روی اندروید به درست کار می‌کند و از فیلترشکن/VPN هم پیروی می‌کند
     env = {"HOME": FILES_DIR, "PATH": "/system/bin:/system/xbin",
-           "TMPDIR": FILES_DIR, "TMP": FILES_DIR}
+           "TMPDIR": FILES_DIR, "TMP": FILES_DIR,
+           "GODEBUG": "netdns=cgo",
+           "HTTP_PROXY": os.environ.get("HTTP_PROXY", ""),
+           "HTTPS_PROXY": os.environ.get("HTTPS_PROXY", ""),
+           "http_proxy": os.environ.get("http_proxy", ""),
+           "https_proxy": os.environ.get("https_proxy", "")}
     return subprocess.Popen(
         cmd, stdout=log_file, stderr=subprocess.STDOUT,
         env=env, close_fds=True)
+
+
+def _start_quick_tunnel_direct(cf, port, log_file):
+    """فالبک: مستقیماً خود باینری cloudflared را در حالت quick tunnel اجرا کن.
+    در این حالت ثبت تونل هم داخل باینری انجام می‌شود — با GODEBUG=netdns=cgo از DNS سیستم استفاده می‌کند
+    که با فیلترشکن هم سازگار است."""
+    edges = resolve_edge_ips()
+    cmd = [cf, "tunnel", "--url", "http://127.0.0.1:%d" % port,
+           "--edge-ip-version", "4", "--no-autoupdate",
+           "--loglevel", "info",
+           "--protocol", "http2"]
+    for ip in edges[:6]:
+        cmd += ["--edge", "%s:7844" % ip]
+    env = {"HOME": FILES_DIR, "PATH": "/system/bin:/system/xbin",
+           "TMPDIR": FILES_DIR, "TMP": FILES_DIR,
+           "GODEBUG": "netdns=cgo",
+           "HTTP_PROXY": os.environ.get("HTTP_PROXY", ""),
+           "HTTPS_PROXY": os.environ.get("HTTPS_PROXY", ""),
+           "http_proxy": os.environ.get("http_proxy", ""),
+           "https_proxy": os.environ.get("https_proxy", "")}
+    return subprocess.Popen(
+        cmd, stdout=log_file, stderr=subprocess.STDOUT,
+        env=env, close_fds=True)
+
+
+def _cf_quick_hostname(log_path):
+    """hostname را از لاگ quick tunnel مستقیم پیدا می‌کند (cloudflared خطی شبیه
+    'https://xxxx-xxxx.trycloudflare.com' یا 'INF |  https://...' چاپ می‌کند)."""
+    import re
+    try:
+        with open(log_path, "rb") as f:
+            data = f.read().decode("utf-8", errors="replace")
+        m = re.search(r"https://([a-z0-9\-]+\.trycloudflare\.com)", data)
+        if m:
+            return m.group(1)
+        m = re.search(r"https://([a-z0-9\-]+\.[a-z0-9]+\.cloudflarestunnel\.com)", data)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return None
+
+
 
 
 def _local_healthz(port, timeout=3):
@@ -2301,14 +2351,36 @@ def tunnel_loop(port, native_dir=None):
                 if info:
                     log("🔑 از credential کش شده استفاده می‌کنم...")
                 else:
-                    # روش اصلی: ثبت quick tunnel از پایتون (با پایتون DNS کار می‌کند، نه Go)
+                    # روش ۱: ثبت quick tunnel از پایتون
                     # User-Agent شبیه مرورگر و بدون تکرار پشت سر هم از 429 جلوگیری می‌کند
-                    info = register_quick_tunnel()
-                    _save_cached_creds(info)
-                url = "https://" + info["hostname"]
-                log("🌐 در حال اتصال به تونل: " + url)
-
-                proc = _start_named_tunnel(cf, info, port, log_file)
+                    try:
+                        info = register_quick_tunnel()
+                        _save_cached_creds(info)
+                        url = "https://" + info["hostname"]
+                        log("🌐 در حال اتصال به تونل: " + url)
+                        proc = _start_named_tunnel(cf, info, port, log_file)
+                        direct_mode = False
+                    except Exception as reg_err:
+                        # روش ۲ (فالبک): اجرای مستقیم cloudflared quick tunnel
+                        # در این حالت خود باینری ثبت تونل را انجام می‌دهد — با GODEBUG=netdns=cgo
+                        # از DNS سیستم (و در نتیجه فیلترشکن) استفاده می‌کند
+                        log("⚠️ ثبت از پایتون ناموفق بود (%s) — روش مستقیم با DNS سیستم..." % str(reg_err)[:80])
+                        proc = _start_quick_tunnel_direct(cf, port, log_file)
+                        direct_mode = True
+                        url = None
+                        # منتظر بمان تا hostname در لاگ پیدا شود
+                        for _ in range(30):
+                            if proc.poll() is not None:
+                                break
+                            time.sleep(1)
+                            hn = _cf_quick_hostname(cf_log_path)
+                            if hn:
+                                url = "https://" + hn
+                                info = {"hostname": hn}
+                                log("🌐 تونل ساخته شد (مستقیم): " + url)
+                                break
+                        if not url:
+                            raise RuntimeError("در حالت مستقیم هم تونل ساخته نشد — لطفاً فیلترشکن را روشن کن یا اینترنت را چک کن")
 
                 # فاز ۱: صبر کن تا سرور محلی (Flask) بالا باشد
                 local_ok = False
@@ -2324,13 +2396,14 @@ def tunnel_loop(port, native_dir=None):
                     raise RuntimeError("flask بالا نیامد")
 
                 # فاز ۲: صبر کن تا cloudflared واقعاً به edge وصل شود
-                # (چک از طریق لاگ 'Registered tunnel connection' — این نشانه قطعی اتصال است)
+                # (چک از طریق لاگ 'Registered tunnel connection')
                 edge_ok = False
-                for i in range(45):
+                for i in range(50):
                     if proc.poll() is not None:
                         log("⚠️ cloudflared هنگام اتصال بسته شد (کد %s)." % proc.returncode)
                         try:
-                            os.remove(_cf_creds_path())
+                            if not direct_mode:
+                                os.remove(_cf_creds_path())
                         except Exception:
                             pass
                         for ln in _last_cf_log_tail(cf_log_path, 12):
@@ -2339,6 +2412,12 @@ def tunnel_loop(port, native_dir=None):
                     if _cf_registered_connected(cf_log_path):
                         edge_ok = True
                         break
+                    # در حالت مستقیم، اگر hostname هنوز در حال دریافت است
+                    if direct_mode and not url and i % 3 == 0:
+                        hn = _cf_quick_hostname(cf_log_path)
+                        if hn:
+                            url = "https://" + hn
+                            log("🌐 تونل ساخته شد (مستقیم): " + url)
                     time.sleep(1)
 
                 if not edge_ok:
@@ -2362,7 +2441,7 @@ def tunnel_loop(port, native_dir=None):
                     try:
                         req = urllib.request.Request(
                             url.rstrip("/") + "/healthz",
-                            headers={"User-Agent": "DND-Bot-hc/2.55", "Connection": "close"})
+                            headers={"User-Agent": "DND-Bot-hc/2.59", "Connection": "close"})
                         with urllib.request.urlopen(req, timeout=6) as r:
                             body = r.read(200)
                             if r.status == 200 and b'"ok"' in body and b"Cloudflare Tunnel error" not in body:
