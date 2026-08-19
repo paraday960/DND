@@ -834,8 +834,9 @@ class ApiHandler(BaseHTTPRequestHandler):
                          "weapons": v["weapons"]} for k, v in CLASSES.items()],
             "weapons": {k: [{"key": w, "fa": WEAPONS[w]["fa"], "emoji": WEAPONS[w]["emoji"],
                              "dmg": WEAPONS[w]["dmg"]} for w in v["weapons"]] for k, v in CLASSES.items()},
-            "spells": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
-                        "dmg": v.get("dmg", v.get("heal", "")), "kind": v["kind"]}
+            "spells": [{"key": k, "fa": v["fa"], "emoji": v.get("emoji", "✨"),
+                        "dmg": v.get("dmg", v.get("heal", "")), "kind": v.get("kind", "utility"),
+                        "level": v.get("level", 0), "action": v.get("action", "main")}
                        for k, v in SPELLS.items()],
             "monsters": [{"key": k, "fa": v["fa"], "emoji": v["emoji"]} for k, v in MONSTERS.items()],
         }
@@ -845,10 +846,27 @@ class ApiHandler(BaseHTTPRequestHandler):
         from game.rules import RACES, CLASSES, WEAPONS, ABILITIES, ABILITY_FA
         if not ch:
             return None
+        try:
+            profs = list(ch.proficiencies)
+        except Exception:
+            profs = []
+        try:
+            inv = dict(ch.inventory)
+        except Exception:
+            inv = {}
+        try:
+            conds = list(ch.conditions)
+        except Exception:
+            conds = []
+        try:
+            feats = ch.features()
+        except Exception:
+            feats = []
         return {
             "name": ch.name,
             "race_key": ch.race, "race": RACES[ch.race]["fa"], "race_emoji": RACES[ch.race]["emoji"],
             "cls_key": ch.cls, "cls": CLASSES[ch.cls]["fa"], "cls_emoji": CLASSES[ch.cls]["emoji"],
+            "emoji": CLASSES[ch.cls]["emoji"],
             "level": ch.level, "xp": ch.xp,
             "xp_next": ch.xp_needed_for(ch.level + 1) if ch.level < 20 else None,
             "can_level_up": ch.can_level_up(),
@@ -857,11 +875,14 @@ class ApiHandler(BaseHTTPRequestHandler):
             "weapon_dmg": WEAPONS[ch.weapon]["dmg"], "attack_bonus": ch.attack_bonus(),
             "abilities": [{"key": a, "fa": ABILITY_FA[a], "value": ch.abilities[a], "mod": ch.stat_mod(a)}
                           for a in ABILITIES],
-            "features": ch.features(),
+            "features": feats,
+            "proficiencies": profs,
+            "inventory": inv,
+            "conditions": conds,
+            "inspiration": bool(getattr(ch, "inspiration", False)),
         }
 
     def _combat(self, s, uid):
-        from game.rules import RACES
         c = s.combat
         if not c or not c.get("participants"):
             return None
@@ -869,20 +890,45 @@ class ApiHandler(BaseHTTPRequestHandler):
         idx = min(c.get("turn", 0), len(parts) - 1)
         out = []
         for i, p in enumerate(parts):
+            is_dead = bool(p.get("dead"))
+            is_downed = bool(p.get("downed"))
+            hp = p.get("hp", 0)
+            max_hp = p.get("max_hp")
+            if max_hp is None:
+                max_hp = max(hp, 1)
+                if not p.get("_max_hp_cached"):
+                    p["_max_hp_cached"] = max_hp
+                else:
+                    max_hp = p["_max_hp_cached"]
+            alive = (not is_dead) and p.get("alive", True) and hp > 0
             out.append({
-                "name": p["name"], "kind": p["kind"], "hp": p["hp"],
-                "max_hp": p.get("max_hp", p["hp"]), "ac": p["ac"], "alive": p["alive"],
-                "init": p["init"], "turn": i == idx,
+                "name": p["name"], "kind": p["kind"], "hp": hp,
+                "max_hp": max_hp, "ac": p.get("ac", 10),
+                "alive": alive, "downed": is_downed, "dead": is_dead,
+                "init": p.get("init", 0), "turn": i == idx,
+                "acted": bool(p.get("acted", False)),
+                "bonus_acted": bool(p.get("bonus_acted", False)),
+                "uid": str(p.get("uid", "")) if p.get("uid") is not None else None,
+                "distance": p.get("distance", 0),
+                "height": p.get("height", 0),
+                "cover": p.get("cover", "none"),
+                "surface": p.get("surface", "none"),
+                "is_boss": bool(p.get("is_boss")),
+                "emoji": p.get("emoji", "👹" if p["kind"]=="monster" else "🧙"),
                 "is_player": p["kind"] == "player",
                 "is_me": p["kind"] == "player" and uid is not None and p.get("uid") == str(uid),
+                "conditions": list(p.get("conditions", [])),
             })
         cur = parts[idx]
         return {
             "round": c.get("round", 1),
+            "turn": idx,
             "current": cur["name"],
+            "current_uid": str(cur.get("uid", "")) if cur.get("uid") is not None else None,
             "current_is_player": cur["kind"] == "player",
             "is_my_turn": cur["kind"] == "player" and uid is not None and cur.get("uid") == str(uid),
             "participants": out,
+            "in_progress": True,
         }
 
     def _state(self, s, user):
