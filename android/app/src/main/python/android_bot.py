@@ -86,7 +86,7 @@ def tg(method, payload=None, timeout=25, retries=2):
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "DND-Bot-Android/2.56",
+                "User-Agent": "DND-Bot-Android/2.57",
                 "Connection": "close",
             }
             req = urllib.request.Request(url, data=data, headers=headers)
@@ -1124,7 +1124,7 @@ class ApiHandler(BaseHTTPRequestHandler):
     def _api_meta(self):
         from game.rules import RACES, CLASSES, WEAPONS, SPELLS, MONSTERS
         return {
-            "version": "2.56",
+            "version": "2.57",
             "races": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
                        "bonus": ", ".join("%+d" % b for b in v["bonus"].values())} for k, v in RACES.items()],
             "classes": [{"key": k, "fa": v["fa"], "emoji": v["emoji"], "hit_die": v["hit_die"],
@@ -1140,7 +1140,7 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     # ---------- وضعیت ----------
     def _sheet(self, ch):
-        from game.rules import RACES, CLASSES, WEAPONS, ABILITIES, ABILITY_FA
+        from game.rules import RACES, CLASSES, WEAPONS, ABILITIES, ABILITY_FA, proficiency_bonus
         if not ch:
             return None
         try:
@@ -1169,7 +1169,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             "can_level_up": ch.can_level_up(),
             "hp": ch.hp, "max_hp": ch.max_hp, "ac": ch.ac, "gold": ch.gold,
             "weapon": WEAPONS[ch.weapon]["fa"], "weapon_emoji": WEAPONS[ch.weapon]["emoji"],
-            "weapon_dmg": WEAPONS[ch.weapon]["dmg"], "attack_bonus": ch.attack_bonus(),
+            "weapon_dmg": WEAPONS[ch.weapon]["dmg"], "weapon_key": ch.weapon,
+            "attack_bonus": ch.attack_bonus(),
+            "spell_attack_bonus": (ch.spell_mod() + proficiency_bonus(ch.level)) if hasattr(ch,"spell_mod") else 0,
             "abilities": [{"key": a, "fa": ABILITY_FA[a], "value": ch.abilities[a], "mod": ch.stat_mod(a)}
                           for a in ABILITIES],
             "features": feats,
@@ -1177,6 +1179,17 @@ class ApiHandler(BaseHTTPRequestHandler):
             "inventory": inv,
             "conditions": conds,
             "inspiration": bool(getattr(ch, "inspiration", False)),
+            "rage_active": bool(getattr(ch, "rage_active", False)),
+            "rage_turns": int(getattr(ch, "rage_turns", 0)),
+            "dodge": bool(getattr(ch, "dodge", False)),
+            "hidden": bool(getattr(ch, "hidden", False)),
+            "spell_slots": dict(getattr(ch, "spell_slots", {}) or {}),
+            "spell_slots_used": dict(getattr(ch, "spell_slots_used", {}) or {}),
+            "resources": dict(getattr(ch, "resources", {}) or {}),
+            "hit_dice": getattr(ch, "hit_die", "d8"),
+            "hit_dice_used": int(getattr(ch, "hit_dice_used", 0)),
+            "death_saves": dict(getattr(ch, "death_saves", {"success": 0, "fail": 0})),
+            "alive": bool(ch.hp > 0),
         }
 
     def _combat(self, s, uid):
@@ -2004,7 +2017,7 @@ def register_quick_tunnel():
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 DND-Bot/2.56",
+            "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 DND-Bot/2.57",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as r:

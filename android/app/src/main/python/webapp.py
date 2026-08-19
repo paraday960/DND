@@ -32,7 +32,7 @@ from game.map import move_to, describe as map_describe
 from game.world import try_disarm_trap
 from game.models import Character, Session
 from game.rules import (ABILITIES, ABILITY_FA, CLASSES, MONSTERS,
-                        RACES, SPELLS, WEAPONS)
+                        RACES, SPELLS, WEAPONS, proficiency_bonus)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, "web")
@@ -287,7 +287,9 @@ def build_app(store, narrator, telegram_app=None, loop=None):
             "can_level_up": ch.can_level_up(),
             "hp": ch.hp, "max_hp": ch.max_hp, "ac": ch.ac, "gold": ch.gold,
             "weapon": WEAPONS[ch.weapon]["fa"], "weapon_emoji": WEAPONS[ch.weapon]["emoji"],
-            "weapon_dmg": WEAPONS[ch.weapon]["dmg"], "attack_bonus": ch.attack_bonus(),
+            "weapon_dmg": WEAPONS[ch.weapon]["dmg"], "weapon_key": ch.weapon,
+            "attack_bonus": ch.attack_bonus(),
+            "spell_attack_bonus": ch.spell_mod() + proficiency_bonus(ch.level) if hasattr(ch,"spell_mod") else 0,
             "abilities": [{"key": a, "fa": ABILITY_FA[a], "value": ch.abilities[a],
                            "mod": ch.stat_mod(a)} for a in ABILITIES],
             "features": ch.features(),
@@ -295,6 +297,17 @@ def build_app(store, narrator, telegram_app=None, loop=None):
             "inventory": dict(ch.inventory),
             "conditions": list(ch.conditions),
             "inspiration": ch.inspiration,
+            "rage_active": bool(getattr(ch, "rage_active", False)),
+            "rage_turns": int(getattr(ch, "rage_turns", 0)),
+            "dodge": bool(getattr(ch, "dodge", False)),
+            "hidden": bool(getattr(ch, "hidden", False)),
+            "spell_slots": dict(ch.spell_slots or {}),
+            "spell_slots_used": dict(ch.spell_slots_used or {}),
+            "resources": dict(ch.resources or {}),
+            "hit_dice": ch.hit_die,
+            "hit_dice_used": int(getattr(ch, "hit_dice_used", 0)),
+            "death_saves": dict(getattr(ch, "death_saves", {"success": 0, "fail": 0})),
+            "alive": bool(ch.hp > 0),
         }
 
     def _loc_name(l):
@@ -455,7 +468,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     @app.get("/api/meta")
     def api_meta():
         return api_ok({
-            "version": "2.56",
+            "version": "2.57",
             "races": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
                        "bonus": ", ".join(f"{b:+d}" for b in v["bonus"].values())}
                       for k, v in RACES.items()],
