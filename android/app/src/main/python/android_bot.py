@@ -86,7 +86,7 @@ def tg(method, payload=None, timeout=25, retries=2):
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "DND-Bot-Android/2.45",
+                "User-Agent": "DND-Bot-Android/2.46",
                 "Connection": "close",
             }
             req = urllib.request.Request(url, data=data, headers=headers)
@@ -153,9 +153,13 @@ WELCOME = ("🐉 به دانجن‌مستر هوشمند خوش اومدی!\n\n"
 _mb_lock = threading.Lock()
 _menu_button_set = False  # آیا در این چرخه دکمه منو ست شده است؟
 
-HELP = ("📚 راهنما:\n"
+HELP = ("📚 راهنما (v2.46):\n"
+        "🎮 /start — منوی اصلی + دکمه مینی‌گیم\n"
+        "🔗 /link — لینک قابل‌کپی مینی‌گیم (برای مرورگر/دیباگ)\n"
+        "📊 /status — وضعیت زنده بات و تونل\n"
+        "🎮 /game — بازکردن مستقیم مینی‌گیم\n"
         "🎮 /newgame — اتاق بساز (کد می‌گیری)\n"
-        "🔗 /join <کد> — با کد وارد شو\n"
+        "🚪 /join <کد> — با کد وارد شو\n"
         "🧙 /newchar — ساخت کاراکتر\n"
         "📜 /sheet — کاراکترت\n"
         "👥 /party — گروه\n"
@@ -164,8 +168,7 @@ HELP = ("📚 راهنما:\n"
         "🗺️ /where — خلاصه ماجرا\n"
         "⚔️ /combat — شروع نبرد | /attack <دشمن> | /cast <طلسم> | /skip\n"
         "🎲 /roll 2d6+3 یا d20 یا adv\n"
-        "⭐ /levelup | 💠 /xp\n\n"
-        "🎮 برای مینی‌گیم گرافیکی: /start و دکمه ورود")
+        "⭐ /levelup | 💠 /xp")
 
 
 # ==================== دسترسی به ماژول‌های بازی ====================
@@ -203,10 +206,10 @@ def is_dm(session, uid):
 def cmd_start(store, chat, uid, uname, args):
     url = wait_for_tunnel(timeout=25)
     if url:
-        send(chat, WELCOME, webapp_kb(url))
+        send(chat, WELCOME + "\n\n🔗 لینک مینی‌گیم (قابل کپی):\n" + url, webapp_kb(url))
         register_menu_button(url)
     else:
-        send(chat, WELCOME + "\n\n⏳ تونل مینی‌گیم در حال راه‌اندازی است... لحظاتی دیگر /game بزنید.")
+        send(chat, WELCOME + "\n\n⏳ تونل مینی‌گیم در حال راه‌اندازی است... لحظاتی دیگر /link بزنید.")
 
 
 def cmd_game(store, chat, uid, uname, args):
@@ -214,8 +217,51 @@ def cmd_game(store, chat, uid, uname, args):
     if not url:
         send(chat, "❌ هنوز تونل آماده نشده. چند ثانیه صبر کن و دوباره /game بزن.")
         return
-    send(chat, "🎮 مینی‌گیم D&D — همه‌چیز داخل بازی انجام می‌شود!", webapp_kb(url))
+    send(chat, "🎮 مینی‌گیم D&D — همه‌چیز داخل بازی انجام می‌شود!\n🔗 لینک: " + url, webapp_kb(url))
     register_menu_button(url)
+
+
+def cmd_link(store, chat, uid, uname, args):
+    """دستور /link: لینک مینی‌گیم را به صورت متن قابل کپی بفرست (برای دیباگ/اشتراک)."""
+    url = wait_for_tunnel(timeout=20)
+    if not url:
+        send(chat, "⏳ تونل هنوز آماده نشده. چند ثانیه دیگر دوباره /link بزن.")
+        return
+    kb_link = {
+        "inline_keyboard": [[
+            {"text": "🎮 باز کردن مینی‌گیم", "web_app": {"url": url}},
+        ]]
+    }
+    send(chat,
+         "🔗 **لینک مینی‌گیم (v2.46):**\n\n"
+         + url + "\n\n"
+         "_اگر مینی‌گیم در تلگرام باز نمی‌شود، لینک را کپی و در مرورگر باز کنید._",
+         kb_link)
+    register_menu_button(url)
+    # آخرین چتی که /link زد را به‌عنوان صاحب‌بات ذخیره کن تا وقتی تونل دوباره وصل شد
+    # بتوانیم یک پیام خودکار بفرستیم
+    try:
+        _save_owner_chat(chat, uid)
+    except Exception:
+        pass
+
+
+def _save_owner_chat(chat_id, uid):
+    try:
+        p = os.path.join(FILES_DIR, "owner_chat.json")
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump({"chat_id": chat_id, "uid": uid, "ts": int(time.time())}, f)
+    except Exception:
+        pass
+
+
+def _load_owner_chat():
+    try:
+        p = os.path.join(FILES_DIR, "owner_chat.json")
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
 
 
 def wait_for_tunnel(timeout=30):
@@ -236,11 +282,21 @@ def wait_for_tunnel(timeout=30):
     return tunnel_url()  # هرچی که هست برگردون (بهتر از هیچی است)
 
 
-def register_menu_button(url):
+def register_menu_button(url, notify=False):
     """دکمه دائمی مینی‌گیم را کنار کادر پیام ست می‌کند (یک‌بار در هر URL)."""
     global _menu_button_set
     if not url:
         return False
+    # بررسی کن آیا URL قبلاً ثبت شده (جلوگیری از اسپم)
+    prev_url_file = os.path.join(FILES_DIR, "last_registered_url.txt")
+    try:
+        with open(prev_url_file, encoding="utf-8") as f:
+            prev_url = f.read().strip()
+    except Exception:
+        prev_url = ""
+    already_registered = (prev_url == url and _menu_button_set)
+    if already_registered and not notify:
+        return True  # نیازی به ثبت مجدد نیست
     with _mb_lock:
         try:
             # هم وب‌هوک را اگر هست حذف کن (برگشت به حالت polling)
@@ -261,14 +317,60 @@ def register_menu_button(url):
                 {"command": "where", "description": "🗺️ وضعیت ماجرا"},
                 {"command": "combat", "description": "⚔️ شروع نبرد"},
                 {"command": "game", "description": "🎮 بازکردن مینی‌گیم"},
+                {"command": "link", "description": "🔗 لینک مینی‌گیم (قابل کپی)"},
+                {"command": "status", "description": "📊 وضعیت بات"},
                 {"command": "help", "description": "📚 راهنما"},
             ]}, timeout=15, retries=1)
             _menu_button_set = True
+            try:
+                with open(prev_url_file, "w", encoding="utf-8") as f:
+                    f.write(url)
+            except Exception:
+                pass
             log("✅ دکمه منوی مینی‌گیم ثبت شد: " + url)
+            # فقط وقتی تونل تازه وصل شد پیام بده (notify=True از tunnel_loop)
+            # یا اگر هنوز صاحب‌بات لاگین نکرده، فقط یک‌بار در اولین اتصال
+            if notify and prev_url != url:
+                owner = _load_owner_chat()
+                if owner and owner.get("chat_id"):
+                    try:
+                        send(owner["chat_id"],
+                             "✅ مینی‌گیم v2.46 آنلاین شد!\n"
+                             "🔗 " + url + "\n\n"
+                             "🎮 از /link برای گرفتن لینک قابل‌کپی استفاده کن.",
+                             webapp_kb(url))
+                    except Exception:
+                        pass
             return True
         except Exception as e:
             log("ثبت دکمه منو ناموفق: %s" % e)
             return False
+
+
+def cmd_status(store, chat, uid, uname, args):
+    """وضعیت کامل بات (برای دیباگ)."""
+    import sys as _sys
+    url = tunnel_url()
+    import platform
+    lines = ["📊 **وضعیت بات D&D v2.46**", ""]
+    lines.append("🤖 ربات: " + ("✅ آنلاین" if _polling_alive() else "⚠️ نامشخص"))
+    lines.append("🌐 تونل: " + ("✅ متصل — " + url if url else "❌ قطع"))
+    if url:
+        try:
+            req = urllib.request.Request(url + "/healthz", headers={"User-Agent": "DND-check/1.0"})
+            with urllib.request.urlopen(req, timeout=5) as r:
+                lines.append("🔌 healthz: ✅ " + str(r.status))
+        except Exception as e:
+            lines.append("🔌 healthz: ❌ %s" % str(e)[:60])
+    lines.append("💬 نسخه پایتون: " + _sys.version.split()[0])
+    lines.append("📱 دستگاه: " + platform.machine())
+    send(chat, "\n".join(lines))
+
+
+_polling_alive_flag = False
+
+def _polling_alive():
+    return _polling_alive_flag
 
 
 def cmd_help(store, chat, uid, uname, args):
@@ -712,6 +814,7 @@ def on_message(store, msg):
 
     handlers = {
         "start": cmd_start, "help": cmd_help, "game": cmd_game,
+        "link": cmd_link, "status": cmd_status,
         "newgame": cmd_newgame, "reset": cmd_reset, "join": cmd_join,
         "sheet": cmd_sheet, "party": cmd_party, "roll": cmd_roll,
         "scenario": cmd_scenario, "story": cmd_story, "where": cmd_where,
@@ -788,10 +891,20 @@ def on_callback(store, cb):
 # ==================== حلقه ربات ====================
 
 def bot_loop(store):
+    global _polling_alive_flag
     offset = 0
     fail_streak = 0
     last_net_log = 0.0
+    _polling_alive_flag = True
     log("🚀 ربات آنلاین — منتظر پیام‌ها (IPv4-only)...")
+    try:
+        _bot_loop_inner(store, offset, fail_streak, last_net_log)
+    finally:
+        _polling_alive_flag = False
+        log("🔌 پرچم polling خاموش شد")
+
+
+def _bot_loop_inner(store, offset, fail_streak, last_net_log):
     while not stopped():
         try:
             # long-poll تلگرام: timeout=15 روی سرور تلگرام، سوکت ۲۵ ثانیه می‌ماند
@@ -947,6 +1060,7 @@ class ApiHandler(BaseHTTPRequestHandler):
     def _api_meta(self):
         from game.rules import RACES, CLASSES, WEAPONS, SPELLS, MONSTERS
         return {
+            "version": "2.46",
             "races": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
                        "bonus": ", ".join("%+d" % b for b in v["bonus"].values())} for k, v in RACES.items()],
             "classes": [{"key": k, "fa": v["fa"], "emoji": v["emoji"], "hit_die": v["hit_die"],
@@ -1826,7 +1940,7 @@ def register_quick_tunnel():
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "DND-Bot-Android/2.45",
+            "User-Agent": "DND-Bot-Android/2.46",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as r:
@@ -1923,9 +2037,8 @@ def tunnel_loop(port, native_dir=None):
                 f.write(url)
             _menu_button_set = False  # برای آپدیت منو با آدرس جدید
             log("✅ آدرس مینی‌گیم: " + url)
-            # دکمه منو را ست کن
-            register_menu_button(url)
-            # ارسال یک پیام اطلاع‌رسانی به DM (فقط در شروع اولیه)
+            # دکمه منو را ست کن (notify=True ⇒ پیام اطلاع‌رسانی به مالک اگر لاگین باشد)
+            register_menu_button(url, notify=True)
             while not stopped() and proc.poll() is None:
                 # هر ۵ ثانیه چک کن که پروسه زنده است
                 time.sleep(5)

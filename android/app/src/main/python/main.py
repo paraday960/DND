@@ -155,6 +155,9 @@ def watchdog(app: Application):
                 logger.error("تنظیم مجدد وب‌هوک ناموفق: %s", e)
 
 COMMANDS = [
+    BotCommand("link", "🔗 لینک مینی‌گیم (قابل کپی)"),
+    BotCommand("status", "📊 وضعیت بات"),
+    BotCommand("game", "🎮 بازکردن مینی‌گیم"),
     BotCommand("newgame", "🎮 ساخت اتاق بازی"),
     BotCommand("join", "🔗 پیوستن به اتاق"),
     BotCommand("newchar", "🧙 ساخت کاراکتر"),
@@ -228,6 +231,8 @@ def build_app(store=None, narrator=None) -> Application:
     # دستورات پایه
     app.add_handler(CommandHandler("start", handlers.start))
     app.add_handler(CommandHandler("game", handlers.game_cmd))
+    app.add_handler(CommandHandler("link", handlers.link_cmd))
+    app.add_handler(CommandHandler("status", handlers.status_cmd))
     app.add_handler(CommandHandler("help", handlers.help_cmd))
     app.add_handler(CommandHandler("newgame", handlers.newgame_cmd))
     app.add_handler(CommandHandler("join", handlers.join_cmd))

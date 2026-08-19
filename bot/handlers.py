@@ -170,6 +170,40 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(HELP)
 
 
+async def link_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ارسال لینک قابل‌کپی مینی‌گیم."""
+    url = config.webapp_url()
+    if not url:
+        await update.message.reply_text("❌ تونل مینی‌گیم هنوز آماده نیست.")
+        return
+    await update.message.reply_text(
+        "🔗 **لینک مینی‌گیم (v2.46):**\n\n" + url + "\n\n"
+        "_اگر در تلگرام باز نشد در مرورگر کپی و باز کنید._",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🎮 باز کردن مینی‌گیم", web_app=WebAppInfo(url=url))
+        ]]),
+    )
+
+
+async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """وضعیت زنده بات."""
+    import sys, platform
+    url = config.webapp_url()
+    lines = ["📊 **وضعیت بات D&D v2.46**", ""]
+    lines.append("🌐 مینی‌گیم: " + ("✅ " + url if url else "❌ آماده نیست"))
+    healthy = False
+    if url:
+        try:
+            r = __import__("requests").get(url + "/healthz", timeout=5)
+            healthy = r.status_code == 200
+            lines.append("🔌 healthz: " + ("✅ %d" % r.status_code if healthy else "❌ %d" % r.status_code))
+        except Exception as e:
+            lines.append("🔌 healthz: ❌ %s" % str(e)[:60])
+    lines.append("💬 پایتون: " + sys.version.split()[0])
+    lines.append("📱 پلتفرم: " + platform.machine())
+    await update.message.reply_text("\n".join(lines))
+
+
 async def unknown_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤔 دستور ناشناخته‌ست. `/help` بزن.")
 
