@@ -194,6 +194,19 @@ def build_app(store, narrator, telegram_app=None, loop=None):
                         return user
             except Exception:
                 pass
+        # حالت dev ریموت: با هدر X-Dev-Secret که سرور در استارتاپ تولید می‌کند
+        # می‌توان از بیرون (مثلاً سندباکس دیباگ) بدون initData تلگرام تست کرد.
+        dev_secret = request.headers.get("X-Dev-Secret", "")
+        if config.DEV_SECRET and dev_secret and hmac.compare_digest(str(dev_secret), str(config.DEV_SECRET)):
+            uid = request.args.get("user_id") or request.headers.get("X-User-Id")
+            name = (request.args.get("user_name")
+                    or request.headers.get("X-User-Name")
+                    or "Arena-Test")
+            try:
+                uid_int = int(uid) if uid and uid != "None" else 900000001
+            except (TypeError, ValueError):
+                uid_int = 900000001
+            return {"id": uid_int, "first_name": name or "Arena-Test", "_dev": True}
         if config.WEBAPP_DEV:
             uid = request.args.get("user_id") or request.headers.get("X-User-Id")
             name = (request.args.get("user_name")
@@ -417,7 +430,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     @app.get("/api/meta")
     def api_meta():
         return api_ok({
-            "version": "2.50",
+            "version": "2.51",
             "races": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
                        "bonus": ", ".join(f"{b:+d}" for b in v["bonus"].values())}
                       for k, v in RACES.items()],

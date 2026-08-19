@@ -48,6 +48,8 @@ DEFAULT_LANG = os.environ.get("DEFAULT_LANG", "fa")
 WEBAPP_URL = os.environ.get("WEBAPP_URL", "").strip()
 # حالت آزمایشی: بدون تلگرام هم با کاربر آزمایشی کار می‌کند (برای پیش‌نمایش/تست)
 WEBAPP_DEV = os.environ.get("WEBAPP_DEV", "0") == "1"
+# اسرار تست زنده از بیرون (تولیدشده در startup؛ با هدر X-Dev-Secret می‌توان بدون initData تلگرام تست کرد)
+DEV_SECRET = os.environ.get("DND_DEV_SECRET", "").strip()
 # پورت وب‌سرور مینی‌گیم
 PORT = int(os.environ.get("PORT", "8080"))
 

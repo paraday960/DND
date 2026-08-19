@@ -86,7 +86,7 @@ def tg(method, payload=None, timeout=25, retries=2):
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "DND-Bot-Android/2.50",
+                "User-Agent": "DND-Bot-Android/2.51",
                 "Connection": "close",
             }
             req = urllib.request.Request(url, data=data, headers=headers)
@@ -153,7 +153,7 @@ WELCOME = ("🐉 به دانجن‌مستر هوشمند خوش اومدی!\n\n"
 _mb_lock = threading.Lock()
 _menu_button_set = False  # آیا در این چرخه دکمه منو ست شده است؟
 
-HELP = ("📚 راهنما (v2.50):\n"
+HELP = ("📚 راهنما (v2.51):\n"
         "🎮 /start — منوی اصلی + دکمه مینی‌گیم\n"
         "🔗 /link — لینک قابل‌کپی مینی‌گیم (برای مرورگر/دیباگ)\n"
         "📊 /status — وضعیت زنده بات و تونل\n"
@@ -241,9 +241,15 @@ def cmd_link(store, chat, uid, uname, args):
             {"text": "🎮 باز کردن مینی‌گیم", "web_app": {"url": url}},
         ]]
     }
+    secret = os.environ.get("DND_DEV_SECRET", "")
+    secret_line = ""
+    if secret:
+        secret_line = ("\n\n🔐 **کلید تست ریموت (برای دیباگ):**\n"
+                       "`" + secret + "`\n"
+                       "_این کلید را به جز برای تست در چت پشتیبانی به کسی ندهید._")
     send(chat,
-         "🔗 **لینک مینی‌گیم (v2.50):**\n\n"
-         + url + "\n\n"
+         "🔗 **لینک مینی‌گیم (v2.51):**\n\n"
+         + url + secret_line + "\n\n"
          "_اگر مینی‌گیم در تلگرام باز نمی‌شود، لینک را کپی و در مرورگر باز کنید._",
          kb_link)
     register_menu_button(url)
@@ -344,7 +350,7 @@ def register_menu_button(url, notify=False):
                 if owner and owner.get("chat_id"):
                     try:
                         send(owner["chat_id"],
-                             "✅ مینی‌گیم v2.50 آنلاین شد!\n"
+                             "✅ مینی‌گیم v2.51 آنلاین شد!\n"
                              "🔗 " + url + "\n\n"
                              "🎮 از /link برای گرفتن لینک قابل‌کپی استفاده کن.",
                              webapp_kb(url))
@@ -361,7 +367,7 @@ def cmd_status(store, chat, uid, uname, args):
     import sys as _sys
     url = tunnel_url()
     import platform
-    lines = ["📊 **وضعیت بات D&D v2.50**", ""]
+    lines = ["📊 **وضعیت بات D&D v2.51**", ""]
     lines.append("🤖 ربات: " + ("✅ آنلاین" if _polling_alive() else "⚠️ نامشخص"))
     lines.append("🌐 تونل: " + ("✅ متصل — " + url if url else "❌ قطع"))
     if url:
@@ -1033,6 +1039,33 @@ class ApiHandler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 uid = 900000001
             return {"id": uid, "first_name": (q.get("user_name") or ["ماجراجوی آزمایشی"])[0]}
+        # dev ریموت با X-Dev-Secret (تست از بیرون)
+        try:
+            dev_secret = os.environ.get("DND_DEV_SECRET", "")
+            hdr_secret = (self.headers.get("X-Dev-Secret") or "")
+            if dev_secret and hdr_secret and hmac.compare_digest(str(hdr_secret), str(dev_secret)):
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                uid_raw = (q.get("user_id") or [None])[0]
+                try:
+                    uid = int(uid_raw) if uid_raw and uid_raw != "None" else 900000001
+                except (TypeError, ValueError):
+                    uid = 900000001
+                name = (q.get("user_name") or ["Arena-Test"])[0]
+                # user_id از body هم
+                try:
+                    b = self._body() or {}
+                    if b.get("user_id"):
+                        try:
+                            uid = int(b.get("user_id"))
+                        except Exception:
+                            pass
+                    if b.get("user_name"):
+                        name = b.get("user_name")
+                except Exception:
+                    pass
+                return {"id": uid, "first_name": name, "_dev": True}
+        except Exception:
+            pass
         return None
 
     _body_cache = None
@@ -1069,7 +1102,7 @@ class ApiHandler(BaseHTTPRequestHandler):
     def _api_meta(self):
         from game.rules import RACES, CLASSES, WEAPONS, SPELLS, MONSTERS
         return {
-            "version": "2.50",
+            "version": "2.51",
             "races": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
                        "bonus": ", ".join("%+d" % b for b in v["bonus"].values())} for k, v in RACES.items()],
             "classes": [{"key": k, "fa": v["fa"], "emoji": v["emoji"], "hit_die": v["hit_die"],
@@ -1949,7 +1982,7 @@ def register_quick_tunnel():
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 DND-Bot/2.50",
+            "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 DND-Bot/2.51",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as r:
@@ -2192,7 +2225,7 @@ def tunnel_loop(port, native_dir=None):
                     try:
                         req = urllib.request.Request(
                             url.rstrip("/") + "/healthz",
-                            headers={"User-Agent": "DND-Bot-hc/2.50", "Connection": "close"})
+                            headers={"User-Agent": "DND-Bot-hc/2.51", "Connection": "close"})
                         with urllib.request.urlopen(req, timeout=6) as r:
                             body = r.read(200)
                             if r.status == 200 and b'"ok"' in body and b"Cloudflare Tunnel error" not in body:
@@ -2227,7 +2260,7 @@ def tunnel_loop(port, native_dir=None):
                     # healthz از بیرون (ممکن است hairpin نخورد — الزامی نیست)
                     try:
                         req = urllib.request.Request(url.rstrip("/") + "/healthz",
-                            headers={"User-Agent": "DND-Bot-check/2.50", "Connection": "close"})
+                            headers={"User-Agent": "DND-Bot-check/2.51", "Connection": "close"})
                         with urllib.request.urlopen(req, timeout=6) as r:
                             body = r.read(200)
                             ext_ok = (r.status == 200 and b'"ok"' in body)
@@ -2322,6 +2355,22 @@ def main(files_dir, native_lib_dir=None):
     os.environ["PORT"] = str(cfg.get("PORT", 8080))
     os.environ["DB_PATH"] = os.path.join(files_dir, "dnd.db")
     os.environ["WEBAPP_DEV"] = "1" if cfg.get("DEV") else "0"
+    # تولید secret تست زنده (پایدار بین ری‌استارت‌ها) — با هدر X-Dev-Secret می‌توان از بیرون بدون initData تست کرد
+    _dev_secret_path = os.path.join(files_dir, "dev_secret.txt")
+    try:
+        if os.path.exists(_dev_secret_path):
+            with open(_dev_secret_path, encoding="utf-8") as f:
+                _dev_secret = f.read().strip()
+        else:
+            import secrets as _secrets
+            _dev_secret = _secrets.token_urlsafe(24)
+            with open(_dev_secret_path, "w", encoding="utf-8") as f:
+                f.write(_dev_secret)
+        os.environ["DND_DEV_SECRET"] = _dev_secret
+        log("🔐 حالت تست ریموت فعال است (secret=%s...)" % _dev_secret[:8])
+    except Exception as e:
+        log("تولید secret تست ناموفق: %s" % e)
+        os.environ["DND_DEV_SECRET"] = ""
 
     import config
     if not config.BOT_TOKEN:
