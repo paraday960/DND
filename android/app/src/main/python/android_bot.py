@@ -86,7 +86,7 @@ def tg(method, payload=None, timeout=25, retries=2):
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "DND-Bot-Android/2.47",
+                "User-Agent": "DND-Bot-Android/2.48",
                 "Connection": "close",
             }
             req = urllib.request.Request(url, data=data, headers=headers)
@@ -153,7 +153,7 @@ WELCOME = ("🐉 به دانجن‌مستر هوشمند خوش اومدی!\n\n"
 _mb_lock = threading.Lock()
 _menu_button_set = False  # آیا در این چرخه دکمه منو ست شده است؟
 
-HELP = ("📚 راهنما (v2.47):\n"
+HELP = ("📚 راهنما (v2.48):\n"
         "🎮 /start — منوی اصلی + دکمه مینی‌گیم\n"
         "🔗 /link — لینک قابل‌کپی مینی‌گیم (برای مرورگر/دیباگ)\n"
         "📊 /status — وضعیت زنده بات و تونل\n"
@@ -242,7 +242,7 @@ def cmd_link(store, chat, uid, uname, args):
         ]]
     }
     send(chat,
-         "🔗 **لینک مینی‌گیم (v2.47):**\n\n"
+         "🔗 **لینک مینی‌گیم (v2.48):**\n\n"
          + url + "\n\n"
          "_اگر مینی‌گیم در تلگرام باز نمی‌شود، لینک را کپی و در مرورگر باز کنید._",
          kb_link)
@@ -344,7 +344,7 @@ def register_menu_button(url, notify=False):
                 if owner and owner.get("chat_id"):
                     try:
                         send(owner["chat_id"],
-                             "✅ مینی‌گیم v2.47 آنلاین شد!\n"
+                             "✅ مینی‌گیم v2.48 آنلاین شد!\n"
                              "🔗 " + url + "\n\n"
                              "🎮 از /link برای گرفتن لینک قابل‌کپی استفاده کن.",
                              webapp_kb(url))
@@ -361,7 +361,7 @@ def cmd_status(store, chat, uid, uname, args):
     import sys as _sys
     url = tunnel_url()
     import platform
-    lines = ["📊 **وضعیت بات D&D v2.47**", ""]
+    lines = ["📊 **وضعیت بات D&D v2.48**", ""]
     lines.append("🤖 ربات: " + ("✅ آنلاین" if _polling_alive() else "⚠️ نامشخص"))
     lines.append("🌐 تونل: " + ("✅ متصل — " + url if url else "❌ قطع"))
     if url:
@@ -1069,7 +1069,7 @@ class ApiHandler(BaseHTTPRequestHandler):
     def _api_meta(self):
         from game.rules import RACES, CLASSES, WEAPONS, SPELLS, MONSTERS
         return {
-            "version": "2.47",
+            "version": "2.48",
             "races": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
                        "bonus": ", ".join("%+d" % b for b in v["bonus"].values())} for k, v in RACES.items()],
             "classes": [{"key": k, "fa": v["fa"], "emoji": v["emoji"], "hit_die": v["hit_die"],
@@ -1949,7 +1949,7 @@ def register_quick_tunnel():
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "DND-Bot-Android/2.47",
+            "User-Agent": "DND-Bot-Android/2.48",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as r:
@@ -1973,194 +1973,286 @@ def resolve_edge_ips():
     return ips
 
 
-def _start_cloudflared_direct(cf, port, edges, cf_log):
-    """روش ساده quick tunnel: cloudflared tunnel --url http://127.0.0.1:PORT
-    اصلاً api.trycloudflare.com/tunnel را صدا نمی‌زند (بنابراین 429 نمی‌خورد).
-    URL از خط‌های استاوت/استدرر خود باینری خوانده می‌شود."""
+def _kill_old_cloudflareds():
+    """پروسه‌های cloudflared باقی‌مانده از اجرای قبلی را می‌کشد تا port/edge قفل نباشد."""
+    try:
+        os.system(
+            "pkill -9 cloudflared 2>/dev/null; "
+            "pkill -9 -f 'libcloudflared' 2>/dev/null; "
+            "pkill -9 -f 'cf_config.yml' 2>/dev/null; "
+            "pkill -9 -f 'trycloudflare' 2>/dev/null; "
+            "for p in /proc/[0-9]*/cmdline; do "
+            "  if [ -r \"$p\" ] && grep -aq cloudflared \"$p\" 2>/dev/null; then "
+            "    kill -9 $(echo $p | cut -d/ -f3) 2>/dev/null; "
+            "  fi; "
+            "done; true")
+        time.sleep(1.5)
+    except Exception:
+        pass
+
+
+def _start_cloudflared_direct(cf, port, out_fd):
+    """cloudflared quick tunnel را اجرا می‌کند؛ خروجی به out_fd نوشته می‌شود."""
     cmd = [cf, "tunnel",
            "--edge-ip-version", "4",
            "--no-autoupdate",
+           "--loglevel", "info",
            "--url", "http://127.0.0.1:%d" % port]
-    for ip in edges[:4]:
-        cmd += ["--edge", "%s:7844" % ip]
-    # stdout را به PIPE وصل می‌کنیم تا URL را ازش بخوانیم
+    env = {"HOME": FILES_DIR, "PATH": "/system/bin:/system/xbin",
+           "TMPDIR": FILES_DIR, "TMP": FILES_DIR}
     proc = subprocess.Popen(
-        cmd,
-        stdout=cf_log, stderr=subprocess.STDOUT,
-        env={"HOME": FILES_DIR, "PATH": "/system/bin:/system/xbin"},
-    )
+        cmd, stdout=out_fd, stderr=subprocess.STDOUT,
+        env=env, close_fds=True)
     return proc
 
 
-def _read_cf_url_from_log(cf_log_path, deadline):
-    """فایل لاگ cloudflared را می‌خواند و در جستجوی https://.*trycloudflare.com می‌گردد."""
+def _parse_cf_url(text):
+    """هر تکه از خروجی cloudflared را می‌گردد و لینک trycloudflare را برمی‌گرداند."""
     import re
-    pat = re.compile(r"https://[a-zA-Z0-9\-]+\.trycloudflare\.com")
-    last_size = 0
-    while time.time() < deadline:
+    m = re.search(r"https?://[A-Za-z0-9\-]+\.trycloudflare\.com", text)
+    if m:
+        return "https://" + m.group(0).split("://", 1)[1].strip().rstrip("/")
+    return None
+
+
+def _drain_pipe_to(pipe_fd, targets, stop_event):
+    """pipe_fd را تا انتها می‌خواند و در هر chunk به همه تابع‌های target می‌فرستد.
+    targets لیستی از callable(chunk_bytes) است."""
+    import threading
+    def _reader():
         try:
-            sz = os.path.getsize(cf_log_path)
-            if sz > last_size:
-                with open(cf_log_path, "rb") as f:
-                    f.seek(max(0, last_size - 200))
-                    chunk = f.read().decode("utf-8", errors="replace")
-                m = pat.search(chunk)
-                if m:
-                    return m.group(0).rstrip("/")
-                last_size = sz
+            while not stop_event.is_set():
+                try:
+                    chunk = os.read(pipe_fd, 4096)
+                except Exception:
+                    break
+                if not chunk:
+                    break
+                for t in targets:
+                    try:
+                        t(chunk)
+                    except Exception:
+                        pass
         except Exception:
             pass
-        time.sleep(0.5)
-    return None
+    th = threading.Thread(target=_reader, daemon=True)
+    th.start()
+    return th
+
+
+def _run_cloudflared_until_ready(cf, port, log_file, deadline):
+    """cloudflared را اجرا می‌کند، خروجی‌اش را به لاگ می‌نویسد و realtime URL پارس می‌کند.
+    خروجی: (proc, url | None, last_tail_text)."""
+    # یک pipe برای خواندن زنده خروجی
+    read_fd, write_fd = os.pipe()
+    proc = None
+    url = None
+    tail = b""
+    try:
+        proc = _start_cloudflared_direct(cf, port, write_fd)
+    except Exception as e:
+        os.close(read_fd)
+        os.close(write_fd)
+        raise
+    os.close(write_fd)  # سمت نوشتن متعلق به پروسه فرزند است
+
+    import threading
+    stop = threading.Event()
+    got_url_event = threading.Event()
+
+    def _on_chunk(chunk):
+        nonlocal url, tail
+        tail = tail[-1600:] + chunk
+        # لاگ
+        try:
+            log_file.write(chunk)
+            log_file.flush()
+        except Exception:
+            pass
+        # پارس URL
+        if not url:
+            u = _parse_cf_url(chunk.decode("utf-8", errors="replace"))
+            if u:
+                url = u
+                got_url_event.set()
+
+    _drain_pipe_to(read_fd, [_on_chunk], stop)
+
+    # منتظر بمان تا URL پیدا شود یا پروسه بمیرد یا مهلت تمام شود
+    while time.time() < deadline:
+        if got_url_event.is_set():
+            break
+        if proc.poll() is not None:
+            # پروسه بسته شد؛ کمی صبرکن reader هم تمام شود
+            time.sleep(0.5)
+            break
+        time.sleep(0.2)
+    # اگر URL پیدا شد reader را در پس‌زمینه رها می‌کنیم تا به لاگ‌نویسی ادامه دهد
+    # (close نمی‌کنیم چون cloudflared تا پایان عمر نیاز به خواندن stdout دارد)
+    if not url:
+        stop.set()
+        try:
+            os.close(read_fd)
+        except Exception:
+            pass
+    return proc, url, tail.decode("utf-8", errors="replace").strip()
 
 
 def tunnel_loop(port, native_dir=None):
     global _menu_button_set
-    retry_delay = 5  # تأخیر اولیه تلاش مجدد (ثانیه) — برای backoff نمایی زیاد می‌شود
+    retry_delay = 5
+    _kill_old_cloudflareds()
     while not stopped():
         proc = None
         log("🌐 شروع تونل امن مینی‌گیم...")
         try:
-            edges = resolve_edge_ips()
-            if not edges:
-                log("⚠️ DNS در دسترس نیست — اینترنت گوشی را بررسی کن")
-                time.sleep(20)
-                continue
             cf = ensure_cloudflared(native_dir)
             if not cf:
                 log("❌ cloudflared در دسترس نیست — ۳۰ ثانیه صبر...")
                 time.sleep(30)
                 continue
 
-            # روش اصلی: quick tunnel مستقیم (بدون API call → بدون 429)
             cf_log_path = os.path.join(FILES_DIR, "cf.log")
-            # فایل لاگ را از صفر پاک کن
             try:
-                open(cf_log_path, "wb").close()
+                log_file = open(cf_log_path, "ab")
             except Exception:
-                pass
-            cf_log = open(cf_log_path, "ab")
-            proc = _start_cloudflared_direct(cf, port, edges, cf_log)
+                log_file = open(os.devnull, "wb")
 
-            # ۱) از لاگ URL را پیدا کن (تا ۴۵ ثانیه)
-            url = _read_cf_url_from_log(cf_log_path, time.time() + 45)
-            if not url and proc.poll() is not None:
-                log("⚠️ cloudflared قبل از دادن URL خارج شد — خروجی:")
-                try:
-                    with open(cf_log_path, "rb") as f:
-                        tail = f.read().decode("utf-8", errors="replace")[-600:]
-                        for line in tail.splitlines()[-10:]:
-                            log("  cf> " + line.strip()[:200])
-                except Exception:
-                    pass
-                raise RuntimeError("cloudflared اجرا نشد")
-            if not url:
-                # fallback: روش قدیمی را امتحان کن (register API)
-                log("⚠️ URL در خروجی cloudflared پیدا نشد — روش API را امتحان می‌کنم...")
-                try:
-                    proc.terminate()
-                except Exception:
-                    pass
-                proc = None
-                time.sleep(2)
-                info = register_quick_tunnel()
-                url = "https://" + info["hostname"]
-                # باینری را با config فایل دوباره اجرا کن
-                creds_path = os.path.join(FILES_DIR, "cf_creds.json")
-                cfg_path = os.path.join(FILES_DIR, "cf_config.yml")
-                with open(creds_path, "w", encoding="utf-8") as f:
-                    json.dump({"AccountTag": info.get("account_tag", ""),
-                               "TunnelID": info["id"],
-                               "TunnelSecret": info["secret"]}, f)
-                with open(cfg_path, "w", encoding="utf-8") as f:
-                    f.write(
-                        "tunnel: %s\n"
-                        "credentials-file: %s\n"
-                        "protocol: http2\n"
-                        "no-autoupdate: true\n"
-                        "ingress:\n"
-                        "  - hostname: %s\n"
-                        "    service: http://127.0.0.1:%d\n"
-                        "  - service: http_status:404\n"
-                        % (info["id"], creds_path, info["hostname"], port)
-                    )
-                open(cf_log_path, "wb").close()
-                cf_log = open(cf_log_path, "ab")
-                cmd = [cf, "tunnel", "--config", cfg_path,
-                       "--edge-ip-version", "4", "--no-autoupdate"]
-                for ip in edges[:4]:
-                    cmd += ["--edge", "%s:7844" % ip]
-                cmd += ["run", info["id"]]
-                proc = subprocess.Popen(
-                    cmd, stdout=cf_log, stderr=subprocess.STDOUT,
-                    env={"HOME": FILES_DIR, "PATH": "/system/bin:/system/xbin"})
-                time.sleep(3)
+            try:
+                # پروسه‌های باقی‌مانده قبلی را در هر تلاش بکش
+                _kill_old_cloudflareds()
 
-            # ۲) healthcheck تا ۳۰ بار تا واقعاً وصل شود
-            url_ready = False
-            for _ in range(30):
-                if proc and proc.poll() is not None:
-                    break
-                time.sleep(1)
+                # تا ۶۰ ثانیه منتظر URL از quick tunnel
+                proc, url, tail = _run_cloudflared_until_ready(
+                    cf, port, log_file, time.time() + 60)
+                if url:
+                    log("🔗 URL از cloudflared دریافت شد: " + url)
+                else:
+                    if proc and proc.poll() is not None:
+                        log("⚠️ cloudflared خاموش شد (کد %s) — خروجی:" % proc.returncode)
+                        for line in tail.splitlines()[-12:]:
+                            ln = line.strip()
+                            if ln:
+                                log("  cf> " + ln[:220])
+                        raise RuntimeError("cloudflared اجرا/متصل نشد")
+                    # ۶۰ ثانیه منتظر ماندیم و URL نیامد؛ fallback به روش قدیمی
+                    log("⚠️ URL در خروجی cloudflared پیدا نشد — روش API را امتحان می‌کنم...")
+                    try:
+                        if proc:
+                            proc.terminate()
+                            time.sleep(1)
+                    except Exception:
+                        pass
+                    proc = None
+                    time.sleep(2)
+                    # روش fallback: register quick tunnel API + cloudflared run
+                    info = register_quick_tunnel()
+                    url = "https://" + info["hostname"]
+                    creds_path = os.path.join(FILES_DIR, "cf_creds.json")
+                    cfg_path = os.path.join(FILES_DIR, "cf_config.yml")
+                    with open(creds_path, "w", encoding="utf-8") as f:
+                        json.dump({"AccountTag": info.get("account_tag", ""),
+                                   "TunnelID": info["id"],
+                                   "TunnelSecret": info["secret"]}, f)
+                    with open(cfg_path, "w", encoding="utf-8") as f:
+                        f.write(
+                            "tunnel: %s\n"
+                            "credentials-file: %s\n"
+                            "protocol: http2\n"
+                            "no-autoupdate: true\n"
+                            "ingress:\n"
+                            "  - hostname: %s\n"
+                            "    service: http://127.0.0.1:%d\n"
+                            "  - service: http_status:404\n"
+                            % (info["id"], creds_path, info["hostname"], port)
+                        )
+                    edges = resolve_edge_ips()
+                    cmd = [cf, "tunnel", "--config", cfg_path,
+                           "--edge-ip-version", "4", "--no-autoupdate"]
+                    for ip in edges[:4]:
+                        cmd += ["--edge", "%s:7844" % ip]
+                    cmd += ["run", info["id"]]
+                    proc = subprocess.Popen(
+                        cmd, stdout=log_file, stderr=subprocess.STDOUT,
+                        env={"HOME": FILES_DIR, "PATH": "/system/bin:/system/xbin"})
+                    time.sleep(3)
+
+                # healthcheck: واقعی صبر کن تا مینی‌گیم در دسترس باشد
+                url_ready = False
+                for i in range(30):
+                    if proc and proc.poll() is not None:
+                        log("⚠️ cloudflared هنگام اتصال بسته شد.")
+                        # آخرین لاگ را چاپ کن
+                        try:
+                            log_file.flush()
+                            with open(cf_log_path, "rb") as lf:
+                                lf.seek(max(0, lf.seek(0, 2) - 2000))
+                                t = lf.read().decode("utf-8", errors="replace")
+                                for line in t.splitlines()[-8:]:
+                                    ln = line.strip()
+                                    if ln:
+                                        log("  cf> " + ln[:220])
+                        except Exception:
+                            pass
+                        break
+                    time.sleep(1)
+                    try:
+                        req = urllib.request.Request(
+                            url.rstrip("/") + "/healthz",
+                            headers={"User-Agent": "DND-Bot-hc/2.48", "Connection": "close"})
+                        with urllib.request.urlopen(req, timeout=4) as r:
+                            if r.status == 200:
+                                url_ready = True
+                                break
+                    except Exception:
+                        continue
+                if not url_ready:
+                    log("⚠️ تونل به سرور محلی وصل نشد.")
+                    raise RuntimeError("healthz شکست خورد")
+
+                # موفق! URL را بنویس
+                retry_delay = 5
+                with open(os.path.join(FILES_DIR, "tunnel_url.txt"), "w", encoding="utf-8") as f:
+                    f.write(url)
+                _menu_button_set = False
+                log("✅ آدرس مینی‌گیم: " + url)
+                register_menu_button(url, notify=True)
+
+                # مانیتورینگ زنده
+                consecutive_fail = 0
+                while not stopped() and (proc is None or proc.poll() is None):
+                    time.sleep(5)
+                    try:
+                        req = urllib.request.Request(url.rstrip("/") + "/healthz",
+                            headers={"User-Agent": "DND-Bot-check/2.48", "Connection": "close"})
+                        with urllib.request.urlopen(req, timeout=5) as r:
+                            if r.status == 200:
+                                consecutive_fail = 0
+                                continue
+                    except Exception:
+                        pass
+                    consecutive_fail += 1
+                    if consecutive_fail >= 3:
+                        log("⚠️ تونل ۳ بار پشت سر هم پاسخ نداد — ری‌استارت...")
+                        break
+                if not stopped():
+                    log("⚠️ تونل قطع شد — اتصال مجدد...")
+            finally:
                 try:
-                    req = urllib.request.Request(
-                        url.rstrip("/") + "/healthz",
-                        headers={"User-Agent": "DND-Bot-healthcheck/1.0", "Connection": "close"},
-                    )
-                    with urllib.request.urlopen(req, timeout=4) as r:
-                        if r.status == 200:
-                            url_ready = True
-                            break
-                except Exception:
-                    continue
-            if not url_ready:
-                log("⚠️ تونل وصل نشد — تلاش مجدد...")
-                try: proc.terminate()
-                except Exception: pass
-                proc = None
-                retry_delay = min(retry_delay * 2, 120)
-                log("⏳ %d ثانیه صبر می‌کنم..." % retry_delay)
-                time.sleep(retry_delay)
-                continue
-            # موفق! تأخیر را ریست کن
-            retry_delay = 5
-            # فایل URL را بنویس
-            with open(os.path.join(FILES_DIR, "tunnel_url.txt"), "w", encoding="utf-8") as f:
-                f.write(url)
-            _menu_button_set = False
-            log("✅ آدرس مینی‌گیم: " + url)
-            register_menu_button(url, notify=True)
-            # مانیتورینگ
-            consecutive_fail = 0
-            while not stopped() and (proc is None or proc.poll() is None):
-                time.sleep(5)
-                try:
-                    req = urllib.request.Request(url.rstrip("/") + "/healthz",
-                        headers={"User-Agent": "DND-check/1.0", "Connection": "close"})
-                    with urllib.request.urlopen(req, timeout=5) as r:
-                        if r.status == 200:
-                            consecutive_fail = 0
-                            continue
+                    log_file.close()
                 except Exception:
                     pass
-                consecutive_fail += 1
-                if consecutive_fail >= 3:
-                    log("⚠️ تونل ۳ بار متوالی پاسخ نداد — ری‌استارت...")
-                    break
-            if not stopped():
-                log("⚠️ تونل قطع شد — اتصال مجدد...")
         except urllib.error.HTTPError as e:
             code = getattr(e, "code", 0)
-            msg = str(e)
             if code == 429:
                 retry_delay = min(retry_delay * 2, 180)
                 log("⚠️ کلادفلر محدودیت نرخ داد (429) — %d ثانیه صبر..." % retry_delay)
             else:
-                log("خطای HTTP تونل (%d): %s" % (code, msg))
+                log("خطای HTTP تونل (%d): %s" % (code, e))
                 retry_delay = min(retry_delay + 5, 60)
         except Exception as e:
             log("خطای تونل: %s" % e)
-            retry_delay = min(retry_delay * 2 if retry_delay >= 10 else retry_delay + 5, 120)
+            retry_delay = min(retry_delay + 5 if retry_delay < 10 else retry_delay * 2, 120)
         finally:
             if proc is not None:
                 try:
@@ -2173,11 +2265,11 @@ def tunnel_loop(port, native_dir=None):
                 except Exception:
                     pass
                 proc = None
+            _kill_old_cloudflareds()
         if not stopped():
             log("⏳ %d ثانیه تا تلاش مجدد..." % retry_delay)
-            # sleep قابل لغو (stopped را چک می‌کند)
-            wait_end = time.time() + retry_delay
-            while not stopped() and time.time() < wait_end:
+            end = time.time() + retry_delay
+            while not stopped() and time.time() < end:
                 time.sleep(1)
 
 
