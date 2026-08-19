@@ -177,7 +177,7 @@ async def link_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ تونل مینی‌گیم هنوز آماده نیست.")
         return
     await update.message.reply_text(
-        "🔗 **لینک مینی‌گیم (v2.48):**\n\n" + url + "\n\n"
+        "🔗 **لینک مینی‌گیم (v2.49):**\n\n" + url + "\n\n"
         "_اگر در تلگرام باز نشد در مرورگر کپی و باز کنید._",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("🎮 باز کردن مینی‌گیم", web_app=WebAppInfo(url=url))
@@ -189,7 +189,7 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """وضعیت زنده بات."""
     import sys, platform
     url = config.webapp_url()
-    lines = ["📊 **وضعیت بات D&D v2.48**", ""]
+    lines = ["📊 **وضعیت بات D&D v2.49**", ""]
     lines.append("🌐 مینی‌گیم: " + ("✅ " + url if url else "❌ آماده نیست"))
     healthy = False
     if url:

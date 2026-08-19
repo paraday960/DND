@@ -15,7 +15,7 @@ public class MainActivity extends Activity {
     @Override public void onCreate(Bundle b){ super.onCreate(b); prefs=getSharedPreferences("dnd",MODE_PRIVATE); build(); handler.postDelayed(new Runnable(){public void run(){refreshLog();handler.postDelayed(this,1500);}},500); }
     void build(){
         LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(pad(),pad(),pad(),pad()); root.setBackgroundColor(Color.rgb(15,18,25));
-        TextView title=new TextView(this); title.setText("🐉 D&D Server 2.48"); title.setTextSize(24); title.setTextColor(Color.rgb(245,210,110)); title.setGravity(Gravity.CENTER); root.addView(title);
+        TextView title=new TextView(this); title.setText("🐉 D&D Server 2.49"); title.setTextSize(24); title.setTextColor(Color.rgb(245,210,110)); title.setGravity(Gravity.CENTER); root.addView(title);
         status=new TextView(this); status.setText("آماده اجرا"); status.setTextColor(Color.WHITE); status.setGravity(Gravity.CENTER); root.addView(status);
         root.addView(label("توکن ربات تلگرام")); token=new EditText(this); token.setSingleLine(); token.setTextColor(Color.WHITE); token.setHint("123456:ABC..."); root.addView(token);
         root.addView(label("کلید AI اختیاری")); ai=new EditText(this); ai.setSingleLine(); ai.setTextColor(Color.WHITE); root.addView(ai);
