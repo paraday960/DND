@@ -86,7 +86,7 @@ def tg(method, payload=None, timeout=25, retries=2):
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "DND-Bot-Android/2.57",
+                "User-Agent": "DND-Bot-Android/2.58",
                 "Connection": "close",
             }
             req = urllib.request.Request(url, data=data, headers=headers)
@@ -1124,7 +1124,7 @@ class ApiHandler(BaseHTTPRequestHandler):
     def _api_meta(self):
         from game.rules import RACES, CLASSES, WEAPONS, SPELLS, MONSTERS
         return {
-            "version": "2.57",
+            "version": "2.58",
             "races": [{"key": k, "fa": v["fa"], "emoji": v["emoji"],
                        "bonus": ", ".join("%+d" % b for b in v["bonus"].values())} for k, v in RACES.items()],
             "classes": [{"key": k, "fa": v["fa"], "emoji": v["emoji"], "hit_die": v["hit_die"],
@@ -2011,34 +2011,118 @@ def ensure_cloudflared(native_dir=None):
 
 
 def register_quick_tunnel():
-    req = urllib.request.Request(
+    """ثبت quick tunnel در Cloudflare با روش مقاوم‌تر:
+    - چند endpoint جایگزین برای زمانی که یکی از روی شبکه موبایل در دسترس نیست
+    - اجبار IPv4
+    - تا ۴ بار تلاش با بک‌آف نمایی
+    - استفاده از IP های هاردکدشده به عنوان آخرین راه‌حل برای دور زدن DNS شکست
+    """
+    import socket as _s
+    import errno as _errno
+    import ssl as _ssl
+
+    endpoints = [
         "https://api.trycloudflare.com/tunnel",
-        data=b"{}",
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 DND-Bot/2.57",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        d = json.loads(r.read().decode("utf-8"))
-    res = d.get("result") or {}
-    if not (res.get("hostname") and res.get("id") and res.get("secret")):
-        raise RuntimeError("پاسخ نامعتبر از trycloudflare: %s" % str(d)[:200])
-    return res
+        "https://api.cloudflare.com/client/v4/quick_tunnel",
+    ]
+
+    # IP های ثابت شناخته‌شده لبه Cloudflare API (کمک می‌کنه در DNS شکست‌خورده)
+    hardcoded_ips = [
+        "104.18.4.138", "104.18.5.138",
+        "172.67.182.123", "172.67.183.123",
+    ]
+
+    last_err = None
+    for attempt in range(4):
+        # آی‌پی‌هایی که از resolver سیستم می‌رسند را هم اضافه کن
+        ips = []
+        for host in ("api.trycloudflare.com",):
+            try:
+                for a in _s.getaddrinfo(host, 443, _s.AF_INET, _s.SOCK_STREAM):
+                    ip = a[4][0]
+                    if ip not in ips and ip not in hardcoded_ips:
+                        ips.append(ip)
+            except Exception:
+                pass
+        all_ips = hardcoded_ips + ips
+
+        for url in endpoints:
+            for ip in all_ips[:5] + [None]:
+                try:
+                    if ip is None:
+                        conn_url = url
+                        host_hdr = None
+                    else:
+                        from urllib.parse import urlparse
+                        pu = urlparse(url)
+                        conn_url = "https://%s%s" % (ip, pu.path)
+                        host_hdr = pu.netloc
+                    headers = {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 DND-Bot/2.58",
+                    }
+                    if host_hdr:
+                        headers["Host"] = host_hdr
+                    req = urllib.request.Request(
+                        conn_url,
+                        data=b"{}",
+                        headers=headers,
+                    )
+                    ctx = _ssl.create_default_context()
+                    ctx.check_hostname = True
+                    with urllib.request.urlopen(req, timeout=20, context=ctx) as r:
+                        d = json.loads(r.read().decode("utf-8"))
+                    res = d.get("result") or {}
+                    # ساختار جواب گاهی result دارد گاهی در خودش است
+                    if not (res.get("hostname") and res.get("id") and res.get("secret")):
+                        if d.get("hostname") and d.get("id") and d.get("secret"):
+                            res = d
+                        else:
+                            raise RuntimeError("پاسخ نامعتبر از %s" % url)
+                    return res
+                except Exception as e:
+                    last_err = e
+                    msg = str(e).lower()
+                    eno = getattr(e, "errno", None)
+                    is_net = (
+                        eno in (_errno.EHOSTUNREACH, _errno.ENETUNREACH, 113, 101)
+                        or "no route" in msg or "network unreachable" in msg
+                        or "timed out" in msg or "timeout" in msg
+                        or "getaddrinfo" in msg or "refused" in msg
+                        or "reset" in msg or "temporary failure" in msg
+                    )
+                    if is_net:
+                        continue
+                    if hasattr(e, "code") and e.code in (429, 503):
+                        time.sleep(3 + attempt * 2)
+                        continue
+                    continue
+        wait = 5 + attempt * 7
+        log("    (تلاش %d ناموفق: %s — %d ثانیه صبر...)" % (attempt + 1, str(last_err)[:90], wait))
+        time.sleep(wait)
+    raise RuntimeError("ثبت تونل پس از چند تلاش موفق نبود: %s" % str(last_err)[:200])
 
 
 def resolve_edge_ips():
+    """لیست IP های لبه Cloudflare را برای اتصال مستقیم (بدون نیاز به DNS در Go binary)."""
+    # IP های ثابت شناخته‌شده لبه Cloudflare Tunnel (IPv4)
+    hardcoded = [
+        "198.41.192.7", "198.41.192.17", "198.41.192.27", "198.41.192.37",
+        "198.41.192.47", "198.41.192.57", "198.41.192.67", "198.41.192.77",
+        "198.41.200.13", "198.41.200.23", "198.41.200.33", "198.41.200.43",
+    ]
     ips = []
-    for host in ("region1.v2.argotunnel.com", "region2.v2.argotunnel.com"):
+    for host in ("region1.v2.argotunnel.com", "region2.v2.argotunnel.com",
+                 "v2.argotunnel.com"):
         try:
             for a in socket.getaddrinfo(host, 7844, socket.AF_INET):
                 ip = a[4][0]
-                if ip not in ips:
+                if ip not in ips and ip not in hardcoded:
                     ips.append(ip)
         except Exception:
             pass
-    return ips
+    return hardcoded + ips
 
 
 def _kill_old_cloudflareds():
@@ -2177,6 +2261,24 @@ def tunnel_loop(port, native_dir=None):
     while not stopped():
         proc = None
         log("🌐 شروع تونل امن مینی‌گیم...")
+        # چک سریع اتصال اینترنت با اتصال TCP به یک IP معتبر (بدون نیاز به DNS)
+        try:
+            import socket as _sk
+            for _test_ip in ("1.1.1.1", "8.8.8.8", "104.18.4.138"):
+                try:
+                    s = _sk.socket(_sk.AF_INET, _sk.SOCK_STREAM)
+                    s.settimeout(3)
+                    s.connect((_test_ip, 443))
+                    s.close()
+                    break
+                except Exception:
+                    continue
+            else:
+                log("⚠️ اینترنت گوشی در دسترس نیست (اتصال به 1.1.1.1 برقرار نشد) — داده موبایل/Wi-Fi را چک کن")
+                time.sleep(15)
+                continue
+        except Exception:
+            pass
         try:
             cf = ensure_cloudflared(native_dir)
             if not cf:
@@ -2348,8 +2450,13 @@ def tunnel_loop(port, native_dir=None):
                 os.remove(_cf_creds_path())
             except Exception:
                 pass
-            log("خطای تونل: %s" % e)
-            retry_delay = min(retry_delay + 10 if retry_delay < 15 else retry_delay * 2, 180)
+            msg = str(e).lower()
+            if "no route" in msg or "network unreachable" in msg or "113" in msg or "101" in msg or "getaddrinfo" in msg:
+                log("⚠️ اتصال اینترنت برقرار نیست یا Cloudflare در دسترس نیست — اینترنت/فیلترشکن را چک کن")
+                retry_delay = 20  # تاخیر کوتاه‌تر برای این نوع خطاها
+            else:
+                log("خطای تونل: %s" % e)
+                retry_delay = min(retry_delay + 10 if retry_delay < 15 else retry_delay * 2, 180)
         finally:
             if proc is not None:
                 try:
