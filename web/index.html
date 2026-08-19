@@ -2,380 +2,726 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>🐉 مینی‌گیم D&D</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>🐉 D&D 5e — مینی‌گیم</title>
 <link rel="icon" type="image/png" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
-<meta name="theme-color" content="#0b0e14">
+<meta name="theme-color" content="#1a0f07">
 <style>
-  :root{
-    --bg:#0b0e14; --card:#151b28; --card2:#1b2334; --line:#273043;
-    --gold:#d4af37; --gold2:#f2d67c; --text:#eae7dd; --muted:#98a0b3;
-    --red:#e05252; --green:#4caf7d; --blue:#5b9df0; --purple:#a78bfa;
-    --orange:#e8924f;
-  }
-  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-  html,body{height:100%}
-  body{
-    background:radial-gradient(1200px 600px at 80% -10%, #1d2440 0%, transparent 60%),
-               radial-gradient(900px 500px at -10% 110%, #201a2e 0%, transparent 55%), var(--bg);
-    color:var(--text);
-    font-family:"Vazirmatn","IRANSans","Segoe UI",Tahoma,sans-serif;
-    min-height:100dvh; padding-bottom:74px;
-  }
-  header{
-    position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;
-    padding:12px 16px;background:rgba(11,14,20,.85);backdrop-filter:blur(10px);
-    border-bottom:1px solid var(--line);
-  }
-  .logo-icon{width:32px;height:32px;border-radius:8px;box-shadow:0 0 12px rgba(212,175,55,.45);vertical-align:middle;margin-inline-end:6px;}
-  .logo{font-weight:800;font-size:17px;color:var(--gold2);letter-spacing:.3px;display:flex;align-items:center}
-  .logo small{display:block;font-size:10px;color:var(--muted);font-weight:400}
-  .room-pill{
-    margin-inline-start:auto;font-size:12px;background:var(--card2);
-    border:1px solid var(--line);border-radius:999px;padding:5px 12px;color:var(--gold2)
-  }
-  .room-pill b{font-family:monospace;letter-spacing:1px}
-  main{padding:14px 14px 10px;max-width:560px;margin:0 auto}
-  .hidden{display:none !important}
+/* ============================================================
+   D&D Mini-game — Parchment / Board-game style (v2.55+)
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700;800&display=swap');
 
-  .card{background:linear-gradient(160deg,var(--card),var(--card2));border:1px solid var(--line);
-        border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 6px 20px rgba(0,0,0,.35)}
-  .hero{text-align:center;padding:28px 18px}
-  .hero h1{font-size:22px;color:var(--gold2);margin-bottom:6px}
-  .hero p{color:var(--muted);font-size:13px;margin-bottom:18px}
-  input,select,textarea{
-    width:100%;background:#0f1420;border:1px solid var(--line);color:var(--text);
-    border-radius:12px;padding:12px 14px;font-size:14px;font-family:inherit;margin-bottom:10px;outline:none
-  }
-  input:focus,select:focus,textarea:focus{border-color:var(--gold)}
-  .btn{
-    border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:700;
-    font-family:inherit;cursor:pointer;transition:.15s;color:#0b0e14;
-    flex:1;min-width:calc(50% - 4px);
-  }
-  .btn:disabled{opacity:.35;cursor:not-allowed}
-  .btn:active{transform:scale(.97)}
-  .btn.gold{background:linear-gradient(135deg,var(--gold2),var(--gold))}
-  .btn.red{background:var(--red);color:#fff}
-  .btn.green{background:var(--green);color:#fff}
-  .btn.blue{background:var(--blue);color:#fff}
-  .btn.purple{background:var(--purple);color:#fff}
-  .btn.orange{background:var(--orange);color:#0b0e14}
-  .btn.dark{background:var(--card2);color:var(--text);border:1px solid var(--line)}
-  .or{color:var(--muted);text-align:center;margin:10px 0;font-size:12px}
-  .hint{color:var(--muted);font-size:12px;text-align:center;margin-top:12px;line-height:1.9}
-  .join-row{display:flex;gap:8px}
-  .join-row input{margin-bottom:0;text-align:center;font-family:monospace;letter-spacing:2px;text-transform:uppercase}
-  .join-row .btn{width:110px;flex-shrink:0}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;}
+:root{
+  --leather:#1a0f07;
+  --leather2:#261810;
+  --leather3:#34221a;
+  --gold:#d4af37;
+  --gold2:#f4d264;
+  --gold3:#8a6d1d;
+  --parch:#f2e3c0;
+  --parch2:#e8d4a6;
+  --parch-dark:#c9ad74;
+  --ink:#2b1e0e;
+  --ink2:#5a4020;
+  --red:#b8352f;
+  --red-dim:#7d231f;
+  --green:#3e8a4d;
+  --blue:#4f85c4;
+  --purple:#8b6cc7;
+  --orange:#c97a2f;
+  --shadow:0 6px 22px rgba(0,0,0,.45);
+  --shadow-sm:0 2px 8px rgba(0,0,0,.3);
+  --radius:14px;
+  --radius-lg:22px;
+}
+html,body{
+  background:
+    radial-gradient(1400px 800px at 20% -10%, #3a2517 0%, transparent 60%),
+    radial-gradient(1200px 900px at 90% 110%, #2e1c10 0%, transparent 55%),
+    repeating-linear-gradient(45deg, rgba(0,0,0,.03) 0 2px, transparent 2px 7px),
+    var(--leather);
+  color:var(--parch);
+  font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif;
+  font-size:15px;
+  line-height:1.7;
+  min-height:100dvh;
+  padding-bottom:96px;
+  -webkit-font-smoothing:antialiased;
+  overscroll-behavior-y:contain;
+}
 
-  /* تب‌ها */
-  nav{
-    position:fixed;bottom:0;left:0;right:0;z-index:20;display:flex;
-    background:rgba(13,17,25,.95);backdrop-filter:blur(10px);border-top:1px solid var(--line)
-  }
-  .tab{
-    flex:1;background:none;border:none;color:var(--muted);font-family:inherit;
-    font-size:12px;padding:10px 4px 12px;cursor:pointer;position:relative;display:flex;
-    flex-direction:column;align-items:center;gap:3px
-  }
-  .tab .ic{font-size:20px}
-  .tab.active{color:var(--gold2)}
-  .tab.active::after{content:"";position:absolute;top:0;right:30%;left:30%;height:3px;
-    background:linear-gradient(90deg,transparent,var(--gold),transparent);border-radius:0 0 4px 4px}
-  .badge{position:absolute;top:6px;left:calc(50% - 18px);background:var(--red);color:#fff;
-    font-size:9px;width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+/* ===== Header ===== */
+header{
+  position:sticky;top:0;z-index:30;
+  display:flex;align-items:center;gap:10px;
+  padding:12px 14px;
+  background:linear-gradient(180deg,rgba(26,15,7,.96),rgba(36,22,13,.92));
+  backdrop-filter:blur(12px);
+  border-bottom:2px solid var(--gold3);
+  box-shadow:0 4px 18px rgba(0,0,0,.5);
+}
+.logo{display:flex;align-items:center;gap:8px;color:var(--gold2);font-weight:800;font-size:17px;letter-spacing:.3px;text-shadow:0 2px 6px rgba(0,0,0,.5);}
+.logo-icon{width:34px;height:34px;border-radius:10px;box-shadow:0 0 12px rgba(212,175,55,.5);}
+.logo small{display:block;font-size:10px;color:var(--parch2);font-weight:400;opacity:.8;}
+.room-pill{
+  margin-inline-start:auto;
+  display:flex;align-items:center;gap:6px;
+  font-family:"Vazirmatn",ui-monospace,monospace;
+  font-size:13px;font-weight:700;
+  background:linear-gradient(180deg,#5c3d1c,#3c2610);
+  border:1.5px solid var(--gold);
+  color:var(--gold2);
+  border-radius:999px;padding:6px 14px;
+  box-shadow:inset 0 1px 0 rgba(255,220,120,.25), 0 3px 8px rgba(0,0,0,.4);
+  cursor:pointer;
+  transition:.15s;
+}
+.room-pill:active{transform:scale(.96);}
+.room-pill b{font-family:ui-monospace,monospace;letter-spacing:2px;color:#fff8e0;}
 
-  /* فید داستان */
-  .feed{display:flex;flex-direction:column;gap:10px;max-height:52dvh;overflow-y:auto;padding:2px}
-  .msg{border-radius:14px;padding:10px 13px;font-size:13.5px;line-height:1.9;animation:fadein .25s}
-  .msg.dm{background:linear-gradient(160deg,#1e2433,#23283c);border:1px solid #39415c;border-inline-start:3px solid var(--purple)}
-  .msg.sys{background:#161b27;border:1px solid var(--line);color:var(--muted);font-size:12px}
-  .msg.act{background:#1a2230;border:1px solid var(--line);border-inline-start:3px solid var(--blue)}
-  .msg .who{font-size:11px;color:var(--gold2);font-weight:700;display:block;margin-bottom:3px}
-  @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-  .sec-title{font-size:13px;color:var(--muted);margin:10px 2px 8px;display:flex;align-items:center;gap:6px;font-weight:700}
-  .sec-title::after{content:"";flex:1;height:1px;background:var(--line)}
-  .sec-title.main-ac{color:var(--red)}
-  .sec-title.bonus-ac{color:var(--orange)}
-  .sec-title.move-ac{color:var(--blue)}
-  .sec-title.react-ac{color:var(--purple)}
-  .sec-title.class-ac{color:var(--gold2)}
+/* ===== Layout ===== */
+main{padding:14px 12px 18px;max-width:720px;margin:0 auto;}
+.hidden{display:none !important;}
 
-  .story-input{display:flex;gap:8px;margin-top:12px}
-  .story-input input{margin-bottom:0;flex:1}
-  .story-input .btn{width:auto;padding:12px 18px;flex-shrink:0;min-width:auto}
-  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
-  .chip{background:var(--card2);border:1px solid var(--line);border-radius:999px;padding:6px 12px;
-        font-size:12px;cursor:pointer;color:var(--muted);font-family:inherit}
-  .chip:active{background:var(--gold);color:#0b0e14}
-  .chip.dice{font-family:monospace;color:var(--gold2)}
+/* ===== Cards (parchment) ===== */
+.card{
+  position:relative;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(255,255,255,.25), transparent 40%),
+    radial-gradient(circle at 90% 90%, rgba(139,90,30,.18), transparent 40%),
+    linear-gradient(160deg,#f5e7c5,#e4cf9e);
+  color:var(--ink);
+  border-radius:var(--radius-lg);
+  padding:18px 16px;
+  margin-bottom:14px;
+  box-shadow:var(--shadow),
+    inset 0 0 0 1px rgba(139,90,30,.25),
+    inset 0 0 40px rgba(139,90,30,.08);
+  border:2px solid #8a6a33;
+}
+.card.dark{
+  background:linear-gradient(160deg,#2e1f12,#1a100a);
+  color:var(--parch);
+  border-color:#4a311a;
+  box-shadow:var(--shadow), inset 0 0 0 1px rgba(212,175,55,.15);
+}
+.card.dark .sec-title{color:var(--gold2);}
+.card::before{
+  content:"";position:absolute;inset:4px;border-radius:calc(var(--radius-lg) - 4px);
+  border:1px dashed rgba(139,90,30,.35);pointer-events:none;
+}
+.card.dark::before{border-color:rgba(212,175,55,.18);}
 
-  /* سناریو */
-  .sc-title{font-size:18px;color:var(--gold2);font-weight:800;margin-bottom:4px}
-  .sc-goal{font-size:13px;color:var(--text);line-height:1.9}
-  .tag-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-  .tag{background:#0f1420;border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-size:11px;color:var(--muted)}
-  .tag b{color:var(--text);font-weight:600}
+/* ===== Headings ===== */
+h1,h2,h3{font-weight:800;letter-spacing:-.2px;color:var(--ink);}
+.card.dark h1,.card.dark h2,.card.dark h3{color:var(--gold2);}
+.hero{text-align:center;padding:28px 18px 22px;}
+.hero h1{font-size:24px;margin-bottom:4px;}
+.hero .sub{color:var(--ink2);font-size:13px;margin-bottom:18px;line-height:2;}
+.card.dark .hero .sub{color:#d9c598;}
+.sec-title{
+  display:flex;align-items:center;gap:8px;
+  font-size:13px;font-weight:800;
+  color:var(--ink2);
+  margin:14px 2px 10px;
+  text-transform:uppercase;
+  letter-spacing:1px;
+}
+.sec-title::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,rgba(139,90,30,.45),transparent);}
+.sec-title.danger{color:var(--red);}
+.sec-title.gold{color:var(--gold3);}
 
-  /* کاراکتر */
-  .char-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-  .char-avatar{width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg,#2a3150,#3a2f52);
-    display:flex;align-items:center;justify-content:center;font-size:28px;border:1px solid #4a4f77}
-  .char-head h2{font-size:18px;color:var(--gold2)}
-  .char-head .sub{font-size:12px;color:var(--muted)}
-  .bar{height:12px;background:#0f1420;border-radius:999px;overflow:hidden;border:1px solid var(--line);margin:6px 0 2px}
-  .bar > div{height:100%;border-radius:999px;transition:width .5s}
-  .bar.hp > div{background:linear-gradient(90deg,#d95f5f,#4caf7d)}
-  .bar.xp > div{background:linear-gradient(90deg,#b8860b,#f2d67c)}
-  .bar-label{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
-  .stat{background:#0f1420;border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center}
-  .stat b{font-family:monospace;font-size:15px;color:var(--gold2)}
-  .stat span{font-size:11px;color:var(--muted)}
-  .feat{font-size:12px;color:var(--muted);line-height:2;list-style:none}
-  .feat li::before{content:"✦ ";color:var(--gold)}
+/* ===== Buttons ===== */
+.btn{
+  border:none;border-radius:12px;
+  padding:14px 16px;
+  font-family:inherit;font-size:14px;font-weight:700;
+  cursor:pointer;transition:.15s transform,.15s box-shadow,.15s filter;
+  color:#2a1a08;flex:1;min-width:0;
+  position:relative;
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  text-align:center;
+  min-height:48px;
+}
+.btn:active{transform:scale(.97);filter:brightness(.92);}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none;filter:grayscale(.3);}
+.btn.gold{
+  background:linear-gradient(180deg,#ffe182,#d4af37 60%,#a8831f);
+  color:#2a1a08;
+  box-shadow:0 4px 0 #6e4f12, 0 6px 12px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.55);
+  border:1px solid #8a6a28;
+  text-shadow:0 1px 0 rgba(255,255,255,.3);
+}
+.btn.gold:active{box-shadow:0 1px 0 #6e4f12, 0 2px 4px rgba(0,0,0,.3);transform:translateY(2px) scale(.98);}
+.btn.dark{
+  background:linear-gradient(180deg,#4a3320,#2a1c0e);
+  color:var(--gold2);
+  border:1.5px solid var(--gold3);
+  box-shadow:0 3px 0 #180f08, 0 5px 10px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,220,150,.2);
+}
+.btn.dark:active{box-shadow:0 1px 0 #180f08;transform:translateY(2px) scale(.98);}
+.btn.red{background:linear-gradient(180deg,#d75850,#94251e);color:#fff;box-shadow:0 4px 0 #5a1613; border:1px solid #6e1d18;}
+.btn.green{background:linear-gradient(180deg,#57b06b,#2f6d3c);color:#fff;box-shadow:0 4px 0 #1a4223; border:1px solid #1f4a27;}
+.btn.blue{background:linear-gradient(180deg,#6fa8ea,#2d63a6);color:#fff;box-shadow:0 4px 0 #173f6d; border:1px solid #1f4d80;}
+.btn.purple{background:linear-gradient(180deg,#a589e2,#6f4cb8);color:#fff;box-shadow:0 4px 0 #3f2972; border:1px solid #4c3182;}
+.btn.orange{background:linear-gradient(180deg,#eba266,#b25e1f);color:#fff;box-shadow:0 4px 0 #6e380f; border:1px solid #7a3f12;}
+.btn.ghost{
+  background:rgba(255,255,255,.1);
+  color:var(--parch);border:1.5px solid rgba(212,175,55,.4);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.2);
+}
+.btn-row{display:flex;gap:8px;margin:8px 0;flex-wrap:wrap;}
+.btn-row .btn{flex:1 1 140px;}
+.btn.chip{
+  flex:0 0 auto;
+  min-width:0;padding:10px 14px;min-height:42px;
+  border-radius:999px;font-size:13px;font-weight:700;
+}
+.btn.mini{padding:8px 12px;min-height:36px;font-size:12px;border-radius:10px;flex:0 0 auto;}
 
-  /* نبرد */
-  .turn-banner{border-radius:14px;padding:12px 14px;text-align:center;font-size:14px;font-weight:700;margin-bottom:12px}
-  .turn-banner.me{background:linear-gradient(135deg,#3a3320,#4a3f22);border:1px solid var(--gold);color:var(--gold2);animation:glow 1.6s infinite}
-  .turn-banner.enemy{background:linear-gradient(135deg,#3a2020,#4a2222);border:1px solid #7a3a3a;color:#ff9d9d}
-  .turn-banner.wait{background:#1b2334;border:1px solid var(--line);color:var(--muted)}
-  @keyframes glow{0%,100%{box-shadow:0 0 0 0 rgba(212,175,55,.35)}50%{box-shadow:0 0 18px 3px rgba(212,175,55,.25)}}
-  .part{display:flex;align-items:flex-start;gap:10px;background:#0f1420;border:1px solid var(--line);
-        border-radius:12px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:.12s}
-  .part:active{background:#182036}
-  .part.sel{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);background:#1a1f30}
-  .part.ally-sel{border-color:var(--green);box-shadow:0 0 0 1px var(--green);background:#15251f}
-  .part.dead{opacity:.45;cursor:default}
-  .part.acted{opacity:.7}
-  .part .em{font-size:22px;width:38px;text-align:center;flex-shrink:0;line-height:1.4}
-  .part .info{flex:1;min-width:0}
-  .part .nm{font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-  .part .nm small{color:var(--muted);font-weight:400;font-size:10px}
-  .part .hpbar{height:7px;background:#0b0f18;border-radius:99px;overflow:hidden;margin-top:4px}
-  .part .hpbar > div{height:100%;background:var(--green);transition:width .4s}
-  .part .hpbar > div.low{background:var(--red)}
-  .part .turn-mark{color:var(--gold);font-size:14px;flex-shrink:0}
-  .part.dead .hpbar > div{background:#555}
-  .cond-tags{display:flex;gap:3px;flex-wrap:wrap;margin-top:4px}
-  .cond-tag{font-size:9px;background:#2a1f2a;border:1px solid #4a2f4a;color:#d89ad8;border-radius:6px;padding:1px 5px}
-  .cond-tag.dodge{background:#1f2530;border-color:#3a5070;color:#7ba9e0}
-  .cond-tag.raging{background:#2a1a1a;border-color:#7a2a2a;color:#ff7a7a}
-  .cond-tag.prone{background:#1f2a1f;border-color:#3a603a;color:#9ad89a}
-  .cond-tag.invisible{background:#1a1a2a;border-color:#4a4a8a;color:#aaaaff}
-  .cond-tag.concentrating{background:#2a2a1f;border-color:#7a6a2a;color:#e0c860}
-  .cond-tag.blinded,.cond-tag.poisoned,.cond-tag.frightened,.cond-tag.stunned,
-  .cond-tag.restrained,.cond-tag.grappled,.cond-tag.paralyzed,.cond-tag.unconscious,
-  .cond-tag.charmed,.cond-tag.incapacitated{background:#2a1f1f;border-color:#7a3a3a;color:#ff9d9d}
-  .meta-row{display:flex;gap:8px;font-size:10px;color:var(--muted);margin-top:3px;flex-wrap:wrap}
-  .meta-row span{background:#0b0e14;border:1px solid var(--line);border-radius:6px;padding:1px 5px}
-  .dist-h{display:inline-flex;gap:4px}
+.or{color:var(--parch-dark);text-align:center;margin:14px 0 10px;font-size:12px;position:relative;}
+.or::before,.or::after{content:"";position:absolute;top:50%;width:30%;height:1px;background:linear-gradient(90deg,transparent,rgba(212,175,55,.4));}
+.or::before{right:0;}
+.or::after{left:0;}
 
-  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
-  .actions .btn{padding:11px 8px;font-size:12.5px}
-  .actions.row-2 .btn{min-width:calc(50% - 4px)}
-  .actions.row-3 .btn{min-width:calc(33.333% - 6px)}
-  .actions.row-4 .btn{min-width:calc(25% - 6px);padding:10px 4px;font-size:11.5px}
+.hint{color:var(--ink2);font-size:12px;text-align:center;margin-top:14px;line-height:1.9;}
+.card.dark .hint{color:#c8b68a;}
+a{color:var(--gold2);text-decoration:none;}
 
-  .spell-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
-  .spell-btn{background:#0f1420;border:1px solid var(--line);border-radius:10px;padding:9px;
-             color:var(--text);font-family:inherit;font-size:12px;cursor:pointer;text-align:right}
-  .spell-btn:active{background:var(--purple);color:#0b0e14}
-  .spell-btn b{display:block;font-size:12.5px;margin-bottom:2px}
-  .spell-btn .spmeta{font-size:10px;color:var(--muted)}
-  .spell-btn.bonus-spell{border-color:#4a3820}
-  .spell-btn:disabled{opacity:.4;cursor:not-allowed}
+/* ===== Inputs ===== */
+input,select,textarea{
+  width:100%;
+  background:linear-gradient(180deg,#fff6de,#f1dfb1);
+  border:1.5px solid #8a6a33;
+  color:var(--ink);
+  border-radius:12px;
+  padding:13px 14px;
+  font-size:15px;
+  font-family:inherit;
+  margin-bottom:10px;
+  outline:none;
+  box-shadow:inset 0 2px 4px rgba(0,0,0,.08), 0 1px 0 rgba(255,255,255,.5);
+  transition:.15s;
+}
+input::placeholder,textarea::placeholder{color:#8a6a3399;}
+input:focus,select:focus,textarea:focus{
+  border-color:var(--gold);
+  box-shadow:inset 0 2px 4px rgba(0,0,0,.08), 0 0 0 3px rgba(212,175,55,.25);
+}
+textarea{resize:vertical;min-height:80px;line-height:1.9;}
+.join-row{display:flex;gap:8px;}
+.join-row input{margin-bottom:0;text-align:center;font-family:ui-monospace,monospace;letter-spacing:3px;text-transform:uppercase;}
+.join-row .btn{width:120px;flex-shrink:0;}
 
-  .target-pill{display:inline-flex;align-items:center;gap:6px;background:#1a1f30;border:1px solid var(--gold);
-               border-radius:999px;padding:4px 10px;font-size:11px;color:var(--gold2);margin-bottom:8px}
-  .target-pill.ally{border-color:var(--green);color:var(--green);background:#15251f}
-  .target-pill .x{cursor:pointer;font-weight:700;margin-inline-start:4px}
+label.field-label{display:block;font-size:12px;font-weight:700;color:var(--ink2);margin:6px 2px 4px;}
+.card.dark label.field-label{color:var(--gold2);}
 
-  .subchips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
-  .subchips .chip{font-size:11px;padding:5px 10px}
+/* ===== Feed / messages ===== */
+.feed{
+  display:flex;flex-direction:column;gap:10px;
+  max-height:62dvh;
+  overflow-y:auto;
+  padding:4px 2px 8px;
+  scroll-behavior:smooth;
+  -webkit-overflow-scrolling:touch;
+}
+.feed::-webkit-scrollbar{width:8px;}
+.feed::-webkit-scrollbar-thumb{background:rgba(139,90,30,.35);border-radius:4px;}
+.msg{
+  border-radius:16px;padding:12px 14px;font-size:14.5px;line-height:2;
+  animation:fadeUp .3s ease both;
+  word-break:break-word;
+  white-space:pre-wrap;
+  border:1.5px solid;
+}
+.msg.dm{
+  background:
+    radial-gradient(circle at 10% 0%, rgba(255,240,190,.35), transparent 45%),
+    linear-gradient(160deg,#fff5d6,#e7ce94);
+  border-color:#8a6a33;
+  color:var(--ink);
+  box-shadow:0 4px 14px rgba(0,0,0,.2), inset 0 0 24px rgba(139,90,30,.12);
+  position:relative;
+}
+.msg.dm::before{
+  content:"🐉";
+  position:absolute;top:-11px;right:-8px;
+  font-size:22px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.3));
+}
+.msg.sys{
+  background:#f0e2bc;border-color:#c9ad74;color:#5a4020;
+  font-size:12.5px;text-align:center;border-style:dashed;
+}
+.msg.act{
+  background:linear-gradient(160deg,#3d2a1b,#24160c);
+  border-color:#5a3f20;
+  color:#f1e2bb;
+  margin-inline-end:30px;
+}
+.msg .who{
+  font-size:11px;font-weight:800;
+  color:var(--gold3);
+  display:block;margin-bottom:4px;
+  letter-spacing:.5px;
+}
+.msg.act .who{color:var(--gold2);}
+.msg .text{white-space:pre-wrap;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
 
-  .action-sheet-hd{display:flex;align-items:center;gap:8px;margin:8px 0 4px}
-  .action-sheet-hd .dot{width:8px;height:8px;border-radius:50%}
-  .action-sheet-hd .dot.main{background:var(--red);box-shadow:0 0 8px var(--red)}
-  .action-sheet-hd .dot.bonus{background:var(--orange);box-shadow:0 0 8px var(--orange)}
-  .action-sheet-hd .dot.move{background:var(--blue);box-shadow:0 0 8px var(--blue)}
-  .action-sheet-hd .dot.react{background:var(--purple);box-shadow:0 0 8px var(--purple)}
-  .action-sheet-hd .dot.feat{background:var(--gold);box-shadow:0 0 8px var(--gold)}
+/* ===== Story input ===== */
+.story-input{
+  display:flex;gap:8px;margin-top:10px;
+  background:linear-gradient(160deg,#2e1f12,#1a100a);
+  border:1.5px solid var(--gold3);
+  border-radius:14px;
+  padding:6px;
+}
+.story-input input,.story-input textarea{
+  flex:1;background:transparent;border:none;color:var(--parch);
+  margin:0;padding:10px 12px;box-shadow:none;font-size:14px;
+}
+.story-input input::placeholder{color:#b09877;}
+.story-input input:focus{box-shadow:none;}
+.story-input .btn{margin:0;flex:0 0 auto;min-height:42px;padding:10px 14px;}
 
-  /* گروه */
-  .code-box{text-align:center;padding:18px}
-  .code-box .code{font-family:monospace;font-size:30px;letter-spacing:6px;color:var(--gold2);
-                  background:#0f1420;border:1px dashed var(--gold);border-radius:12px;padding:12px;margin:10px 0}
-  .p-row{display:flex;align-items:center;gap:10px;background:#0f1420;border:1px solid var(--line);
-         border-radius:12px;padding:10px 12px;margin-bottom:8px}
-  .p-row .em{font-size:22px;width:36px;text-align:center}
-  .p-row .info{flex:1}
-  .p-row .nm{font-size:13.5px;font-weight:700}
-  .p-row .sub{font-size:11px;color:var(--muted)}
-  .crown{color:var(--gold);font-size:14px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+.chip{
+  border:1.5px solid rgba(212,175,55,.35);
+  background:rgba(255,220,120,.08);
+  color:var(--gold2);
+  padding:8px 12px;border-radius:999px;
+  font-family:inherit;font-size:12.5px;font-weight:700;
+  cursor:pointer;transition:.15s;
+}
+.chip:active{transform:scale(.95);background:rgba(255,220,120,.2);}
 
-  #toast{position:fixed;bottom:86px;left:50%;transform:translateX(-50%);background:#2a2133;
-         color:var(--text);border:1px solid var(--purple);padding:10px 18px;border-radius:12px;
-         font-size:13px;z-index:99;max-width:85vw;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.5);
-         opacity:0;pointer-events:none;transition:.25s}
-  #toast.show{opacity:1}
-  .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);
-           border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px}
-  @keyframes spin{to{transform:rotate(360deg)}}
+/* ===== Combat ===== */
+.combat-list{display:flex;flex-direction:column;gap:10px;}
+.combatant{
+  display:flex;align-items:center;gap:12px;
+  background:linear-gradient(160deg,#2b1c10,#180e08);
+  border:1.5px solid #5a3f20;
+  border-radius:14px;padding:10px 12px;
+  box-shadow:var(--shadow-sm);
+  position:relative;
+  transition:.25s;
+}
+.combatant.active{
+  border-color:var(--gold);
+  box-shadow:0 0 0 3px rgba(212,175,55,.25), var(--shadow);
+  background:linear-gradient(160deg,#3a2a18,#20150b);
+}
+.combatant.active::before{
+  content:"▶";position:absolute;right:-4px;top:-10px;
+  background:var(--gold);color:#2a1a08;
+  width:24px;height:24px;border-radius:50%;
+  display:grid;place-items:center;font-size:14px;
+  box-shadow:0 3px 8px rgba(0,0,0,.5);
+}
+.combatant.dead{opacity:.4;filter:grayscale(1);}
+.combatant.enemy{border-color:var(--red-dim);}
+.combatant.enemy.active{border-color:#ff6b63;box-shadow:0 0 0 3px rgba(230,80,70,.25), var(--shadow);}
+.avatar{
+  width:54px;height:54px;border-radius:14px;
+  display:grid;place-items:center;font-size:28px;
+  background:radial-gradient(circle at 30% 30%,rgba(255,255,255,.15),transparent),linear-gradient(160deg,#5a3f20,#2a190c);
+  border:1.5px solid var(--gold3);
+  flex-shrink:0;
+}
+.combatant.enemy .avatar{background:radial-gradient(circle at 30% 30%,rgba(255,100,100,.18),transparent),linear-gradient(160deg,#5b201c,#2a0b08);border-color:#7d231f;}
+.c-info{flex:1;min-width:0;}
+.c-name{font-weight:800;font-size:15px;color:var(--gold2);display:flex;align-items:center;gap:6px;}
+.c-meta{font-size:11.5px;color:#c8b68a;margin-top:2px;}
+.hp-bar{
+  margin-top:6px;height:10px;border-radius:999px;
+  background:#0d0703;border:1px solid #3c2512;overflow:hidden;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.6);
+}
+.hp-fill{
+  height:100%;
+  background:linear-gradient(180deg,#6bc47c,#2f7c3e);
+  transition:width .4s ease;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.2);
+}
+.hp-fill.low{background:linear-gradient(180deg,#f1a84a,#b96a17);}
+.hp-fill.crit{background:linear-gradient(180deg,#ef6b63,#96231d);}
+.hp-text{font-size:11px;color:#c8b68a;margin-top:3px;font-family:ui-monospace,monospace;}
+.tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;}
+.tag{
+  font-size:10.5px;padding:2px 8px;border-radius:999px;
+  background:rgba(212,175,55,.15);color:var(--gold2);
+  border:1px solid rgba(212,175,55,.3);
+  font-weight:700;
+}
+.tag.bad{background:rgba(184,53,47,.18);color:#ff857f;border-color:rgba(184,53,47,.4);}
+.tag.good{background:rgba(62,138,77,.2);color:#82d392;border-color:rgba(62,138,77,.4);}
+
+/* ===== Character sheet ===== */
+.sheet-head{display:flex;gap:14px;align-items:center;margin-bottom:12px;}
+.sheet-avatar{
+  width:78px;height:78px;border-radius:20px;
+  display:grid;place-items:center;font-size:44px;
+  background:radial-gradient(circle at 30% 30%,rgba(255,255,255,.2),transparent),linear-gradient(160deg,#5a3f20,#2a190c);
+  border:2px solid var(--gold);
+  box-shadow:0 4px 14px rgba(0,0,0,.35);
+  flex-shrink:0;
+}
+.sheet-head h2{font-size:20px;}
+.sheet-head .sub{font-size:12px;color:var(--ink2);margin-top:2px;}
+.card.dark .sheet-head .sub{color:#c8b68a;}
+.abilities{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0 4px;}
+.ability{
+  background:linear-gradient(180deg,#5a3f20,#3a2815);
+  border:1.5px solid var(--gold3);
+  border-radius:12px;
+  padding:8px 6px;text-align:center;
+  color:var(--parch);
+  position:relative;
+}
+.ability .k{font-size:10px;color:var(--gold2);font-weight:700;letter-spacing:1px;}
+.ability .v{font-size:22px;font-weight:800;color:#fff;text-shadow:0 2px 4px rgba(0,0,0,.5);}
+.ability .m{font-size:11px;color:#c8b68a;margin-top:-2px;}
+.stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:8px 0;}
+.stat{
+  background:rgba(0,0,0,.2);
+  border:1px solid rgba(212,175,55,.2);
+  border-radius:10px;padding:8px 10px;
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  font-size:13px;color:var(--parch);
+}
+.stat b{color:var(--gold2);font-size:15px;}
+.feat-list{list-style:none;display:flex;flex-direction:column;gap:6px;margin-top:6px;}
+.feat-list li{
+  font-size:13px;padding:8px 12px;
+  background:rgba(0,0,0,.15);
+  border-inline-start:3px solid var(--gold);
+  border-radius:8px;color:var(--ink);
+}
+.card.dark .feat-list li{background:rgba(0,0,0,.25);color:var(--parch);}
+
+/* ===== Tab bar ===== */
+nav.tabbar{
+  position:fixed;bottom:0;left:0;right:0;z-index:25;
+  display:grid;grid-template-columns:repeat(5,1fr);
+  background:linear-gradient(180deg,rgba(30,20,12,.96),rgba(15,10,6,.98));
+  backdrop-filter:blur(14px);
+  border-top:2px solid var(--gold3);
+  padding-bottom:env(safe-area-inset-bottom);
+  box-shadow:0 -6px 18px rgba(0,0,0,.5);
+}
+.tab{
+  background:none;border:none;color:#8d7a55;
+  font-family:inherit;font-size:10.5px;font-weight:700;
+  padding:10px 2px 8px;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  transition:.15s;
+  position:relative;
+}
+.tab .ic{font-size:22px;filter:grayscale(.5);transition:.15s;}
+.tab.active{color:var(--gold2);}
+.tab.active .ic{filter:none;transform:translateY(-2px) scale(1.1);}
+.tab.active::after{
+  content:"";position:absolute;top:0;right:25%;left:25%;height:3px;
+  background:linear-gradient(90deg,transparent,var(--gold2),transparent);
+  border-radius:0 0 4px 4px;
+}
+.badge{position:absolute;top:6px;inset-inline-end:calc(50% - 22px);background:var(--red);color:#fff;font-size:10px;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;box-shadow:0 0 8px rgba(230,70,70,.6);border:1.5px solid #2a0a08;}
+
+.tab-page{animation:fadeIn .25s ease;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+
+/* ===== Toast ===== */
+#toast{
+  position:fixed;bottom:110px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:linear-gradient(180deg,#3a2815,#1a100a);
+  color:var(--gold2);font-weight:700;font-size:13px;
+  padding:12px 18px;border-radius:999px;
+  border:1.5px solid var(--gold3);
+  box-shadow:0 8px 22px rgba(0,0,0,.55);
+  opacity:0;pointer-events:none;transition:.3s;z-index:200;
+  max-width:92vw;text-align:center;
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* ===== Dice roller overlay ===== */
+#dice-overlay{
+  position:fixed;inset:0;z-index:150;
+  background:rgba(10,6,2,.7);backdrop-filter:blur(3px);
+  display:none;place-items:center;
+}
+#dice-overlay.show{display:grid;}
+#dice{
+  width:110px;height:110px;display:grid;place-items:center;
+  font-size:56px;font-weight:800;color:#fff;
+  background:linear-gradient(160deg,#f8df8f,#c9902a);
+  border:3px solid #fff3c5;
+  border-radius:18px;
+  text-shadow:0 3px 0 #6b4910;
+  box-shadow:0 14px 34px rgba(0,0,0,.55), inset 0 2px 0 rgba(255,255,255,.6);
+  animation:dice-roll .9s cubic-bezier(.3,1.6,.5,1) both;
+}
+@keyframes dice-roll{
+  0%{transform:rotate(-20deg) scale(.5);}
+  50%{transform:rotate(180deg) scale(1.15);}
+  100%{transform:rotate(360deg) scale(1);}
+}
+#dice-result{margin-top:14px;color:var(--gold2);font-weight:800;font-size:15px;text-align:center;max-width:80vw;}
+
+/* ===== Modal ===== */
+.modal-backdrop{
+  position:fixed;inset:0;z-index:120;
+  background:rgba(10,6,2,.78);backdrop-filter:blur(6px);
+  display:none;align-items:flex-end;justify-content:center;
+  padding:0;
+}
+.modal-backdrop.show{display:flex;}
+.modal{
+  width:100%;max-width:560px;
+  max-height:90dvh;overflow-y:auto;
+  background:linear-gradient(160deg,#f5e7c5,#e4cf9e);
+  color:var(--ink);
+  border-top:2px solid var(--gold);
+  border-radius:22px 22px 0 0;
+  padding:20px 16px 24px;
+  box-shadow:0 -10px 40px rgba(0,0,0,.5);
+  animation:slideUp .28s ease;
+  padding-bottom:calc(24px + env(safe-area-inset-bottom));
+}
+@keyframes slideUp{from{transform:translateY(40px);opacity:0;}to{transform:none;opacity:1;}}
+.modal h2{margin-bottom:10px;color:var(--ink);font-size:18px;}
+.modal .close{
+  position:absolute;top:12px;inset-inline-end:14px;
+  background:rgba(0,0,0,.1);border:none;color:var(--ink);
+  width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer;
+}
+.scenario-text{
+  font-size:15px;line-height:2.3;
+  background:rgba(255,255,255,.35);
+  border:1px dashed #8a6a33;
+  border-radius:12px;padding:14px;
+  white-space:pre-wrap;
+  max-height:60dvh;overflow-y:auto;
+  margin:10px 0;
+}
+
+/* ===== Utility ===== */
+.row{display:flex;gap:8px;align-items:center;}
+.muted{color:var(--ink2);font-size:12px;}
+.card.dark .muted{color:#c8b68a;}
+.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(139,90,30,.4),transparent);margin:10px 0;}
+.spacer{flex:1;}
+
+@media (min-width:600px){
+  main{padding:20px 18px;}
+  .btn-row .btn{flex:1 1 auto;}
+  .abilities{grid-template-columns:repeat(6,1fr);}
+}
 </style>
 </head>
 <body>
 
 <header>
-  <div class="logo"><img class="logo-icon" src="icon.png" alt=""> دانجن‌مستر AI<small>مینی‌گیم D&D 5e — تا ۸ بازیکن</small></div>
-  <div id="roomPill" class="room-pill hidden">اتاق <b id="pillCode"></b></div>
+  <div class="logo">
+    <img class="logo-icon" src="icon.png" alt="">
+    <div>D&D 5e<small>بردگیم مینی‌گیم — AI DM</small></div>
+  </div>
+  <div id="roomPill" class="room-pill hidden" onclick="copyInvite()">
+    اتاق <b id="pillCode"></b> 🔗
+  </div>
 </header>
 
 <main>
-  <!-- صفحه ورود نام (حالت وب/مهمان) -->
+  <!-- ====== Screen: Login ====== -->
   <section id="screen-login" class="hidden">
     <div class="card hero">
-      <h1>🐉 ورود به دانجن‌انددراگون</h1>
-      <p>این مینی‌گیم را می‌توانی <b>هم در تلگرام</b> بازی کنی هم <b>مستقیم در مرورگر</b>. لطفاً نام خود را وارد کن:</p>
-      <form onsubmit="event.preventDefault();guestLogin();return false">
-        <input id="inpGuestName" placeholder="اسم شخصیت/بازیکن (مثلاً: آرش)" maxlength="24" autocomplete="off" autofocus>
-        <button type="submit" class="btn gold" id="btnGuestLogin">⚔️ ورود به بازی</button>
+      <h1>🐉 خوش آمدی ماجراجو</h1>
+      <p class="sub">
+        این مینی‌گیم D&D 5e است که با هوش مصنوعی دانجن‌مستر می‌شود.<br>
+        هم در تلگرام، هم مستقیم در مرورگر بازی می‌کنی.<br>
+        <b class="muted">نام خود را وارد کن تا وارد بازی شوی.</b>
+      </p>
+      <form onsubmit="event.preventDefault();guestLogin();return false;">
+        <input id="inpGuestName" placeholder="نام شما (مثلاً: آرش)" maxlength="24" autocomplete="off" autofocus>
+        <button type="submit" class="btn gold">⚔️ ورود به بازی</button>
       </form>
-      <p class="hint">اسم شما فقط روی این گوشی ذخیره می‌شود و نیازی به ثبت‌نام نیست.</p>
-      <div id="tgHint" class="hidden" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
-        <p style="color:var(--muted);font-size:12px">💡 در تلگرام باز کردی؟ اگر خودکار شناسایی نشد دوباره از دکمه مینی‌گیم تلگرام باز کن یا همین‌جا نام بزن و بازی کن.</p>
+      <div class="hint">
+        اسم شما فقط روی همین گوشی ذخیره می‌شود.<br>
+        <small id="tgHint" class="hidden">💡 اگر در تلگرام خودکار شناسایی نشد، همین‌جا نام بزن.</small>
       </div>
     </div>
   </section>
 
-  <!-- صفحه خانه (بعد از ورود) -->
+  <!-- ====== Screen: Home ====== -->
   <section id="screen-home" class="hidden">
     <div class="card hero">
-      <h1>🐉 مینی‌گیم دانجن‌انددراگون</h1>
-      <p id="welcomeText">با هوش مصنوعی به سبک Baldur's Gate 3 — سناریو بساز، ماجرا برو، نبرد نوبتی با سیستم اکشن سه‌گانه! ⚔️</p>
-      <form onsubmit="event.preventDefault();createRoom();return false" style="margin:0">
-        <input id="inpRoomName" placeholder="اسم اتاق (مثلاً: سفر به کوهستان مه‌آلود)" maxlength="40" autocomplete="off">
-        <button type="submit" class="btn gold" id="btnCreate">🎮 ساخت اتاق جدید (میزبان)</button>
+      <h1 id="welcome-title">🐉 سفر جدید</h1>
+      <p class="sub">
+        یک اتاق بساز و میزبان شو، یا با کد دعوت دوستت وارد شو.<br>
+        تا ۸ بازیکن در هر اتاق پشتیبانی می‌شود.
+      </p>
+
+      <form onsubmit="event.preventDefault();createRoom();return false;">
+        <label class="field-label">🏕️ نام اتاق (اختیاری)</label>
+        <input id="inpRoomName" placeholder="سفر به کوهستان مه‌آلود" maxlength="40">
+        <button class="btn gold" id="btnCreate">🎮 ساخت اتاق جدید</button>
       </form>
+
       <div class="or">— یا —</div>
-      <form class="join-row" onsubmit="event.preventDefault();joinRoom();return false" style="display:flex;gap:8px">
-        <input id="inpCode" placeholder="کد اتاق دوستت" maxlength="8" style="text-transform:uppercase;margin:0" autocomplete="off">
-        <button type="submit" class="btn blue" style="flex-shrink:0">🔗 ورود</button>
+
+      <form class="join-row" onsubmit="event.preventDefault();joinRoom();return false;">
+        <input id="inpCode" placeholder="کد اتاق دوستت" maxlength="8" style="text-transform:uppercase">
+        <button class="btn dark" type="submit">🔗 ورود</button>
       </form>
-      <p class="hint">کد اتاق را با دوستانت به اشتراک بگذار؛ هر ۸ نفر<br>داخل همین مینی‌گیم با هم بازی می‌کنید!<br><small style="color:var(--muted)">برای خروج/تغییر نام: <a href="javascript:guestLogout()" style="color:var(--gold2)">اینجا بزن</a></small></p>
+    </div>
+
+    <div class="card dark">
+      <div class="sec-title">📜 راهنمای سریع</div>
+      <div class="hint" style="text-align:right">
+        • اتاق بساز یا وارد شو<br>
+        • در تب «🧙 شخصیت» کاراکترت را بساز<br>
+        • در تب «📖 ماجرا» دکمه 🐉 <b>شروع سناریو</b> بزن<br>
+        • هر کاری می‌خوای در باکس پایین بنویس<br>
+        • نبرد نوبتی با اکشن اصلی، بونس، و ری‌اکشن<br>
+        • برای خروج/تعویض نام <a href="javascript:guestLogout()" style="color:var(--gold2)">اینجا بزن</a>
+      </div>
     </div>
   </section>
 
-  <!-- صفحه بازی -->
+  <!-- ====== Screen: Game ====== -->
   <section id="screen-game" class="hidden">
 
-    <!-- 📖 داستان -->
+    <!-- Story tab -->
     <div id="tab-story" class="tab-page">
       <div id="scenarioCard"></div>
+
+      <div class="card dark" style="padding:12px 14px;">
+        <div class="row" style="flex-wrap:wrap;gap:8px;">
+          <button class="btn orange mini" onclick="genScenario()">🐉 شروع سناریو</button>
+          <button class="btn dark mini" onclick="whereNow()">🗺️ الان کجاییم؟</button>
+          <button class="btn ghost mini" onclick="lookAround()">👁️ نگاه کن</button>
+          <button class="btn ghost mini" onclick="quickRoll('1d20')">🎲 d20</button>
+          <button class="btn ghost mini" onclick="doRest('short')">🔥 استراحت کوتاه</button>
+          <button class="btn ghost mini" onclick="doRest('long')">🛏️ استراحت بلند</button>
+        </div>
+      </div>
+
       <div class="sec-title">📜 دفترچه ماجرا</div>
       <div class="feed" id="feed"></div>
-      <div class="story-input">
-        <form onsubmit="event.preventDefault();sendAction();return false" style="display:flex;gap:8px">
-          <input id="inpAction" placeholder="اقدامت را بنویس... مثلاً: درِ کهنه را باز می‌کنم" maxlength="200" autocomplete="off">
-          <button type="submit" class="btn gold" id="btnStory">بفرست ✨</button>
-        </form>
-      </div>
-      <div class="chips" style="margin-top:10px">
-        <button class="chip dice" onclick="quickRoll('d20')">🎲 d20</button>
-        <button class="chip dice" onclick="quickRoll('2d6')">🎲 2d6</button>
-        <button class="chip dice" onclick="quickRoll('d8')">🎲 d8</button>
-        <button class="chip dice" onclick="quickRoll('dis')">🎲 ضعف</button>
-        <button class="chip dice" onclick="quickRoll('adv')">🎲 مزیت</button>
-        <button class="chip" onclick="doRest('short')">🔥 استراحت کوتاه</button>
-        <button class="chip" onclick="doRest('long')">🛏️ استراحت طولانی</button>
+
+      <form class="story-input" onsubmit="event.preventDefault();sendAction();return false;">
+        <input id="inpAction" placeholder="اقدامت را بنویس... مثلاً: در کهنه را باز می‌کنم" maxlength="300" autocomplete="off">
+        <button type="submit" class="btn gold" id="btnStory">بفرست ✨</button>
+      </form>
+
+      <div class="chips">
+        <button class="chip" onclick="quickRoll('1d20')">🎲 d20</button>
+        <button class="chip" onclick="quickRoll('2d6')">🎲 2d6</button>
+        <button class="chip" onclick="quickRoll('d8')">🎲 d8</button>
+        <button class="chip" onclick="quickRoll('adv')">🎲 مزیت</button>
+        <button class="chip" onclick="quickRoll('dis')">🎲 ضعف</button>
       </div>
     </div>
 
-    <!-- ⚔️ نبرد -->
+    <!-- Combat tab -->
     <div id="tab-combat" class="tab-page hidden">
       <div id="combatBox"></div>
     </div>
 
-    <!-- 🧙 کاراکتر -->
+    <!-- Character tab -->
     <div id="tab-char" class="tab-page hidden">
       <div id="charBox"></div>
     </div>
 
-    <!-- 👥 گروه -->
+    <!-- Party tab -->
     <div id="tab-party" class="tab-page hidden">
       <div id="partyBox"></div>
     </div>
   </section>
 </main>
 
-<nav id="tabbar" class="hidden">
-  <button class="tab active" data-tab="story"><span class="ic">📖</span>داستان</button>
+<!-- Tab bar -->
+<nav id="tabbar" class="tabbar hidden">
+  <button class="tab active" data-tab="story"><span class="ic">📖</span>ماجرا</button>
   <button class="tab" data-tab="combat"><span class="ic">⚔️</span>نبرد<span id="combatBadge" class="badge hidden">!</span></button>
-  <button class="tab" data-tab="char"><span class="ic">🧙</span>کاراکتر</button>
+  <button class="tab" data-tab="char"><span class="ic">🧙</span>شخصیت</button>
   <button class="tab" data-tab="party"><span class="ic">👥</span>گروه</button>
 </nav>
 
+<!-- Toast -->
 <div id="toast"></div>
 
+<!-- Dice overlay -->
+<div id="dice-overlay" onclick="this.classList.remove('show')">
+  <div style="display:flex;flex-direction:column;align-items:center;">
+    <div id="dice">🎲</div>
+    <div id="dice-result"></div>
+  </div>
+</div>
+
+<!-- Scenario modal -->
+<div id="scenario-modal" class="modal-backdrop" onclick="if(event.target===this)closeModal()">
+  <div class="modal" style="position:relative;">
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>🐉 دانجن‌مستر می‌گوید...</h2>
+    <div id="scenario-modal-text" class="scenario-text"></div>
+    <button class="btn gold" onclick="closeModal()">شروع ماجرا ⚔️</button>
+  </div>
+</div>
+
 <script>
-/* ================= پایه ================= */
+/* ============================================================
+   Globals / bootstrap
+   ============================================================ */
 const $ = s => document.querySelector(s);
-let S = null;
-let META = null;
+const $$ = s => document.querySelectorAll(s);
+let S = null;         // current state
+let META = null;      // /api/meta result
 let roomCode = localStorage.getItem('dnd_room') || '';
-let selTarget = null;   // هدف دشمن
-let selAlly = null;     // هدف هم‌تیمی (برای help/inspire/helpup)
+let selTarget = null;
 let selSpell = null;
 let polling = null;
+let activeTab = 'story';
+
 const TG = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
-if (TG) { TG.ready(); TG.expand(); }
+if (TG) { try { TG.ready(); TG.expand(); } catch(e){} }
 
-// نقشه emoji برای conditionها
-const COND_EMOJI = {
-  blinded:"👁️‍🗨️",charmed:"💞",frightened:"😱",grappled:"🫴",poisoned:"🤢",
-  prone:"🤸",restrained:"🪢",stunned:"💫",unconscious:"😵",invisible:"👻",
-  deafened:"🔇",incapacitated:"🚫",paralyzed:"⚡",exhaustion:"🥵",
-  dodge:"🛡️",raging:"😤",concentrating:"🧘",
-};
-const COND_FA = {
-  blinded:"کور",charmed:"افسون",frightened:"ترس",grappled:"گرفتار",poisoned:"مسموم",
-  prone:"زمین‌خورده",restrained:"مقید",stunned:"شکه",unconscious:"بیهوش",invisible:"نامرئی",
-  deafened:"ناشنوا",incapacitated:"بی‌اقدام",paralyzed:"فلج",exhaustion:"خستگی",
-  dodge:"دفاع",raging:"خشم",concentrating:"تمرکز",
-};
-
-// شرط‌هایی که اکشن اصلی را می‌سوزانند (برای غیرفعال کردن دکمه‌ها)
-const CANT_ACT = new Set(["stunned","unconscious","paralyzed","incapacitated"]);
-
+/* ============================================================
+   Guest auth
+   ============================================================ */
 function guestCreds() {
   const gid = localStorage.getItem('dnd_guest_id') || '';
   const gname = localStorage.getItem('dnd_guest_name') || '';
   return { gid, gname };
 }
 function hasAuth() {
-  // وقتی در تلگرام هست و initData معتبر داریم OR وقتی نام مهمان ذخیره شده
   if (TG && TG.initData && TG.initData.length > 10) return 'tg';
   const {gid,gname} = guestCreds();
   if (gid && gname) return 'guest';
   return null;
 }
 function guestLogin() {
-  const nameIn = document.getElementById('inpGuestName');
-  let name = (nameIn.value || '').trim();
-  if (!name) { toast('⚠️ لطفاً یک اسم وارد کن'); nameIn.focus(); return; }
+  const inp = $('#inpGuestName');
+  let name = (inp.value || '').trim();
+  if (!name) { toast('⚠️ لطفاً یک اسم وارد کن'); inp.focus(); return; }
   name = name.slice(0,24);
   let gid = localStorage.getItem('dnd_guest_id');
   if (!gid) { gid = String(Date.now() % 10000000 + 2000000); localStorage.setItem('dnd_guest_id', gid); }
   localStorage.setItem('dnd_guest_name', name);
-  // dev legacy keys
   localStorage.setItem('dnd_dev_id', gid);
   localStorage.setItem('dnd_dev_name', name);
   showScreen('home');
   refreshHomeWelcome();
-  // اگر در میانه پیوستن به اتاق بود، برگرده
-  const pendingCode = sessionStorage.getItem('dnd_pending_join') || '';
-  if (pendingCode) { sessionStorage.removeItem('dnd_pending_join'); doJoin(pendingCode); }
+  const pendingCode = sessionStorage.getItem('dnd_pending_join') ||
+                      new URLSearchParams(location.search).get('c') || '';
+  if (pendingCode) {
+    sessionStorage.removeItem('dnd_pending_join');
+    $('#inpCode').value = pendingCode.toUpperCase();
+    joinRoom();
+  }
 }
 function guestLogout() {
   localStorage.removeItem('dnd_guest_id');
@@ -386,71 +732,82 @@ function guestLogout() {
 }
 function refreshHomeWelcome() {
   const {gname} = guestCreds();
-  const wt = document.getElementById('welcomeText');
-  if (wt && gname) {
-    wt.innerHTML = 'خوش آمدی <b style="color:var(--gold2)">' + gname.replace(/[<>&]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) + '</b>! سناریو بساز، ماجرا برو، نبرد نوبتی با سیستم اکشن سه‌گانه! ⚔️';
-  }
+  const t = document.getElementById('welcome-title');
+  if (t && gname) t.textContent = '🐉 خوش آمدی، ' + gname;
 }
 
-async function api(path, body) {
+/* ============================================================
+   API helper — supports TG initData OR guest auth, and auto-injects body
+   ============================================================ */
+async function api(path, body, opts) {
+  opts = opts || {};
   let init = (TG && TG.initData) ? TG.initData : '';
   const authMode = hasAuth();
   if (!authMode) {
-    // اگر در این لحظه auth نداریم، صفحه ورود را نشان بده
     showScreen('login');
-    const codeInUrl = new URLSearchParams(location.search).get('c') || '';
-    if (codeInUrl) sessionStorage.setItem('dnd_pending_join', codeInUrl);
     throw new Error('لطفاً اول وارد شو');
   }
-  const opt = { method: body ? 'POST' : 'GET', headers: {} };
+  const url = new URL(path, location.href);
+  const opt = { method: body ? 'POST' : 'GET', headers: Object.assign({
+    'Accept': 'application/json'
+  }, opts.headers || {}) };
+
   if (init) {
     opt.headers['X-Init-Data'] = init;
-    const sep = path.includes('?') ? '&' : '?';
-    path = path + sep + 'tgWebAppData=' + encodeURIComponent(init);
+    url.searchParams.set('tgWebAppData', init);
   } else {
-    // حالت مهمان (وب/مرورگر)
     const {gid,gname} = guestCreds();
     opt.headers['X-Guest-Id'] = gid;
     opt.headers['X-Guest-Name'] = encodeURIComponent(gname);
-    const sep = path.includes('?') ? '&' : '?';
-    path = path + sep + 'guest_id=' + encodeURIComponent(gid)
-         + '&guest_name=' + encodeURIComponent(gname);
-    if (body) body = { ...body, guest_id: gid, guest_name: gname };
+    url.searchParams.set('guest_id', gid);
+    url.searchParams.set('guest_name', gname);
+    if (body && typeof body === 'object') {
+      body = Object.assign({ guest_id: gid, guest_name: gname }, body);
+    }
   }
   if (body) {
     opt.headers['Content-Type'] = 'application/json';
-    if (init) body = { ...body, init_data: init };
+    if (init) body = Object.assign({ init_data: init }, body);
     opt.body = JSON.stringify(body);
   }
   let r;
   try {
-    r = await fetch(path, opt);
+    r = await fetch(url.toString(), opt);
   } catch(e) {
     throw new Error('اتصال برقرار نیست — اینترنت/تونل را چک کن');
   }
-  const j = await r.json().catch(() => ({ ok: false, error: 'پاسخ نامعتبر از سرور' }));
+  const j = await r.json().catch(() => ({ ok:false, error:'پاسخ نامعتبر از سرور' }));
   if (!j.ok) {
     if (r.status === 401) {
-      if (init) {
-        toast('⚠️ جلسه تلگرام منقضی شد — به حالت مهمان می‌رویم...');
-        localStorage.removeItem('dnd_guest_id'); // force guest login
-        setTimeout(() => { location.reload(); }, 1500);
-      } else {
-        toast('⚠️ جلسه مهمان منقضی شد');
-        guestLogout();
-      }
+      toast('⚠️ جلسه منقضی شد — لطفاً دوباره وارد شو');
+      setTimeout(guestLogout, 1200);
     }
     throw new Error(j.error || 'خطا');
   }
   return j.data;
 }
+
+/* ============================================================
+   Toast / dice animation
+   ============================================================ */
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2600);
 }
-function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function showDice(face, label) {
+  const o = $('#dice-overlay'), d = $('#dice'), l = $('#dice-result');
+  d.textContent = face; l.textContent = label || '';
+  o.classList.add('show');
+  d.style.animation = 'none'; d.offsetHeight; d.style.animation = '';
+  clearTimeout(showDice._t);
+  showDice._t = setTimeout(()=> o.classList.remove('show'), 1400);
+}
+function esc(s){ return String(s==null?'':s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
-/* ================= بارگذاری اولیه ================= */
+/* ============================================================
+   Screen / tab navigation
+   ============================================================ */
 function showScreen(name) {
   ['login','home','game'].forEach(s => {
     const el = document.getElementById('screen-'+s);
@@ -458,172 +815,188 @@ function showScreen(name) {
   });
   const tb = $('#tabbar');
   if (tb) tb.classList.toggle('hidden', name !== 'game');
-}
-async function init() {
-  // اول meta را بدون auth بگیر (که نسخه و ... را داشته باشیم)
-  try {
-    const r = await fetch('/api/meta');
-    const j = await r.json(); if (j && j.ok) META = j.data;
-  } catch(e) {}
-  // چک کن لینک دعوت هست؟
-  const params = new URLSearchParams(location.search);
-  const cFromUrl = params.get('c') || params.get('room') || '';
-  if (cFromUrl) { $('#inpCode').value = cFromUrl.toUpperCase(); sessionStorage.setItem('dnd_pending_join', cFromUrl.toUpperCase()); }
-  // آیا کاربر لاگین است؟
-  const mode = hasAuth();
-  if (!mode) {
-    showScreen('login');
-    // اگر در تلگرام باز شده ولی initData هنوز نرسیده، کمی صبر کن و رفرش کن
-    if (TG) {
-      document.getElementById('tgHint').classList.remove('hidden');
-      setTimeout(() => { if (!hasAuth()) { /* همچنان منتظر نام می‌مانیم */ } }, 1500);
-      document.getElementById('inpGuestName').focus();
-    } else {
-      document.getElementById('inpGuestName').focus();
-    }
-    return;
-  }
-  refreshHomeWelcome();
-  if (roomCode) { try { await loadState(); return; } catch (e) {} }
-  showScreen('home');
+  if (name === 'game') switchTab(activeTab);
 }
 function showHome() { showScreen('home'); }
 function showGame() { showScreen('game'); }
 
-async function loadState() {
-  if (!roomCode) return null;
-  const d = await api('/api/room/state?room=' + encodeURIComponent(roomCode));
-  S = d;
-  if (!S.room.is_member) { showHome(); $('#inpCode').value = roomCode; toast('تو عضو این اتاق نیستی — دوباره وارد شو'); return null; }
-  localStorage.setItem('dnd_room', roomCode);
-  showGame(); render(); startPolling();
-  return d;
+function switchTab(name) {
+  activeTab = name;
+  $$('.tab-page').forEach(p => p.classList.add('hidden'));
+  const page = document.getElementById('tab-' + name);
+  if (page) page.classList.remove('hidden');
+  $$('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  if (name === 'combat') renderCombat();
+  if (name === 'char') renderChar();
+  if (name === 'party') renderParty();
+  if (name === 'story') renderFeed();
 }
-function startPolling() {
-  if (polling) clearInterval(polling);
-  // پولینگ هر ۴ ثانیه — کمتر از این، تایپ کاربر در فیلدها را قطع می‌کرد
-  polling = setInterval(() => { loadState().catch(()=>{}); }, 4000);
-}
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
-/* ================= رندر ================= */
 function anyInputFocused() {
-  // آیا کاربر در یکی از فیلدها در حال تایپ است؟
   const a = document.activeElement;
   if (!a) return false;
   const tag = (a.tagName || '').toLowerCase();
   if (tag !== 'input' && tag !== 'select' && tag !== 'textarea') return false;
-  // داخل صفحه بازی باشه
-  const screenGame = document.getElementById('screen-game');
-  return screenGame && !screenGame.classList.contains('hidden');
+  const sg = document.getElementById('screen-game');
+  return sg && !sg.classList.contains('hidden');
 }
+
+/* ============================================================
+   Polling & rendering
+   ============================================================ */
+function startPolling() {
+  if (polling) clearInterval(polling);
+  polling = setInterval(() => {
+    if (anyInputFocused()) return; // don't clobber typing
+    loadState().catch(()=>{});
+  }, 4000);
+}
+function stopPolling() { if (polling) { clearInterval(polling); polling = null; } }
+
 function render() {
   if (!S) return;
-  // اگر کاربر در حال تایپ در فیلدی است، رندر کامل را موقتاً نادیده بگیر
   if (anyInputFocused()) return;
   $('#roomPill').classList.remove('hidden');
   $('#pillCode').textContent = S.room.code;
-  renderScenario(); renderFeed(); renderCombat(); renderChar(); renderParty();
-  if (S.combat) { $('#combatBadge').classList.remove('hidden'); } else { $('#combatBadge').classList.add('hidden'); }
-}
-function _locName(l){ return typeof l==='object' ? (l.name||'') : String(l); }
-function _npcName(n){ return typeof n==='object' ? (n.role? `${n.name} (${n.role})` : n.name) : String(n); }
-function _tresText(t){
-  if (!t) return '';
-  if (typeof t === 'string') return t;
-  if (Array.isArray(t)) return t.map(_tresText).filter(Boolean).join('، ');
-  const qty = t.qty ? ` ×${t.qty}` : '';
-  return `${t.item||'گنج'}${qty}`;
-}
-function renderScenario() {
-  const box = $('#scenarioCard');
-  if (!S.scenario) { box.innerHTML = ''; return; }
-  const sc = S.scenario;
-  const cur = (S.room&&S.room.location)||'';
-  const locs = (sc.locations||[]).map(l=>{
-    const nm = _locName(l);
-    const isCur = nm === cur;
-    const hint = (typeof l==='object' && l.encounter_hint) ? ` — ${l.encounter_hint}` : '';
-    return `<span class="tag" style="${isCur?'background:#1d2440;border-color:var(--gold);color:var(--gold2)':''}">🗺️ ${esc(nm)}${hint?` <small style="opacity:.7">${esc(hint)}</small>`:''}</span>`;
-  }).join('');
-  const npcs = (sc.npcs||[]).map(n=>`<span class="tag">👤 ${esc(_npcName(n))}</span>`).join('');
-  const boss = sc.boss ? `<span class="tag" style="background:#2a1f12;border-color:#7a5a1a;color:var(--gold2)">👑 ${esc(sc.boss.name||'باس')}</span>` : '';
-  const traps = (sc.traps||[]).map(t=>`<span class="tag">🪤 ${esc(t.name||'تله')} DC ${t.detect_dc}</span>`).join('');
-  const branches = (sc.branches||[]).map(b=>`<span class="chip" onclick="document.getElementById('inpAction').value='${esc(b.text||'').replace(/'/g,"\\'")}';document.getElementById('inpAction').focus()">🔀 ${esc(b.text||'')}</span>`).join('');
-  const enc = (sc.encounters||[]).map(e => {
-    const mk = e.is_boss?'👑':'⚔️';
-    const loc = e.location?` <small style="opacity:.7">(${esc(e.location)})</small>`:'';
-    return `<span class="tag">${mk} <b>${e.count}× ${esc(e.name)}</b>${loc}</span>`;
-  }).join('');
-  const hook = sc.hook ? `<div style="font-style:italic;color:var(--muted);margin-bottom:8px;line-height:1.9">${esc(sc.hook)}</div>` : '';
-  box.innerHTML = `<div class="card">
-    <div class="sc-title">🐉 ${esc(sc.title||'ماجرای بی‌نام')}</div>
-    ${hook}
-    <div class="sc-goal">🎯 ${esc(sc.goal||'')}</div>
-    ${cur?`<div style="margin-top:6px;font-size:12px;color:var(--gold2)">📍 موقعیت: ${esc(cur)}</div>`:''}
-    <div class="tag-row">${locs}${npcs}${enc}${boss}${traps}</div>
-    ${sc.treasure?`<div class="tag-row"><span class="tag">💎 ${esc(_tresText(sc.treasure))}</span></div>`:''}
-    ${branches?`<div class="sec-title" style="margin-top:12px">🔀 انتخاب‌های داستانی</div><div class="chips" style="margin-top:4px">${branches}</div>`:''}
-    <div class="chips" style="margin-top:10px">
-      <button class="chip" onclick="lookAround()">👁️ نگاه کن</button>
-      <button class="chip" onclick="moveDir('جلو')">🚶 جلو برو</button>
-      <button class="chip" onclick="moveDir('عقب')">↩️ عقب برگرد</button>
-      <button class="chip" onclick="genScenario()">🐉 سناریو جدید (DM)</button>
-      <button class="chip" onclick="whereNow()">🗺️ خلاصه ماجرا</button>
-    </div>
-  </div>`;
-}
-function renderFeed() {
-  const feed = $('#feed');
-  feed.innerHTML = (S.log||[]).map(m => {
-    const who = esc(m.who), what = esc(m.what);
-    const cls = who === 'DM' ? 'dm' : (who === 'سیستم' ? 'sys' : 'act');
-    const whoLine = (cls==='dm') ? '<span class="who">🐉 دانجن‌مستر</span>' : (cls==='sys' ? '' : `<span class="who">🧙 ${who}</span>`);
-    return `<div class="msg ${cls}">${whoLine}<div>${what}</div></div>`;
-  }).join('');
-  feed.scrollTop = feed.scrollHeight;
+  renderScenario();
+  renderFeed();
+  renderCombat();
+  renderChar();
+  renderParty();
+  if (S.combat) {
+    $('#combatBadge').classList.remove('hidden');
+    if (activeTab !== 'combat') toast('⚔️ نوبت تو در نبرد!');
+  } else {
+    $('#combatBadge').classList.add('hidden');
+  }
 }
 
-/* ================= اتاق ================= */
+/* ============================================================
+   Scenario / feed
+   ============================================================ */
+function renderScenario() {
+  const box = $('#scenarioCard');
+  const sc = (S && S.scenario) ? S.scenario : null;
+  if (!sc || !sc.title) { box.innerHTML = ''; return; }
+  const preview = (sc.text || '').slice(0, 280);
+  box.innerHTML = `
+    <div class="card" style="padding:14px 16px;">
+      <div style="display:flex;gap:10px;align-items:flex-start;">
+        <div style="font-size:34px;">🐉</div>
+        <div style="flex:1;">
+          <div style="font-size:11px;color:var(--ink2);font-weight:700;letter-spacing:1px;">سناریوی فعال</div>
+          <div style="font-size:17px;font-weight:800;margin:2px 0 6px;color:var(--ink);">${esc(sc.title)}</div>
+          <div style="font-size:13px;color:var(--ink2);line-height:2;">${esc(preview)}${sc.text && sc.text.length > 280 ? '...' : ''}</div>
+          <div class="row" style="margin-top:10px;">
+            <button class="btn dark mini" onclick="openScenario()">📜 متن کامل</button>
+            <button class="btn ghost mini" onclick="genScenario()">🔄 سناریوی جدید</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+function openScenario() {
+  if (!S || !S.scenario || !S.scenario.text) return;
+  $('#scenario-modal-text').textContent = S.scenario.title + '\n\n' + S.scenario.text;
+  $('#scenario-modal').classList.add('show');
+}
+function closeModal() { $('#scenario-modal').classList.remove('show'); }
+
+function renderFeed() {
+  const feed = $('#feed');
+  const wasAtBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
+  feed.innerHTML = (S.log||[]).map(m => {
+    const who = esc(m.who), what = esc(m.what || '');
+    const cls = who === 'DM' ? 'dm' : (who === 'سیستم' ? 'sys' : 'act');
+    const whoLine = (cls==='dm')
+      ? '<span class="who">🐉 دانجن‌مستر</span>'
+      : (cls==='sys' ? '' : `<span class="who">🧙 ${who}</span>`);
+    return `<div class="msg ${cls}">${whoLine}<div class="text">${what}</div></div>`;
+  }).join('');
+  if (wasAtBottom) setTimeout(() => { feed.scrollTop = feed.scrollHeight; }, 30);
+}
+
+/* ============================================================
+   Room create/join/load
+   ============================================================ */
 async function createRoom() {
-  const name = $('#inpRoomName').value.trim();
-  const btn = $('#btnCreate'); btn.disabled = true;
+  const name = ($('#inpRoomName').value || '').trim();
+  const btn = $('#btnCreate'); btn.disabled = true; btn.textContent = '⏳ در حال ساخت...';
   try {
-    const d = await api('/api/room/create', { name });
-    roomCode = d.code; await loadState(); startPolling();
-    toast('🎉 اتاق ساخته شد! کد را برای دوستانت بفرست');
-  } catch(e) { toast(e.message); } finally { btn.disabled = false; }
+    const d = await api('/api/room/create', { name: name || 'ماجرای جدید' });
+    roomCode = d.code;
+    localStorage.setItem('dnd_room', roomCode);
+    await loadState();
+    showGame(); startPolling();
+    switchTab('char');
+    toast('🎉 اتاق ساخته شد! حالا کاراکتر بساز');
+  } catch(e) { toast(e.message); }
+  finally { btn.disabled = false; btn.innerHTML = '🎮 ساخت اتاق جدید'; }
 }
 async function joinRoom() {
   const code = $('#inpCode').value.trim().toUpperCase();
-  if (!code) return toast('کد اتاق را وارد کن');
+  if (!code) return toast('⚠️ کد اتاق را وارد کن');
   try {
     const d = await api('/api/room/join', { code });
-    roomCode = d.code; await loadState(); startPolling();
-    toast('✅ وارد اتاق شدی! حالا کاراکترت را بساز 🧙');
+    roomCode = d.code;
+    localStorage.setItem('dnd_room', roomCode);
+    await loadState();
+    showGame(); startPolling();
+    toast('✅ وارد اتاق شدی!');
+    switchTab(d.state && d.state.me && d.state.me.has_char ? 'story' : 'char');
   } catch(e) { toast(e.message); }
 }
+async function loadState() {
+  if (!roomCode) return null;
+  try {
+    const d = await api('/api/room/state?room=' + encodeURIComponent(roomCode));
+    const wasCombat = S && S.combat;
+    S = d;
+    if (!S.room) { roomCode=''; localStorage.removeItem('dnd_room'); showHome(); return null; }
+    if (S.me && !S.me.is_member) { showHome(); $('#inpCode').value = roomCode; toast('عضو اتاق نیستی'); roomCode=''; localStorage.removeItem('dnd_room'); return null; }
+    render();
+    if (!wasCombat && S.combat) switchTab('combat');
+    if (wasCombat && !S.combat && activeTab === 'combat') {
+      toast('🏁 نبرد تمام شد');
+      switchTab('story');
+    }
+    return d;
+  } catch(e) { throw e; }
+}
 
-/* ================= داستان و تاس ================= */
+/* ============================================================
+   Story / actions / scenario / rest / look / roll
+   ============================================================ */
 async function sendAction() {
   const inp = $('#inpAction'); const act = inp.value.trim();
   if (!act) return toast('اول اقدامت را بنویس');
   const btn = $('#btnStory'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> روایت...';
+  const scrollBox = $('#feed');
   try {
     const d = await api('/api/story', { room: roomCode, action: act });
-    S = d.state; inp.value = ''; render();
-    renderFeed();
+    S = d.state; inp.value = '';
+    render();
+    setTimeout(()=>scrollBox.scrollTop = scrollBox.scrollHeight, 50);
   } catch(e) { toast(e.message); }
-  finally { btn.disabled = false; btn.textContent = 'بفرست ✨'; }
+  finally { btn.disabled = false; btn.textContent = 'بفرست ✨'; inp.focus(); }
 }
 async function genScenario() {
+  if (!S.me || !S.me.has_char) { toast('⚠️ اول کاراکترت را بساز'); switchTab('char'); return; }
+  if (S.combat) { toast('⚠️ در نبرد نمی‌توان سناریوی جدید ساخت'); return; }
+  toast('🐉 دانجن‌مستر در حال نوشتن سناریو...');
+  const btn = document.querySelector('#scenarioCard button');
+  if (btn) btn.disabled = true;
   try {
     const d = await api('/api/scenario', { room: roomCode, request: '' });
     S = d.state; render();
-    toast('🐉 سناریوی جدید ساخته شد!');
+    openScenario();
   } catch(e) { toast(e.message); }
+  finally { if (btn) btn.disabled = false; }
 }
 async function whereNow() {
-  toast('🗺️ دانجن‌مستر در حال مرور ذهنش...');
+  toast('🗺️ در حال مرور...');
   try {
     const d = await api('/api/where', { room: roomCode });
     S = d.state; renderFeed();
@@ -632,598 +1005,199 @@ async function whereNow() {
 async function lookAround() {
   try {
     const d = await api('/api/where/look', { room: roomCode });
-    S = d.state;
-    S.log = S.log || [];
-    S.log.push({ who: 'سیستم', what: d.text || '' });
+    S = d.state; S.log = S.log || [];
+    S.log.push({ who:'سیستم', what:d.text || '' });
     renderFeed();
-  } catch(e) { toast(e.message); }
-}
-async function moveDir(dir) {
-  try {
-    const d = await api('/api/move', { room: roomCode, direction: dir });
-    S = d.state;
-    S.log = S.log || [];
-    S.log.push({ who: 'سیستم', what: d.text || '' });
-    render(); renderFeed();
   } catch(e) { toast(e.message); }
 }
 async function doRest(kind) {
   try {
     const d = await api('/api/rest', { room: roomCode, kind: kind || 'short' });
-    S = d.state; renderFeed(); renderChar();
-    toast((d.text||'استراحت کردی').split('\n')[0].slice(0,90));
+    S = d.state; render();
+    toast((d.text || 'استراحت کردی').split('\n')[0].slice(0, 80));
   } catch(e) { toast(e.message); }
 }
 async function quickRoll(expr) {
   try {
-    const d = await api('/api/roll', { room: roomCode, expr });
-    toast(`🎲 ${expr} → ${d.result} ${d.crit||''} (${d.breakdown})`);
+    const d = await api('/api/roll', { room: roomCode, dice: expr, expr: expr });
+    showDice('🎲', `${expr.toUpperCase()} → ${d.result} ${d.crit||''} ${d.breakdown||''}`);
     const st = await api('/api/room/state?room=' + encodeURIComponent(roomCode));
-    S = st; renderFeed();
+    S = st; render();
   } catch(e) { toast(e.message); }
 }
-
-/* ================= کمک‌های نبرد ================= */
-function pAlive(p){ return p && !p.dead && !p.downed && p.hp > 0; }
-function me() { return S && S.combat ? S.combat.participants.find(p=>p.is_me) : null; }
-function myChar() { return S && S.me ? S.me.char : null; }
-function myClass() { const c = myChar(); return c ? c.cls_key || (c.cls||"").toLowerCase() : ""; }
-function hasActed() { const m = me(); return !m || m.acted; }
-function hasBonusActed() { const m = me(); return !m || m.bonus_acted; }
-function cantAct() { const m = me(); return !m || m.conditions.some(c=>CANT_ACT.has(c)); }
-function enemies() { return (S&&S.combat)?S.combat.participants.filter(p=>p.kind==="monster"&&p.alive):[]; }
-function aliveAllies() { return (S&&S.combat)?S.combat.participants.filter(p=>p.kind==="player"&&p.alive&&!p.is_me):[]; }
-function downedAllies() { return (S&&S.combat)?S.combat.participants.filter(p=>p.kind==="player"&&p.downed&&!p.dead):[]; }
-
-/* ================= نبرد ================= */
-function condTags(p) {
-  return (p.conditions||[]).map(c=>{
-    const safe = (c||"").toLowerCase();
-    const cls = ["dodge","raging","prone","invisible","concentrating","blinded","poisoned",
-                 "frightened","stunned","restrained","grappled","paralyzed","unconscious",
-                 "charmed","incapacitated"].includes(safe) ? safe : "";
-    const em = COND_EMOJI[safe] || "•";
-    const fa = COND_FA[safe] || c;
-    return `<span class="cond-tag ${cls}">${em} ${esc(fa)}</span>`;
-  }).join("");
+function copyInvite() {
+  if (!roomCode) return;
+  const url = location.origin + location.pathname + '?c=' + roomCode;
+  const text = `🐉 به بازی D&D بیا! کد اتاق: ${roomCode}\n${url}`;
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(
+    () => toast('📋 لینک و کد اتاق کپی شد'),
+    () => toast('کد: ' + roomCode));
+  else toast('کد: ' + roomCode);
 }
+
+/* ============================================================
+   Combat
+   ============================================================ */
 function renderCombat() {
   const box = $('#combatBox');
+  if (!S) return;
   if (!S.combat) {
-    const isDm = S.room.is_dm;
-    box.innerHTML = `<div class="card">
-      <div class="sec-title">⚔️ میدان نبرد — خالی</div>
-      <p class="hint" style="text-align:right">نبردی در جریان نیست.${S.scenario?' دشمن‌های سناریو آماده‌اند!':' (اول با سناریو، دشمن‌ها را مشخص کن — یا با دشمن‌های پیش‌فرض شروع کن)'}</p>
-      ${isDm?`<button class="btn red" onclick="startCombat()" style="margin-top:10px">⚔️ شروع نبرد</button>`:`<p class="hint">میزبان (${esc(S.room.dm_name)}) نبرد را شروع می‌کند...</p>`}
-    </div>`;
+    box.innerHTML = `
+      <div class="card">
+        <div class="sec-title">⚔️ نبرد</div>
+        <div style="text-align:center;padding:18px 8px;">
+          <div style="font-size:48px;">🕊️</div>
+          <div style="margin-top:6px;font-weight:700;">در حال حاضر نبردی در جریان نیست.</div>
+          <div class="muted" style="margin-top:6px;">برای شروع نبرد از دکمه ⚔️ زیر استفاده کن، یا در ماجرا وارد درگیری شو.</div>
+          <div style="margin-top:14px;" class="row" style="justify-content:center;">
+            <button class="btn red mini" onclick="startCombat()">⚔️ شروع نبرد</button>
+          </div>
+        </div>
+      </div>`;
     return;
   }
   const c = S.combat;
-  const meP = me();
-  const ch = myChar();
-  const isDown = meP && (!pAlive(meP));
-  const myTurn = c.is_my_turn;
-  const mCls = (ch && ch.cls) ? ch.cls.toLowerCase() : "";
-
-  // شرکت‌کنندگان
-  let parts = '';
-  c.participants.forEach(p => {
-    let em = p.emoji || (p.kind === 'player' ? '🧙' : '👹');
-    if (p.dead) em = '💀';
-    else if (p.downed) em = '😵';
-    const hpPct = p.max_hp ? Math.max(0, Math.round(p.hp / p.max_hp * 100)) : 0;
-    const isEnemyTarget = selTarget === p.name;
-    const isAllyTarget = selAlly === p.name;
-    const sel = isEnemyTarget ? ' sel' : (isAllyTarget ? ' ally-sel' : '');
-    const deadCls = (!p.alive || p.dead) ? ' dead' : (p.acted && p.kind==='player' ? ' acted' : '');
-    const bossMark = p.is_boss ? ' 👑' : '';
-    const clickable = (p.alive && myTurn && !isDown && !cantAct())
-      ? (p.kind === 'monster'
-          ? `onclick="selTarget='${p.name.replace(/'/g,"\\'")}';selAlly=null;renderCombat()"`
-          : (p.downed
-              ? `onclick="selAlly='${p.name.replace(/'/g,"\\'")}';selTarget=null;renderCombat()"`
-              : (p.is_me ? '' : `onclick="selAlly='${p.name.replace(/'/g,"\\'")}';selTarget=null;renderCombat()"`)))
-      : '';
-    let status;
-    if (p.dead) status = '💀 مرده';
-    else if (p.downed) status = '😵 زمین‌گیر';
-    else status = '❤️ ' + p.hp + '/' + p.max_hp;
-    const distH = [];
-    if (typeof p.distance === 'number' && p.distance > 0) distH.push(`📏 ${p.distance}m`);
-    if (typeof p.height === 'number' && p.height !== 0) distH.push(p.height>0?`⬆️ +${p.height}m`:`⬇️ ${p.height}m`);
-    if (p.cover && p.cover !== 'none') distH.push(`🛡️ ${p.cover==='half'?'نیمه':(p.cover==='three-quarters'?'سه‌چهارم':'کامل')}`);
-    if (p.surface && p.surface !== 'none') {
-      const sf = {fire:'🔥 آتش',ice:'❄️ یخ',acid:'🧪 اسید',poison:'☠️ سم',water:'💧 آب',oil:'🛢️ نفت'};
-      distH.push(sf[p.surface] || p.surface);
-    }
-    const meta = (distH.length || p.conditions.length)
-      ? `<div class="meta-row">${distH.map(x=>`<span>${x}</span>`).join('')}</div>`
-      : '';
-    parts += `<div class="part${sel}${deadCls}" ${clickable}>
-      <span class="em">${em}</span>
-      <div class="info">
-        <div class="nm">${esc(p.name)}${bossMark} <small>AC ${p.ac} • Init ${p.init}${p.acted && p.kind==='player'?' • ✅ اکشن':''}${p.bonus_acted && p.kind==='player'?' • ⭐ بونس':''}</small></div>
-        <div class="hpbar"><div class="${hpPct<30?'low':''}" style="width:${hpPct}%"></div></div>
-        <div class="bar-label" style="margin-top:2px"><span>${status}</span>${p.turn?'<b style="color:var(--gold)">▶ نوبت</b>':''}</div>
-        ${p.conditions.length?`<div class="cond-tags">${condTags(p)}</div>`:''}
-        ${meta}
-      </div>
-      <span class="turn-mark">${p.kind==='player'?(p.is_me?'🧝':'🧙'):'👹'}</span>
-    </div>`;
+  const isMyTurn = c.turn && c.turn.uid === S.me.uid;
+  let html = `
+    <div class="card">
+      <div class="sec-title danger">⚔️ نبرد در جریان — دور ${c.round || 1}</div>
+      <div class="combat-list">`;
+  const all = [ ...(c.enemies||[]).map(e=>({...e,_enemy:true})), ...(c.party||[]) ];
+  // sort by initiative order if available
+  all.sort((a,b) => (b.initiative||0) - (a.initiative||0));
+  all.forEach((m, i) => {
+    const isActive = c.turn && ((m._enemy && c.turn.uid === m.uid) || (!m._enemy && c.turn.uid === m.uid));
+    const hpPct = Math.max(0, Math.min(100, m.hp && m.max_hp ? (m.hp/m.max_hp*100) : 0));
+    const cls = hpPct < 25 ? 'crit' : hpPct < 55 ? 'low' : '';
+    const tags = [];
+    if (m.conditions && m.conditions.length) m.conditions.forEach(c => tags.push(`<span class="tag bad">${esc(c)}</span>`));
+    if (m.dodge) tags.push('<span class="tag good">دفاع</span>');
+    if (m.raging) tags.push('<span class="tag">خشم</span>');
+    html += `
+      <div class="combatant ${m._enemy?'enemy':''} ${isActive?'active':''} ${m.hp<=0?'dead':''}">
+        <div class="avatar">${esc(m.emoji || (m._enemy ? '👹' : m.cls_emoji || '🧙'))}</div>
+        <div class="c-info">
+          <div class="c-name">${esc(m.name)} ${m.hp<=0?'💀':''} <span class="muted" style="font-weight:400;font-size:11px;">init ${m.initiative||'-'}</span></div>
+          <div class="c-meta">${esc(m._enemy?'دشمن':'بازیکن')} • ${m.hp<=0?'بیهوش':`${m.ac||'-'} AC`}</div>
+          <div class="hp-bar"><div class="hp-fill ${cls}" style="width:${hpPct}%"></div></div>
+          <div class="hp-text">❤️ ${Math.max(0,m.hp||0)} / ${m.max_hp||0}</div>
+          ${tags.length?`<div class="tags">${tags.join('')}</div>`:''}
+        </div>
+      </div>`;
   });
-
-  // بنر نوبت
-  let banner;
-  if (isDown) {
-    banner = `<div class="turn-banner enemy">💀 تو زمین‌گیر شده‌ای! برای پایداری پرتاب نجات از مرگ بزن.</div>`;
-  } else if (myTurn) {
-    banner = `<div class="turn-banner me">🎯 نوبت توست! ${ch?ch.name:''} — یک هدف انتخاب کن و اکشن بزن.</div>`;
+  html += '</div>';
+  if (isMyTurn) {
+    html += `
+      <div class="sec-title main-ac" style="margin-top:16px;">⚔️ اکشن اصلی</div>
+      <div class="chips">
+        <button class="chip" onclick="doAttack()">🗡️ حمله</button>
+        <button class="chip" onclick="showCastMenu()">✨ طلسم</button>
+        <button class="chip" onclick="doDodge()">🛡️ دفاع</button>
+        <button class="chip" onclick="doDash()">🏃 دویدن</button>
+        <button class="chip" onclick="doDisengage()">🚪 عقب‌نشینی</button>
+        <button class="chip" onclick="doHelp()">🤝 کمک</button>
+        <button class="chip" onclick="doHide()">🙈 پنهان شدن</button>
+        <button class="chip" onclick="doShove()">💪 هل دادن</button>
+      </div>
+      <div class="sec-title gold" style="margin-top:12px;">⭐ بونس اکشن</div>
+      <div class="chips">
+        <button class="chip" onclick="doBonus('rage')">🪓 خشم</button>
+        <button class="chip" onclick="doBonus('bardic_inspiration')">🎻 الهام بارد</button>
+        <button class="chip" onclick="doBonus('offhand_attack')">🗡️ حمله دست دوم</button>
+        <button class="chip" onclick="doBonus('cunning_action')">🃏 حرکت زیرکانه</button>
+        <button class="chip" onclick="doBonus('secondwind')">💨 نفس دوم</button>
+        <button class="chip" onclick="doBonus('actionsurge')">⚡ اکشن اضافه</button>
+        <button class="chip" onclick="doBonus('smite')">✨ Divine Smite</button>
+        <button class="chip" onclick="doBonus('jump_action')">🦘 پرش</button>
+        <button class="chip" onclick="doBonus('help_up')">🤝 بلند کردن دوست</button>
+        <button class="chip" onclick="doBonus('throw_action')">🧪 پرتاب</button>
+        <button class="chip" onclick="doBonus('dip_weapon')">🔥 آغشته کردن سلاح</button>
+        <button class="chip" onclick="doBonus('hellish_rebuke')">😈 Hellish Rebuke</button>
+      </div>
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn orange" onclick="doSkip()">⏭️ رد نوبت</button>
+      </div>`;
   } else {
-    banner = `<div class="turn-banner wait">⏳ نوبت: ${esc(c.current)} (دور ${c.round})</div>`;
+    const who = c.turn && c.turn.name ? c.turn.name : '...';
+    html += `<div class="hint" style="margin-top:12px;">⏳ نوبت <b>${esc(who)}</b> منتظر بمان.</div>`;
   }
-
-  // خط وضعیت من
-  let myStatus = '';
-  if (meP) {
-    const mainBadge = hasActed() ? '<span style="opacity:.5">اکشن ✅</span>' : '<span style="color:var(--red)">اکشن آماده</span>';
-    const bonusBadge = hasBonusActed() ? '<span style="opacity:.5">بونس‌اکشن ✅</span>' : '<span style="color:var(--orange)">بونس آماده</span>';
-    myStatus = `<div style="display:flex;gap:8px;justify-content:center;font-size:11px;margin-bottom:8px;flex-wrap:wrap">
-      <span style="padding:4px 10px;background:#0f1420;border:1px solid var(--line);border-radius:999px">${mainBadge}</span>
-      <span style="padding:4px 10px;background:#0f1420;border:1px solid var(--line);border-radius:999px">${bonusBadge}</span>
-      ${meP.conditions.length?meP.conditions.map(c=>{const safe=(c||"").toLowerCase();return `<span style="padding:4px 10px;background:#1a1f30;border:1px solid var(--purple);border-radius:999px;color:var(--purple)">${COND_EMOJI[safe]||'•'} ${esc(COND_FA[safe]||c)}</span>`;}).join(''):''}
-    </div>`;
-  }
-
-  // هدف انتخابی
-  const tgtInfo = selTarget ? `<div class="target-pill">🎯 هدف دشمن: <b>${esc(selTarget)}</b><span class="x" onclick="selTarget=null;renderCombat()">✕</span></div>` : '';
-  const allyInfo = selAlly ? `<div class="target-pill ally">🤝 هدف هم‌تیمی: <b>${esc(selAlly)}</b><span class="x" onclick="selAlly=null;renderCombat()">✕</span></div>` : '';
-
-  // پنل اکشن‌ها
-  let actions = '';
-  if (isDown && myTurn) {
-    actions = `<div class="actions">
-      <button class="btn green" onclick="doDeathSave()">💀 پرتاب نجات از مرگ</button>
-    </div>`;
-  } else if (myTurn && !cantAct()) {
-    const canMain = !hasActed();
-    const canBonus = !hasBonusActed();
-    const hasEnemy = !!selTarget;
-    const hasAlly = !!selAlly;
-    const hasDnAlly = downedAllies().length > 0;
-
-    // اکشن‌های اصلی
-    const mainBtns = [];
-    mainBtns.push(btnRed("⚔️ حمله", canMain&&hasEnemy, `doAttack()`));
-    mainBtns.push(btnRed("🛡️ دفاع", canMain, `doDodge()`));
-    mainBtns.push(btnRed("🏃 دویدن (Dash)", canMain, `doDash()`));
-    mainBtns.push(btnRed("↩️ عقب‌نشینی", canMain, `doDisengage()`));
-    mainBtns.push(btnRed("👻 پنهان شدن", canMain, `doHide()`));
-    mainBtns.push(btnRed("💪 هل دادن", canMain&&hasEnemy, `doShove()`));
-    mainBtns.push(btnRed("🤝 کمک (Help)", canMain&&hasAlly, `doHelp()`));
-
-    // حرکت (رایگان اما محدودیت‌ها)
-    const moveBtns = [];
-    moveBtns.push(btnBlue("↗️ پرش", !meP.conditions.includes("grappled")&&!meP.conditions.includes("restrained"), `askJump()`));
-    moveBtns.push(btnBlue("🎯 پرتاب", hasEnemy, `askThrow()`));
-    moveBtns.push(btnBlue("🔥 آغشته‌کردن", canMain, `doDip()`));
-
-    // بونس‌اکشن‌ها
-    const bonusBtns = [];
-    if (mCls === "barbarian") bonusBtns.push(btnOrange("😤 خشم (Rage)", canBonus, `doRage()`));
-    if (mCls === "bard") bonusBtns.push(btnOrange("🎵 الهام بَرد", canBonus&&hasAlly, `doInspire()`));
-    bonusBtns.push(btnOrange("🗡️ حمله دوم‌دست", canBonus&&hasEnemy, `doOffhand()`));
-    bonusBtns.push(btnOrange("🦶 اقدام حیله‌گر", canBonus && (mCls==="rogue"), `askCunning()`));
-    bonusBtns.push(btnOrange("🆘 بلند کردن", canBonus&&hasAlly&&hasDnAlly, `doHelpup()`));
-
-    // قابلیت‌های کلاس
-    const classBtns = [];
-    if (mCls === "fighter") {
-      classBtns.push(btnGold("💨 نفس دوم (1d10+lv)", true, `doSecondWind()`));
-      classBtns.push(btnGold("⚡ اکشن اضافه", true, `doActionSurge()`));
-    }
-    if (mCls === "paladin") {
-      classBtns.push(btnGold("✨ اسمایت الهی", hasEnemy, `doSmite()`));
-      classBtns.push(btnGold("💚 شفای لمسی (مرهم)", hasAlly, `doCastSpell('curewounds')`));
-    }
-    if (mCls === "rogue") {
-      classBtns.push(btnGold("🗡️ حمله + Sneak Attack", hasEnemy, `doAttack()`));
-    }
-    if (mCls === "monk") {
-      classBtns.push(btnGold("👊 ضربه بی‌سلاح", hasEnemy, `doAttack()`));
-    }
-    if (mCls === "ranger") {
-      classBtns.push(btnGold("🏹 نشان شکارچی (بونس)", hasEnemy, `doCastSpell('huntersmark')`));
-    }
-    if (mCls === "warlock") {
-      classBtns.push(btnGold("😈 انفجار الدریچ", hasEnemy, `doCastSpell('eldritchblast')`));
-      classBtns.push(btnGold("🔮 نفرین (Hex بونس)", hasEnemy, `doCastSpell('hex')`));
-    }
-    if (mCls === "wizard" || mCls === "sorcerer") {
-      classBtns.push(btnGold("💥 موشک جادویی", hasEnemy, `doCastSpell('magicmissile')`));
-    }
-    if (mCls === "cleric") {
-      classBtns.push(btnGold("✨ شعله مقدس", hasEnemy, `doCastSpell('sacredflame')`));
-      classBtns.push(btnGold("💚 کلمه شفا (بونس)", hasAlly, `doCastSpell('healingword')`));
-    }
-    if (mCls === "druid") {
-      classBtns.push(btnGold("🌿 گیر انداختن", hasEnemy, `doCastSpell('entangle')`));
-    }
-    if (mCls === "bard") {
-      classBtns.push(btnGold("💚 کلمه شفا (بونس)", hasAlly, `doCastSpell('healingword')`));
-    }
-    // همه می‌توانند این قابلیت‌های نژادی/عمومی را امتحان کنند (سرور بررسی می‌کند)
-    classBtns.push(btnGold("🔥 نفس اژدها", hasEnemy, `doCastSpell('dragonbreath')`));
-    classBtns.push(btnGold("🧪 معجون شفا", true, `quickPotion()`));
-
-    // واکنش‌ها (فقط نمایشی — واکنش‌ها خودکار توسط سرور اجرا می‌شوند: Opp.Attack, Shield)
-    const reactInfo = `<div class="action-sheet-hd"><span class="dot react"></span><b style="color:var(--purple);font-size:11px">واکنش‌ها (خودکار)</b>
-      <span style="font-size:10px;color:var(--muted);margin-inline-start:auto">حمله فرصت • سپر • مجازات دوزخی</span>
-    </div>`;
-
-    // معجون و رد نوبت
-    const utilBtns = [];
-    const potions = (S && S.me && S.me.char && S.me.char.inventory) ? (S.me.char.inventory.potion||0) : 0;
-    utilBtns.push(btnDark(`🧪 معجون (${potions})`, potions>0, `quickPotion()`));
-    utilBtns.push(btnDark("⏭️ رد نوبت", true, `doSkip()`));
-
-    actions = `
-      ${tgtInfo}${allyInfo}
-      ${myStatus}
-
-      <div class="action-sheet-hd"><span class="dot main"></span><b style="color:var(--red);font-size:12px">اکشن اصلی</b></div>
-      <div class="actions row-3">${mainBtns.join("")}</div>
-
-      <div class="action-sheet-hd" style="margin-top:10px"><span class="dot move"></span><b style="color:var(--blue);font-size:12px">حرکت / اکشن‌های حرکتی</b></div>
-      <div class="actions row-3">${moveBtns.join("")}</div>
-
-      ${bonusBtns.length?`<div class="action-sheet-hd" style="margin-top:10px"><span class="dot bonus"></span><b style="color:var(--orange);font-size:12px">بونس‌اکشن</b></div>
-      <div class="actions row-3">${bonusBtns.join("")}</div>`:''}
-
-      ${classBtns.length?`<div class="action-sheet-hd" style="margin-top:10px"><span class="dot feat"></span><b style="color:var(--gold2);font-size:12px">قابلیت‌های کلاس/نژاد</b></div>
-      <div class="actions row-2">${classBtns.join("")}</div>`:''}
-
-      ${reactInfo}
-
-      <div class="sec-title" style="margin-top:12px">✨ طلسم‌ها ${selTarget?`— هدف: ${esc(selTarget)}`:'(ابتدا یک دشمن انتخاب کن)'}</div>
-      <div class="spell-grid">${renderSpells(canMain, canBonus, hasEnemy)}</div>
-
-      <div class="actions row-2" style="margin-top:10px">${utilBtns.join("")}</div>
-    `;
-  } else if (!myTurn) {
-    actions = `<div class="actions row-2">
-      <button class="btn dark" onclick="doSkip()">⏩ رد کردن به نوبت من (dev)</button>
-    </div>`;
-  }
-
-  const dm = S.room.is_dm ? `<button class="btn dark" style="margin-top:10px" onclick="endCombat()">🏳️ پایان نبرد (DM)</button>` : '';
-  box.innerHTML = `<div class="card">${banner}
-    <div class="sec-title">شرکت‌کنندگان (${c.participants.length}) — دور ${c.round}</div>
-    ${parts}${actions}${dm}</div>`;
+  html += `
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn dark mini" onclick="endCombat()">🏁 پایان نبرد (تست)</button>
+    </div></div>`;
+  box.innerHTML = html;
 }
-
-function btnRed(label, en, onclick){return `<button class="btn red" ${en?'':'disabled'} onclick="${onclick}">${label}</button>`;}
-function btnBlue(label, en, onclick){return `<button class="btn blue" ${en?'':'disabled'} onclick="${onclick}">${label}</button>`;}
-function btnGold(label, en, onclick){return `<button class="btn gold" ${en?'':'disabled'} onclick="${onclick}">${label}</button>`;}
-function btnOrange(label, en, onclick){return `<button class="btn orange" ${en?'':'disabled'} onclick="${onclick}">${label}</button>`;}
-function btnPurple(label, en, onclick){return `<button class="btn purple" ${en?'':'disabled'} onclick="${onclick}">${label}</button>`;}
-function btnDark(label, en, onclick){return `<button class="btn dark" ${en?'':'disabled'} onclick="${onclick}">${label}</button>`;}
-function btnGreen(label, en, onclick){return `<button class="btn green" ${en?'':'disabled'} onclick="${onclick}">${label}</button>`;}
-
-function renderSpells(canMain, canBonus, hasEnemy) {
-  if (!META || !META.spells) return '';
-  // نمایش کاربردی: طلسم‌ها بر اساس نوع دسته‌بندی می‌شوند
-  return META.spells.map(sp=>{
-    const isHeal = sp.kind === 'heal';
-    const isBuff = ['buff','utility','teleport'].includes(sp.kind);
-    const needsTarget = !isHeal && !isBuff && sp.kind !== 'aoe' && sp.kind !== 'cone' && sp.kind !== 'mark' && sp.kind !== 'heal_aoe';
-    const isBonus = sp.action === 'bonus';
-    const canCast = (isBonus ? canBonus : canMain) && (!needsTarget || hasEnemy);
-    const kindIcon = {damage:"💥",heal:"💚",aoe:"💥",cone:"🌬️",buff:"🛡️",utility:"✨",teleport:"🌀",mark:"🎯",heal_aoe:"💚"}[sp.kind] || "✨";
-    const lvlTag = sp.level===0 ? "Cantrip" : (sp.level===1?"Lv1":"Lv"+sp.level);
-    return `<button class="spell-btn ${isBonus?'bonus-spell':''}" ${canCast?'':'disabled'} onclick="doCast('${sp.key}')">
-      <b>${sp.emoji} ${esc(sp.fa)}</b>
-      <span class="spmeta">${kindIcon} ${esc(sp.dmg||'')} • ${lvlTag}${isBonus?' • بونس':''}</span>
-    </button>`;
-  }).join('');
+function pickTarget(promptText, cb) {
+  const enemies = (S.combat && S.combat.enemies) || [];
+  if (enemies.length === 0) { cb(null); return; }
+  if (enemies.length === 1) { cb(enemies[0].uid); return; }
+  const names = enemies.map((e,i)=>`${i+1}) ${e.name}`).join('\n');
+  const idx = prompt(promptText + '\n\n' + names + '\n\nشماره دشمن را وارد کن:');
+  if (!idx) { cb(null); return; }
+  const n = parseInt(idx, 10) - 1;
+  if (isNaN(n) || n < 0 || n >= enemies.length) { toast('⚠️ انتخاب نامعتبر'); cb(null); return; }
+  cb(enemies[n].uid);
 }
-
-// پرسش برای پرش (کجا؟)
-async function askJump() {
-  const where = prompt("کجا پرش کنی؟ (near/away/high/low)", "near");
-  if (!where) return;
+async function _combatAct(endpoint, body, errMsg) {
   try {
-    const d = await api('/api/combat/jump', { room: roomCode, where });
-    S = d.state; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,2).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-async function askThrow() {
-  if (!selTarget) return toast('اول یک دشمن انتخاب کن');
-  const item = prompt("چه چیزی پرتاب کنی؟ (torch/alchemy/potion/weapon)", "torch");
-  if (!item) return;
-  try {
-    const d = await api('/api/combat/throw', { room: roomCode, item, target: selTarget });
-    S = d.state; selTarget=null; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,2).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-async function askCunning() {
-  const what = prompt("اقدام حیله‌گر؟ (dash/disengage/hide)", "disengage");
-  if (!what) return;
-  try {
-    const d = await api('/api/combat/cunning', { room: roomCode, what });
-    S = d.state; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,2).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-
-async function startCombat() {
-  try {
-    const d = await api('/api/combat/start', { room: roomCode });
-    S = d.state; selTarget = null; selAlly = null;
-    (d.messages||[]).forEach(m => toast(m.split('\n')[0].slice(0,80)));
-    render(); switchTab('combat');
-  } catch(e) { toast(e.message); }
+    const d = await api('/api/combat/' + endpoint, Object.assign({ room: roomCode }, body || {}));
+    S = d.state; render();
+    (d.messages||[]).forEach(m => S.log.push({who:'سیستم', what:m}));
+    renderFeed();
+  } catch(e) { toast(e.message || errMsg); }
 }
 async function doAttack() {
-  if (!selTarget) return toast('اول یک دشمن را انتخاب کن');
-  try {
-    const d = await api('/api/combat/attack', { room: roomCode, target: selTarget });
-    S = d.state; selTarget = null; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,2).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
+  pickTarget('کدام دشمن؟', (uid) => { if (uid) _combatAct('attack', { target: uid }); });
 }
-async function doCast(spell) {
-  // برای طلسم‌های heal/buff/aoe/cone نیازی به هدف نیست
-  const sp = (META.spells||[]).find(s=>s.key===spell);
-  const noNeedTarget = sp && ['heal','buff','utility','teleport','aoe','cone','heal_aoe','mark'].includes(sp.kind);
-  const tgt = noNeedTarget ? '' : selTarget;
-  if (!noNeedTarget && !tgt) return toast('اول یک هدف انتخاب کن');
-  try {
-    const d = await api('/api/combat/cast', { room: roomCode, spell, target: tgt });
-    S = d.state; selTarget=null; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,3).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
+async function doDodge(){ await _combatAct('dodge'); }
+async function doDash(){ await _combatAct('dash'); }
+async function doDisengage(){ await _combatAct('disengage'); }
+async function doHelp(){
+  pickTarget('به کدام هم‌تیمی کمک کنم؟ (یا خالی برای حیوان/خودت)', (uid) => {
+    _combatAct('help', { target: uid || '' });
+  });
 }
-async function doDodge() {
-  try {
-    const d = await api('/api/combat/dodge', { room: roomCode });
-    S = d.state; renderCombat(); renderFeed();
-    toast('🛡️ حالت دفاعی گرفتی');
-  } catch(e) { toast(e.message); }
+async function doHide(){ await _combatAct('hide'); }
+async function doShove(){ pickTarget('کدام دشمن را هل بدهم؟', uid => { if(uid) _combatAct('shove', {target: uid}); }); }
+async function doSkip(){ await _combatAct('skip'); }
+async function endCombat(){ await _combatAct('end'); switchTab('story'); }
+async function startCombat(){ await _combatAct('start'); switchTab('combat'); }
+function showCastMenu(){
+  const spells = (META && META.spells) || [];
+  const mine = (S.me && S.me.char && S.me.char.spells) || [];
+  const list = mine.length ? mine : spells.slice(0, 20);
+  if (!list.length) return toast('طلسمی در دسترس نیست');
+  const names = list.map((s,i)=>`${i+1}) ${s.fa || s.key || s.name || s}`).join('\n');
+  const idx = prompt('کدام طلسم؟\n\n' + names + '\n\nشماره:');
+  if (!idx) return;
+  const n = parseInt(idx,10)-1;
+  if (isNaN(n) || n < 0 || n >= list.length) return toast('⚠️ نامعتبر');
+  const sp = list[n];
+  const key = sp.key || sp;
+  pickTarget('هدف؟ (خالی برای بدون هدف)', uid => {
+    _combatAct('cast', { spell: key, target: uid || '' });
+  });
 }
-async function doDash() {
-  try {
-    const d = await api('/api/combat/dash', { room: roomCode });
-    S = d.state; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,1).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-async function doDisengage() {
-  try {
-    const d = await api('/api/combat/disengage', { room: roomCode });
-    S = d.state; renderCombat(); renderFeed();
-    toast('↩️ عقب‌نشینی امن کردی');
-  } catch(e) { toast(e.message); }
-}
-async function doHide() {
-  try {
-    const d = await api('/api/combat/hide', { room: roomCode });
-    S = d.state; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,1).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-async function doShove() {
-  if (!selTarget) return toast('اول یک دشمن را انتخاب کن');
-  try {
-    const d = await api('/api/combat/shove', { room: roomCode, target: selTarget });
-    S = d.state; selTarget=null; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,2).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-async function doHelp() {
-  if (!selAlly) return toast('اول یک هم‌تیمی را انتخاب کن');
-  try {
-    const d = await api('/api/combat/help', { room: roomCode, target: selAlly });
-    S = d.state; selAlly=null; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,1).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-async function doRage() {
-  try {
-    const d = await api('/api/combat/rage', { room: roomCode });
-    S = d.state; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,1).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-async function doInspire() {
-  if (!selAlly) return toast('اول یک هم‌تیمی را انتخاب کن');
-  try {
-    const d = await api('/api/combat/inspire', { room: roomCode, target: selAlly });
-    S = d.state; selAlly=null; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,1).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-async function doOffhand() {
-  if (!selTarget) return toast('اول یک دشمن را انتخاب کن');
-  try {
-    const d = await api('/api/combat/offhand', { room: roomCode, target: selTarget });
-    S = d.state; selTarget=null; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,2).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-async function doHelpup() {
-  if (!selAlly) return toast('روی هم‌تیمی زمین‌گیر کلیک کن');
-  try {
-    const d = await api('/api/combat/helpup', { room: roomCode, target: selAlly });
-    S = d.state; selAlly=null; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,1).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-async function doSecondWind() {
-  try {
-    const d = await api('/api/combat/secondwind', { room: roomCode });
-    S = d.state; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,1).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-async function doActionSurge() {
-  try {
-    const d = await api('/api/combat/actionsurge', { room: roomCode });
-    S = d.state; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,1).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-async function doSmite() {
-  if (!selTarget) return toast('اول یک دشمن را انتخاب کن');
-  try {
-    const d = await api('/api/combat/smite', { room: roomCode, target: selTarget, slot: 1 });
-    S = d.state; selTarget=null; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,2).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-async function doDip() {
-  // تشخیص سطح: اول فایرباز، اگر نبود می‌پرسیم
-  const element = prompt("سلاح را به چه سطحی آغشته کنی؟ (fire/acid/poison/ice)", "fire");
-  if (!element) return;
-  try {
-    const d = await api('/api/combat/dip', { room: roomCode, element });
-    S = d.state; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,1).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-async function doRebuke() {
-  try {
-    const d = await api('/api/combat/rebuke', { room: roomCode });
-    S = d.state; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,1).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
-}
-async function doDeathSave() {
-  try {
-    const d = await api('/api/combat/deathsave', { room: roomCode });
-    S = d.state; renderCombat(); renderFeed();
-    (d.messages||[]).forEach(m => toast(m.split('\n')[0].slice(0,90)));
-  } catch(e) { toast(e.message); }
-}
-async function doSkip() {
-  try {
-    const d = await api('/api/combat/skip', { room: roomCode });
-    S = d.state; renderCombat(); renderFeed();
-  } catch(e) { toast(e.message); }
-}
-async function endCombat() {
-  try {
-    const d = await api('/api/combat/end', { room: roomCode });
-    S = d.state; renderCombat(); renderFeed();
-  } catch(e) { toast(e.message); }
-}
-async function quickPotion() {
-  try {
-    const d = await api('/api/inventory/use', { room: roomCode, item: 'potion' });
-    S = d.state; render(); toast((d.text||'استفاده شد').slice(0,80));
-  } catch(e) { toast(e.message); }
-}
-async function doCastSpell(spell) {
-  // کست مستقیم یک طلسم
-  const sp = (META.spells||[]).find(s=>s.key===spell);
-  const noNeed = sp && ['heal','buff','utility','teleport','aoe','cone','heal_aoe','mark','auto','defense_bonus','heal_touch','heal_ranged','save_dex','save_con','save_wis','save_dex_aoe','save_dex_cone','save_wis_aoe','save_str_aoe','buff_long','buff_concentration','bonus_attack','teleport_bonus','buff_mark','attack_melee','attack_ranged','save_dex_cone'].includes(sp.kind);
-  // برای طلسم‌های حمله نیاز به هدف هست
-  const needsTgt = sp && ['attack_ranged','attack_melee','save_dex','save_wis','save_con','bonus_attack'].includes(sp.kind);
-  let tgt = '';
-  if (needsTgt) {
-    if (!selTarget) {
-      // برای طلسم heal/h_touch به ally نیاز است
-      if (sp.kind === 'heal_touch' || sp.key === 'curewounds' || sp.key === 'healingword' || sp.kind === 'heal_ranged') {
-        if (selAlly) tgt = selAlly;
-        else { toast('اول یک هم‌تیمی را انتخاب کن'); return; }
-      } else {
-        toast('اول یک دشمن را انتخاب کن'); return;
-      }
-    } else tgt = selTarget;
-  }
-  if (sp && (sp.kind === 'heal_touch' || sp.key === 'healingword' || sp.kind === 'heal_ranged' || sp.kind === 'heal_aoe')) {
-    if (selAlly) tgt = selAlly;
-  }
-  try {
-    const d = await api('/api/combat/cast', { room: roomCode, spell, target: tgt });
-    S = d.state; selTarget=null; selAlly=null; renderCombat(); renderFeed();
-    (d.messages||[]).slice(0,3).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
-  } catch(e) { toast(e.message); }
+const BONUS_MAP = {
+  'rage':'rage', 'bardic_inspiration':'inspire', 'offhand_attack':'offhand',
+  'divine_smite':'smite', 'cunning_action':'cunning', 'hellish_rebuke':'rebuke',
+  'jump_action':'jump', 'throw_action':'throw', 'dip_weapon':'dip',
+  'help_up':'helpup', 'secondwind':'secondwind', 'actionsurge':'actionsurge'
+};
+async function doBonus(name) {
+  const ep = BONUS_MAP[name] || name;
+  await _combatAct(ep, { target: '' });
 }
 
-/* ================= کاراکتر ================= */
-function renderChar() {
-  const box = $('#charBox');
-  if (!S.me || !S.me.has_char) {
-    if (!META) return;
-    // ⚠️ مهم: اگر کاربر داخل فرم کاراکتر در حال تایپ است، ریرندر فرم را نادیده بگیر
-    if (box.querySelector('#chName') && anyInputFocused()) return;
-    // قبل از ریرندر مقادیر فرم را ذخیره کن
-    const prev = {
-      name: document.getElementById('chName') ? document.getElementById('chName').value : '',
-      race: document.getElementById('chRace') ? document.getElementById('chRace').value : '',
-      cls: document.getElementById('chClass') ? document.getElementById('chClass').value : '',
-      weapon: document.getElementById('chWeapon') ? document.getElementById('chWeapon').value : '',
-    };
-    const races = META.races.map(r => `<option value="${r.key}"${r.key===prev.race?' selected':''}>${r.emoji} ${r.fa} (+${r.bonus})</option>`).join('');
-    const classes = META.classes.map(c => `<option value="${c.key}"${c.key===prev.cls?' selected':''}>${c.emoji} ${c.fa} (HP ${c.hit_die})</option>`).join('');
-    box.innerHTML = `<div class="card">
-      <div class="sec-title">🧙 ساخت کاراکتر</div>
-      <form onsubmit="event.preventDefault();createChar();return false">
-        <input id="chName" placeholder="نام شخصیتت (مثلاً: آرین)" maxlength="30" autocomplete="off" value="${esc(prev.name)}">
-        <select id="chRace">${races}</select>
-        <select id="chClass" onchange="fillWeapons()">${classes}</select>
-        <select id="chWeapon"></select>
-        <button type="submit" class="btn gold">⚔️ ساختن ماجراجو</button>
-      </form>
-      <p class="hint">امتیاز توانایی‌ها به‌صورت استاندارد (array 15,14,13,12,10,8) توزیع می‌شود.<br>۱۲ کلاس (جنگجو، جادوگر، روحانی، دزد، بَرد، رنجر، پالادین، راهب، بربر، وارلاک، دروید، ساحر) • ۸ نژاد</p>
-    </div>`;
-    fillWeapons(prev.weapon);
-    // فوکوس را برگردان اگر کاربر قبلاً تایپ می‌کرد
-    if (prev.name && document.activeElement && document.activeElement.id === 'chName') {
-      const n = document.getElementById('chName');
-      if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); }
-    }
-    return;
-  }
-  const ch = S.me.char;
-  const ab = ch.abilities.map(a => `<div class="stat"><span>${a.fa} (${a.key})</span><b>${a.value} (${a.mod>=0?'+':''}${a.mod})</b></div>`).join('');
-  const xpNext = ch.xp_next ? `از ${ch.xp_next}` : '— حداکثر سطح';
-  const lvlBtn = ch.can_level_up ? `<button class="btn green" style="margin-top:10px" onclick="levelUp()">⭐ ارتقا به سطح ${ch.level+1}!</button>` : '';
-  const conds = (ch.conditions||[]).map(c=>{const safe=(c||"").toLowerCase();return `<span class="tag">${COND_EMOJI[safe]||'•'} ${esc(COND_FA[safe]||c)}</span>`;}).join('');
-  box.innerHTML = `<div class="card">
-    <div class="char-head">
-      <div class="char-avatar">${ch.cls_emoji}</div>
-      <div><h2>${esc(ch.name)}</h2>
-      <div class="sub">${ch.race_emoji} ${esc(ch.race)} • ${ch.cls_emoji} ${esc(ch.cls)} • سطح ${ch.level}</div></div>
-    </div>
-    <div class="bar-label"><span>❤️ HP</span><span>${ch.hp}/${ch.max_hp}</span></div>
-    <div class="bar hp"><div style="width:${Math.round(ch.hp/ch.max_hp*100)}%"></div></div>
-    <div class="bar-label"><span>⭐ تجربه</span><span>${ch.xp} XP ${ch.xp_next? 'از '+ch.xp_next : ''}</span></div>
-    <div class="bar xp"><div style="width:${ch.xp_next? Math.min(100,Math.round(ch.xp/ch.xp_next*100)):100}%"></div></div>
-    <div class="grid2">
-      <div class="stat"><span>🛡️ AC</span><b>${ch.ac}</b></div>
-      <div class="stat"><span>🗡️ بونوس حمله</span><b>${ch.attack_bonus>=0?'+':''}${ch.attack_bonus}</b></div>
-      <div class="stat"><span>${ch.weapon_emoji||'⚔️'} ${esc(ch.weapon)}</span><b>${ch.weapon_dmg}</b></div>
-      <div class="stat"><span>🪙 سکه</span><b>${ch.gold}</b></div>
-    </div>
-    ${conds?`<div class="sec-title">وضعیت‌های فعال</div><div class="tag-row">${conds}</div>`:''}
-    <div class="sec-title">توانایی‌ها</div>
-    <div class="grid2">${ab}</div>
-    <div class="sec-title">ویژگی‌ها</div>
-    <ul class="feat">${ch.features.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>
-    ${lvlBtn}
-  </div>`;
-}
+/* ============================================================
+   Character sheet
+   ============================================================ */
 function fillWeapons(selectedWeapon) {
-  const clsEl = document.getElementById('chClass');
-  if (!clsEl) return;
-  const cls = clsEl.value;
-  const sel = (typeof selectedWeapon === 'string' && selectedWeapon) ? selectedWeapon : (document.getElementById('chWeapon') ? document.getElementById('chWeapon').value : '');
-  const ws = (META.weapons[cls]||[]).map(w => `<option value="${w.key}"${w.key===sel?' selected':''}>${w.emoji} ${w.fa} (${w.dmg})</option>`).join('');
-  const wEl = document.getElementById('chWeapon');
-  if (wEl) wEl.innerHTML = ws;
+  const cl = document.getElementById('chClass'); if (!cl) return;
+  const cls = cl.value;
+  const ws = (META.weapons[cls]||[]);
+  const wEl = document.getElementById('chWeapon'); if (!wEl) return;
+  wEl.innerHTML = ws.map(w=>`<option value="${w.key}" ${w.key===selectedWeapon?'selected':''}>${w.emoji||'⚔️'} ${w.fa||w.key} (${w.dmg||'-'})</option>`).join('');
 }
 async function createChar() {
   const body = {
@@ -1231,16 +1205,17 @@ async function createChar() {
     name: $('#chName').value.trim(),
     race: $('#chRace').value,
     cls: $('#chClass').value,
-    weapon: $('#chWeapon').value,
+    weapon: $('#chWeapon').value
   };
-  if (!body.name) return toast('اسم شخصیتت را بنویس!');
+  if (!body.name) return toast('⚠️ اسم شخصیت را بنویس');
   try {
     const d = await api('/api/char/create', body);
     S = d.state; render();
-    toast('🎉 کاراکترت ساخته شد! برو سراغ 📖 داستان');
+    switchTab('story');
+    toast('🎉 کاراکتر ساخته شد! برو سراغ ماجرا');
   } catch(e) { toast(e.message); }
 }
-async function levelUp() {
+async function levelUp(){
   try {
     const d = await api('/api/char/levelup', { room: roomCode });
     S = d.state; render();
@@ -1248,46 +1223,170 @@ async function levelUp() {
   } catch(e) { toast(e.message); }
 }
 
-/* ================= گروه ================= */
+function renderChar() {
+  const box = $('#charBox');
+  if (!S || !S.me) return;
+  if (!S.me.has_char) {
+    if (!META) return;
+    const races = META.races.map(r => `<option value="${r.key}">${r.emoji||'🧑'} ${r.fa} (${r.bonus})</option>`).join('');
+    const classes = META.classes.map(c => `<option value="${c.key}">${c.emoji||'⚔️'} ${c.fa} (HD ${c.hit_die})</option>`).join('');
+    const defRace = localStorage.getItem('dnd_last_race') || META.races[0].key;
+    const defCls = localStorage.getItem('dnd_last_cls') || META.classes[0].key;
+    const prevName = document.getElementById('chName') ? document.getElementById('chName').value : (localStorage.getItem('dnd_guest_name') || '');
+    box.innerHTML = `
+      <div class="card">
+        <div class="sec-title">🧙 ساخت شخصیت</div>
+        <form onsubmit="event.preventDefault();createChar();return false;">
+          <label class="field-label">نام شخصیت</label>
+          <input id="chName" placeholder="مثلاً: الفریک شجاع" maxlength="24" autocomplete="off" value="${esc(prevName)}">
+          <label class="field-label">نژاد</label>
+          <select id="chRace" onchange="localStorage.setItem('dnd_last_race',this.value)">${races}</select>
+          <label class="field-label">کلاس</label>
+          <select id="chClass" onchange="fillWeapons();localStorage.setItem('dnd_last_cls',this.value)">${classes}</select>
+          <label class="field-label">سلاح</label>
+          <select id="chWeapon"></select>
+          <button type="submit" class="btn gold" style="margin-top:6px;">⚔️ ساختن ماجراجو</button>
+        </form>
+        <p class="hint">
+          امتیازات به‌صورت استاندارد (15,14,13,12,10,8) + پاداش نژاد توزیع می‌شوند.<br>
+          ۱۲ کلاس، ۸ نژاد، و ده‌ها طلسم/قابلیت پشتیبانی می‌شود.
+        </p>
+      </div>`;
+    document.getElementById('chRace').value = defRace;
+    document.getElementById('chClass').value = defCls;
+    fillWeapons(localStorage.getItem('dnd_last_weapon'));
+    return;
+  }
+  const ch = S.me.char;
+  const ab = (ch.abilities||[]).map(a => `
+    <div class="ability">
+      <div class="k">${esc(a.fa||a.key)}</div>
+      <div class="v">${a.value}</div>
+      <div class="m">${(a.mod>=0?'+':'')+a.mod}</div>
+    </div>`).join('');
+  const stats = [
+    { k:'🛡️ AC', v: ch.ac },
+    { k:'❤️ HP', v: `${ch.hp}/${ch.max_hp}` },
+    { k:'🎯 بون.حمله', v: (ch.attack_bonus>=0?'+':'')+ch.attack_bonus },
+    { k:'⚔️ سلاح', v: (ch.weapon_emoji||'⚔️')+' '+(ch.weapon_fa||ch.weapon||'-') },
+    { k:'⭐ سطح', v: ch.level },
+    { k:'💫 XP', v: ch.xp + (ch.xp_next?` / ${ch.xp_next}`:'') },
+    { k:'🪙 سکه', v: ch.gold||0 },
+    { k:'🎲 Hit Dice', v: ch.hit_dice||'-' },
+  ].map(s => `<div class="stat"><span>${s.k}</span><b>${esc(s.v)}</b></div>`).join('');
+  const conds = (ch.conditions||[]).map(c => {
+    const safe=(c||'').toLowerCase();
+    const emojis = {blinded:'👁️‍🗨️',charmed:'💞',frightened:'😱',grappled:'🫴',poisoned:'🤢',prone:'🤸',restrained:'🪢',stunned:'💫',unconscious:'😵',invisible:'👻',deafened:'🔇',incapacitated:'🚫',paralyzed:'⚡',dodge:'🛡️',raging:'😤',concentrating:'🧘'};
+    return `<span class="tag bad">${emojis[safe]||'•'} ${esc(COND_FA[safe]||c)}</span>`;
+  }).join('');
+  const feats = (ch.features||[]).map(f=>`<li>${esc(f)}</li>`).join('');
+  const spells = (ch.spells||[]).map(s=>`<span class="tag">✨ ${esc(s.fa||s.name||s.key||s)}${s.level?' ['+s.level+']':''}</span>`).join('');
+  const lvlBtn = ch.can_level_up
+    ? `<button class="btn green" style="margin-top:10px;width:100%;" onclick="levelUp()">⭐ ارتقا به سطح ${(ch.level||1)+1}!</button>`
+    : '';
+  const hpPct = Math.max(0, Math.min(100, ch.hp/ch.max_hp*100));
+  const hpCls = hpPct<25?'crit':hpPct<55?'low':'';
+  box.innerHTML = `
+    <div class="card">
+      <div class="sheet-head">
+        <div class="sheet-avatar">${esc(ch.cls_emoji||'🧙')}</div>
+        <div style="flex:1;min-width:0;">
+          <h2 style="color:var(--ink);">${esc(ch.name)}</h2>
+          <div class="sub">${esc(ch.race_emoji||'')} ${esc(ch.race)} • ${esc(ch.cls_emoji||'')} ${esc(ch.cls)} • سطح ${ch.level}</div>
+        </div>
+      </div>
+      <div class="hp-bar"><div class="hp-fill ${hpCls}" style="width:${hpPct}%"></div></div>
+      <div class="hp-text" style="text-align:right;color:var(--ink2);">❤️ ${ch.hp} / ${ch.max_hp}</div>
+
+      <div class="sec-title">توانایی‌ها</div>
+      <div class="abilities">${ab}</div>
+      <div class="sec-title">وضعیت</div>
+      <div class="stat-grid">${stats}</div>
+      ${conds?`<div class="sec-title">شرایط</div><div class="tags">${conds}</div>`:''}
+      ${spells?`<div class="sec-title">طلسم‌ها</div><div class="tags">${spells}</div>`:''}
+      ${feats?`<div class="sec-title">ویژگی‌ها</div><ul class="feat-list">${feats}</ul>`:''}
+      ${lvlBtn}
+    </div>`;
+}
+
 function renderParty() {
   const box = $('#partyBox');
-  const rows = (S.room.players||[]).map(p => {
+  if (!S || !S.room) return;
+  const players = S.room.players || [];
+  const invite = `${location.origin}${location.pathname}?c=${S.room.code}`;
+  let rows = players.map(p => {
     const ch = p.char;
-    return `<div class="p-row">
-      <span class="em">${ch? ch.emoji : '🚪'}</span>
-      <div class="info">
-        <div class="nm">${esc(p.name)} ${p.is_dm?'<span class="crown">👑 DM</span>':''}</div>
-        <div class="sub">${ch? `${esc(ch.race)} ${esc(ch.cls)} • سطح ${ch.level} • ❤️ ${ch.hp}/${ch.max_hp} • AC ${ch.ac}` : 'بدون کاراکتر — منتظر است...'}</div>
-        ${ch && ch.conditions && ch.conditions.length ? `<div style="margin-top:3px">${ch.conditions.map(c=>{const s=(c||"").toLowerCase();return `<span class="cond-tag" style="font-size:9px">${COND_EMOJI[s]||'•'} ${esc(COND_FA[s]||c)}</span>`;}).join(' ')}</div>`:''}
+    return `<div class="p-row" style="display:flex;gap:10px;align-items:center;padding:8px;border-bottom:1px dashed rgba(139,90,30,.25);">
+      <div style="font-size:28px;">${ch? (ch.cls_emoji||'🧙') : '🚪'}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:800;color:var(--ink);">${esc(p.name)} ${p.is_dm?'<span class="tag">👑 DM</span>':''}</div>
+        <div style="font-size:12px;color:var(--ink2);">
+          ${ch ? `${esc(ch.race||'')} ${esc(ch.cls||'')} • سطح ${ch.level||1} • ❤️ ${ch.hp||0}/${ch.max_hp||0} • AC ${ch.ac||0}` : 'بدون کاراکتر — منتظر...'}
+        </div>
       </div>
-      ${ch && !ch.alive ? '<span>💀</span>' : ''}
+      ${ch && !ch.alive ? '<span style="font-size:22px;">💀</span>' : ''}
     </div>`;
   }).join('');
-  box.innerHTML = `<div class="card code-box">
-    <div class="sec-title">🔑 کد اتاق — برای دوستانت بفرست</div>
-    <div class="code">${S.room.code}</div>
-    <button class="btn gold" onclick="copyCode()">📋 کپی کد</button>
-    <p class="hint">هر بازیکن از تلگرام خودش وارد همین مینی‌گیم می‌شود و با این کد به اتاق می‌پیوندد.</p>
-  </div>
-  <div class="card">
-    <div class="sec-title">👥 ماجراجویان (${S.room.count}/۸ — ${S.room.char_count} کاراکتر)</div>
-    ${rows}
-  </div>`;
-}
-async function copyCode() {
-  try { await navigator.clipboard.writeText(S.room.code); toast('📋 کپی شد!'); }
-  catch(e) { toast('کد: ' + S.room.code); }
+  box.innerHTML = `
+    <div class="card code-box">
+      <div class="sec-title">🔑 کد اتاق — برای دوستانت بفرست</div>
+      <div style="display:flex;gap:10px;align-items:center;margin:8px 0;">
+        <div style="flex:1;background:rgba(0,0,0,.15);border:1.5px dashed #8a6a33;border-radius:10px;padding:12px;text-align:center;font-family:ui-monospace,monospace;font-size:22px;font-weight:800;letter-spacing:4px;color:var(--ink);">${esc(S.room.code)}</div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn dark mini" onclick="copyInvite()">📋 کپی لینک دعوت</button>
+      </div>
+      <p class="hint">هر بازیکن با این کد (یا لینک) وارد اتاق می‌شود. حداکثر ۸ بازیکن.</p>
+    </div>
+    <div class="card">
+      <div class="sec-title">👥 ماجراجویان (${players.length}/۸ — ${S.room.char_count||0} کاراکتر)</div>
+      ${rows}
+    </div>`;
 }
 
-/* ================= تب‌ها ================= */
-function switchTab(name) {
-  document.querySelectorAll('.tab-page').forEach(p => p.classList.add('hidden'));
-  $('#tab-' + name).classList.remove('hidden');
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-}
-document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+/* ============================================================
+   Init
+   ============================================================ */
+async function init() {
+  // Load meta (works without auth)
+  try {
+    const r = await fetch('/api/meta');
+    const j = await r.json();
+    if (j && j.ok) META = j.data;
+  } catch(e) { /* offline */ }
 
-init();
+  // Auto-login via URL
+  const params = new URLSearchParams(location.search);
+  const cFromUrl = params.get('c') || params.get('room') || '';
+  if (cFromUrl) { $('#inpCode').value = cFromUrl.toUpperCase(); sessionStorage.setItem('dnd_pending_join', cFromUrl.toUpperCase()); }
+
+  const mode = hasAuth();
+  if (!mode) {
+    showScreen('login');
+    if (TG) { document.getElementById('tgHint').classList.remove('hidden'); }
+    const n = document.getElementById('inpGuestName');
+    if (n) n.focus();
+    return;
+  }
+  refreshHomeWelcome();
+  if (roomCode) {
+    try { await loadState(); if (S && S.room && S.me && S.me.is_member) { showGame(); startPolling(); return; } }
+    catch (e) { /* fall through to home */ }
+  }
+  showScreen('home');
+}
+
+const COND_FA = {
+  blinded:'کور',charmed:'افسون',frightened:'ترسیده',grappled:'گرفتار',poisoned:'مسموم',
+  prone:'زمین‌خورده',restrained:'مقید',stunned:'شکه',unconscious:'بیهوش',invisible:'نامرئی',
+  deafened:'ناشنوا',incapacitated:'بی‌اقدام',paralyzed:'فلج',dodge:'دفاع فعال',raging:'خشم',concentrating:'تمرکز'
+};
+
+window.addEventListener('load', init);
+// Prevent Enter from submitting forms accidentally inside story-input (the form already captures it)
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('#scenario-modal').classList.contains('show')) closeModal();
+});
 </script>
 </body>
 </html>
