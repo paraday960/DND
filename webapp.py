@@ -48,7 +48,10 @@ def validate_init_data(init_data: str):
     """اعتبارسنجی initData تلگرام — کلید مخفی از توکن ربات ساخته می‌شود.
 
     مطابق مستندات رسمی تلگرام: باید مقادیر URL-decode شده (parse_qsl) استفاده شوند.
+    چک اضافی: auth_date نباید بیش از ۲۴ ساعت قدیمی باشد.
     """
+    import logging, time as _t
+    log = logging.getLogger("webapp")
     try:
         if not init_data or not config.BOT_TOKEN:
             return None
@@ -57,27 +60,74 @@ def validate_init_data(init_data: str):
         received = fields.pop("hash", None)
         if not received:
             return None
+        # چک اعتبار زمانی
+        try:
+            ad = int(fields.get("auth_date", "0"))
+            if abs(_t.time() - ad) > 86400:
+                log.warning("initData expired (auth_date=%d, now=%.0f, diff=%.0fs)",
+                            ad, _t.time(), abs(_t.time() - ad))
+                return None
+        except Exception:
+            pass
         secret = hmac.new(b"WebAppData", config.BOT_TOKEN.encode(), hashlib.sha256).digest()
         dcs = "\n".join(f"{k}={fields[k]}" for k in sorted(fields))
         calc = hmac.new(secret, dcs.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(calc, received):
-            import logging
-            logging.getLogger("webapp").warning(
+            log.warning(
                 "initData hash mismatch (token len=%d, fields=%s, recv=%s, calc=%s)",
                 len(config.BOT_TOKEN), ",".join(sorted(fields))[:200], received[:12], calc[:12])
             return None
         user_str = fields.get("user", "{}")
         try:
-            return json.loads(user_str)
+            u = json.loads(user_str)
+            if not u.get("id"):
+                return {"id": 0, "first_name": "بازیکن"}
+            return u
         except Exception:
             return {"id": 0, "first_name": "بازیکن"}
     except Exception as e:
-        import logging
-        logging.getLogger("webapp").warning("validate_init_data error: %s", e)
+        log.warning("validate_init_data error: %s", e)
         return None
 
 
+class _MemoryStore:
+    """ذخیره‌سازی در حافظه برای حالت dev/test (وقتی store=None است)."""
+    def __init__(self):
+        self._rooms = {}
+    def save(self, s):
+        self._rooms[s.code] = s
+        self._rooms[s.chat_id] = s
+    def load(self, chat_id):
+        return self._rooms.get(chat_id)
+    def delete(self, chat_id):
+        s = self._rooms.pop(chat_id, None)
+        if s and getattr(s, "code", None):
+            self._rooms.pop(s.code, None)
+    def find_by_code(self, code):
+        return self._rooms.get(code.upper() if code else code)
+
+
+class _OfflineNarrator:
+    """راوی آفلاین برای وقتی که narrator=None یا کلید AI تنظیم نیست."""
+    available = False
+    def scenario(self, session, req=""):
+        return {"title": "سیاه‌چال فراموش‌شده", "hook": "ورودی تاریکی در مقابل شما قرار دارد...",
+                "goal": "درون سیاه‌چال برو و گنج را پیدا کن.",
+                "locations": [{"name": "ورودی سیاه‌چال", "description": "در سنگی کهنه در دامنه کوه."}],
+                "npcs": [], "encounters": [], "treasure": None, "traps": [], "branches": [],
+                "boss": None}
+    def narrate(self, session, action):
+        return f"شما اقدام کردید: {action}. داستان ادامه دارد..."
+    def recap(self, session):
+        return "شما در ورودی سیاه‌چال هستید. هوا سرد و مرطوب است."
+
+
 def build_app(store, narrator, telegram_app=None, loop=None):
+    # در حالت dev/test: اگر store نال بود از حافظه استفاده کن
+    if store is None and config.WEBAPP_DEV:
+        store = _MemoryStore()
+    if narrator is None and config.WEBAPP_DEV:
+        narrator = _OfflineNarrator()
     app = Flask(__name__)
 
     # ---------- CORS برای مینی‌گیم (اجازه می‌دهد iframeها و webviewها بدون خطا کار کنند) ----------
@@ -115,6 +165,16 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     def api_err(msg, code=400):
         return jsonify({"ok": False, "error": msg}), code
 
+    def _json_body():
+        """بدنه JSON را به‌صورت امن به dict تبدیل می‌کند (جلوگیری از کرش روی رشته/عدد/آرایه)."""
+        if not request.is_json:
+            return {}
+        try:
+            data = request.get_json(silent=True)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
     def get_user():
         init = (request.headers.get("X-Init-Data")
                 or request.args.get("init_data")
@@ -127,7 +187,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         # پشتیبانی از فرم پست (برای iframe و webviewهای خاص)
         if request.is_json:
             try:
-                body_init = (request.get_json(silent=True) or {}).get("init_data", "")
+                body_init = _json_body().get("init_data", "")
                 if body_init:
                     user = validate_init_data(body_init)
                     if user:
@@ -381,7 +441,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         user, err = need_user()
         if err:
             return err
-        d = request.json or {}
+        d = _json_body()
         name = _s(d.get("name"), "ماجرای جدید")[:40]
         room = Session(chat_id=_rand_chat_id(), name=name,
                        dm_id=user["id"], dm_name=user.get("first_name", "میزبان"))
@@ -393,7 +453,8 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         user, err = need_user()
         if err:
             return err
-        code = (request.json or {}).get("code", "")
+        d = _json_body()
+        code = d.get("code", "")
         room = room_of(code)
         if not room:
             return api_err("اتاق با این کد پیدا نشد!")
@@ -422,7 +483,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         user, err = need_user()
         if err:
             return err
-        d = request.json or {}
+        d = _json_body()
         room = room_of(d.get("room", ""))
         if not room:
             return api_err("اتاق پیدا نشد!")
@@ -453,7 +514,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         user, err = need_user()
         if err:
             return err
-        d = request.json or {}
+        d = _json_body()
         room = room_of(d.get("room", ""))
         if not room:
             return api_err("اتاق پیدا نشد!")
@@ -473,7 +534,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         user, err = need_user()
         if err:
             return err
-        d = request.json or {}
+        d = _json_body()
         room = room_of(d.get("room", ""))
         if not room:
             return api_err("اتاق پیدا نشد!")
@@ -494,7 +555,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         user, err = need_user()
         if err:
             return err
-        d = request.json or {}
+        d = _json_body()
         room = room_of(d.get("room", ""))
         if not room:
             return api_err("اتاق پیدا نشد!")
@@ -510,7 +571,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         user, err = need_user()
         if err:
             return err
-        d = request.json or {}
+        d = _json_body()
         room = room_of(d.get("room", ""))
         if not room:
             return api_err("اتاق پیدا نشد!")
@@ -523,7 +584,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         user, err = need_user()
         if err:
             return err
-        d = request.json or {}
+        d = _json_body()
         expr = _s(d.get("expr"))
         if not expr:
             return api_err("مثل: 2d6+3 یا d20 یا adv")
@@ -552,7 +613,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     def api_check():
         user, err = need_user()
         if err: return err
-        d = request.json or {}; room = room_of(d.get("room", ""))
+        d = _json_body(); room = room_of(d.get("room", ""))
         if not room: return api_err("اتاق پیدا نشد!")
         if str(user["id"]) not in room.players: return api_err("تو عضو این اتاق نیستی.")
         try: dc = int(d.get("dc", 10))
@@ -564,7 +625,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     def api_rest():
         user, err = need_user()
         if err: return err
-        d = request.json or {}; room = room_of(d.get("room", ""))
+        d = _json_body(); room = room_of(d.get("room", ""))
         if not room: return api_err("اتاق پیدا نشد!")
         text = rest(room, user["id"], _s(d.get("kind"), "short"))
         persist(room); return api_ok({"text": text, "state": build_state(room, user)})
@@ -574,7 +635,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         """خارج از نبرد: درمان/احیای ساده. داخل نبرد: به هندلر نبرد ارجاع می‌شود."""
         user, err = need_user()
         if err: return err
-        d = request.json or {}; room = room_of(d.get("room", ""))
+        d = _json_body(); room = room_of(d.get("room", ""))
         if not room: return api_err("اتاق پیدا نشد!")
         ch = room.get_char(user["id"])
         if not ch: return api_err("کاراکتر نداری!")
@@ -588,7 +649,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     def api_move():
         user, err = need_user()
         if err: return err
-        d = request.json or {}; room = room_of(d.get("room", ""))
+        d = _json_body(); room = room_of(d.get("room", ""))
         if not room: return api_err("اتاق پیدا نشد!")
         if room.combat: return api_err("در نبرد نمی‌توانی حرکت کنی.")
         direction = _s(d.get("direction") or d.get("text"), "جلو")
@@ -604,7 +665,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     def api_look():
         user, err = need_user()
         if err: return err
-        d = request.json or {}; room = room_of(d.get("room", ""))
+        d = _json_body(); room = room_of(d.get("room", ""))
         if not room: return api_err("اتاق پیدا نشد!")
         from game.map import init_world
         init_world(room)
@@ -615,7 +676,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     def api_inventory():
         user, err = need_user()
         if err: return err
-        d = request.json or {}; room = room_of(d.get("room", ""))
+        d = _json_body(); room = room_of(d.get("room", ""))
         if not room: return api_err("اتاق پیدا نشد!")
         ch = room.get_char(user["id"])
         if not ch: return api_err("کاراکتر نداری!")
@@ -641,7 +702,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     def api_disarm():
         user, err = need_user()
         if err: return err
-        d = request.json or {}; room = room_of(d.get("room", ""))
+        d = _json_body(); room = room_of(d.get("room", ""))
         if not room: return api_err("اتاق پیدا نشد!")
         ch = room.get_char(user["id"])
         if not ch: return api_err("کاراکتر نداری!")
@@ -655,7 +716,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     def api_use_item():
         user, err = need_user()
         if err: return err
-        d = request.json or {}; room = room_of(d.get("room", ""))
+        d = _json_body(); room = room_of(d.get("room", ""))
         if not room: return api_err("اتاق پیدا نشد!")
         text = use_item(room, user["id"], _s(d.get("item")))
         persist(room); return api_ok({"text": text, "state": build_state(room, user)})
@@ -666,7 +727,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         user, err = need_user()
         if err:
             return err
-        d = request.json or {}
+        d = _json_body()
         room = room_of(d.get("room", ""))
         if not room:
             return api_err("اتاق پیدا نشد!")
@@ -685,7 +746,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         user, err = need_user()
         if err:
             return err
-        d = request.json or {}
+        d = _json_body()
         room = room_of(d.get("room", ""))
         if not room:
             return api_err("اتاق پیدا نشد!")
@@ -712,12 +773,12 @@ def build_app(store, narrator, telegram_app=None, loop=None):
 
     @app.post("/api/combat/attack")
     def api_combat_attack():
-        d = request.json or {}
+        d = _json_body()
         return _combat_action(lambda room, uid: attack(room, uid, _s(d.get("target"))))
 
     @app.post("/api/combat/cast")
     def api_combat_cast():
-        d = request.json or {}
+        d = _json_body()
         return _combat_action(lambda room, uid: cast(
             room, uid, _s(d.get("spell")), _s(d.get("target"))))
 
@@ -735,7 +796,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
 
     @app.post("/api/combat/help")
     def api_combat_help():
-        d = request.json or {}
+        d = _json_body()
         return _combat_action(lambda room, uid: help_action(room, uid, _s(d.get("target"))))
 
     @app.post("/api/combat/hide")
@@ -744,7 +805,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
 
     @app.post("/api/combat/shove")
     def api_combat_shove():
-        d = request.json or {}
+        d = _json_body()
         return _combat_action(lambda room, uid: shove(room, uid, _s(d.get("target"))))
 
     @app.post("/api/combat/secondwind")
@@ -761,50 +822,50 @@ def build_app(store, narrator, telegram_app=None, loop=None):
 
     @app.post("/api/combat/inspire")
     def api_combat_inspire():
-        d = request.json or {}
+        d = _json_body()
         return _combat_action(lambda room, uid: bardic_inspiration(room, uid, _s(d.get("target"))))
 
     @app.post("/api/combat/move")
     def api_combat_move():
-        d = request.json or {}
+        d = _json_body()
         return _combat_action(lambda room, uid: move_action(room, uid, _s(d.get("where"), "near")))
 
     @app.post("/api/combat/offhand")
     def api_combat_offhand():
-        d = request.json or {}
+        d = _json_body()
         return _combat_action(lambda room, uid: offhand_attack(room, uid, _s(d.get("target"))))
 
     @app.post("/api/combat/smite")
     def api_combat_smite():
-        d = request.json or {}
+        d = _json_body()
         try: slot = int(d.get("slot", 1))
         except (TypeError, ValueError): slot = 1
         return _combat_action(lambda room, uid: divine_smite(room, uid, slot))
 
     @app.post("/api/combat/jump")
     def api_combat_jump():
-        d = request.json or {}
+        d = _json_body()
         return _combat_action(lambda room, uid: jump_action(room, uid, _s(d.get("where"), "near")))
 
     @app.post("/api/combat/helpup")
     def api_combat_helpup():
-        d = request.json or {}
+        d = _json_body()
         return _combat_action(lambda room, uid: help_up(room, uid, _s(d.get("target"))))
 
     @app.post("/api/combat/throw")
     def api_combat_throw():
-        d = request.json or {}
+        d = _json_body()
         item = _s(d.get("item"), "torch") or "torch"
         return _combat_action(lambda room, uid: throw_action(room, uid, item, _s(d.get("target"))))
 
     @app.post("/api/combat/dip")
     def api_combat_dip():
-        d = request.json or {}
+        d = _json_body()
         return _combat_action(lambda room, uid: dip_weapon(room, uid, _s(d.get("element"), "fire")))
 
     @app.post("/api/combat/cunning")
     def api_combat_cunning():
-        d = request.json or {}
+        d = _json_body()
         return _combat_action(lambda room, uid: cunning_action(room, uid, _s(d.get("what"), "disengage")))
 
     @app.post("/api/combat/rebuke")
@@ -816,7 +877,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         user, err = need_user()
         if err:
             return err
-        d = request.json or {}
+        d = _json_body()
         room = room_of(d.get("room", ""))
         if not room:
             return api_err("اتاق پیدا نشد!")
@@ -841,7 +902,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         user, err = need_user()
         if err:
             return err
-        d = request.json or {}
+        d = _json_body()
         room = room_of(d.get("room", ""))
         if not room:
             return api_err("اتاق پیدا نشد!")
@@ -859,7 +920,7 @@ def build_app(store, narrator, telegram_app=None, loop=None):
         user, err = need_user()
         if err:
             return err
-        d = request.json or {}
+        d = _json_body()
         room = room_of(d.get("room", ""))
         if not room:
             return api_err("اتاق پیدا نشد!")

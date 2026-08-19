@@ -330,7 +330,17 @@ const COND_FA = {
 const CANT_ACT = new Set(["stunned","unconscious","paralyzed","incapacitated"]);
 
 async function api(path, body) {
-  const init = (TG && TG.initData) ? TG.initData : '';
+  let init = (TG && TG.initData) ? TG.initData : '';
+  // در حالت dev/test (بدون تلگرام): از user_id ثابت localStorage استفاده کن
+  const DEV_MODE = !TG || !init;
+  if (DEV_MODE) {
+    let devId = localStorage.getItem('dnd_dev_id');
+    if (!devId) { devId = String(Math.floor(100000 + Math.random() * 900000)); localStorage.setItem('dnd_dev_id', devId); }
+    init = '';  // هیچ initData تلگرامی نیست
+    const sep = path.includes('?') ? '&' : '?';
+    path = path + sep + 'user_id=' + encodeURIComponent(devId)
+         + '&user_name=' + encodeURIComponent(localStorage.getItem('dnd_dev_name') || 'بازیکن آزمایشی');
+  }
   const opt = { method: body ? 'POST' : 'GET', headers: {} };
   if (init) {
     opt.headers['X-Init-Data'] = init;
@@ -353,9 +363,13 @@ async function api(path, body) {
   const j = await r.json().catch(() => ({ ok: false, error: 'پاسخ نامعتبر از سرور' }));
   if (!j.ok) {
     if (r.status === 401) {
-      // در صورتی که تلگرام نتوانست هویت را تشخیص دهد، کاربر را به خانه ببر
-      showHome();
-      toast('⚠️ جلسه تلگرام شناسایی نشد — مینی‌گیم را از دکمه تلگرام دوباره باز کن');
+      if (DEV_MODE) {
+        toast('⚠️ سرور در حالت DEV نیست — از dev mode نمی‌توان استفاده کرد');
+      } else {
+        // در صورتی که تلگرام نتوانست هویت را تشخیص دهد، صفحه را رفرش کن
+        toast('⚠️ جلسه تلگرام شناسایی نشد — چند ثانیه صبر کن...');
+        setTimeout(() => location.reload(), 1500);
+      }
     }
     throw new Error(j.error || 'خطا');
   }
@@ -699,9 +713,37 @@ function renderCombat() {
     }
     if (mCls === "paladin") {
       classBtns.push(btnGold("✨ اسمایت الهی", hasEnemy, `doSmite()`));
+      classBtns.push(btnGold("💚 شفای لمسی (مرهم)", hasAlly, `doCastSpell('curewounds')`));
     }
-    // تیفلینگ نژادی — اگر کاراکتر هل‌ریبوک دارد چک نمی‌کنیم، سرور خطا می‌دهد
-    classBtns.push(btnGold("🔥 نفس اژدها / مجازات دوزخی", hasEnemy, `doRebuke()`));
+    if (mCls === "rogue") {
+      classBtns.push(btnGold("🗡️ حمله + Sneak Attack", hasEnemy, `doAttack()`));
+    }
+    if (mCls === "monk") {
+      classBtns.push(btnGold("👊 ضربه بی‌سلاح", hasEnemy, `doAttack()`));
+    }
+    if (mCls === "ranger") {
+      classBtns.push(btnGold("🏹 نشان شکارچی (بونس)", hasEnemy, `doCastSpell('huntersmark')`));
+    }
+    if (mCls === "warlock") {
+      classBtns.push(btnGold("😈 انفجار الدریچ", hasEnemy, `doCastSpell('eldritchblast')`));
+      classBtns.push(btnGold("🔮 نفرین (Hex بونس)", hasEnemy, `doCastSpell('hex')`));
+    }
+    if (mCls === "wizard" || mCls === "sorcerer") {
+      classBtns.push(btnGold("💥 موشک جادویی", hasEnemy, `doCastSpell('magicmissile')`));
+    }
+    if (mCls === "cleric") {
+      classBtns.push(btnGold("✨ شعله مقدس", hasEnemy, `doCastSpell('sacredflame')`));
+      classBtns.push(btnGold("💚 کلمه شفا (بونس)", hasAlly, `doCastSpell('healingword')`));
+    }
+    if (mCls === "druid") {
+      classBtns.push(btnGold("🌿 گیر انداختن", hasEnemy, `doCastSpell('entangle')`));
+    }
+    if (mCls === "bard") {
+      classBtns.push(btnGold("💚 کلمه شفا (بونس)", hasAlly, `doCastSpell('healingword')`));
+    }
+    // همه می‌توانند این قابلیت‌های نژادی/عمومی را امتحان کنند (سرور بررسی می‌کند)
+    classBtns.push(btnGold("🔥 نفس اژدها", hasEnemy, `doCastSpell('dragonbreath')`));
+    classBtns.push(btnGold("🧪 معجون شفا", true, `quickPotion()`));
 
     // واکنش‌ها (فقط نمایشی — واکنش‌ها خودکار توسط سرور اجرا می‌شوند: Opp.Attack, Shield)
     const reactInfo = `<div class="action-sheet-hd"><span class="dot react"></span><b style="color:var(--purple);font-size:11px">واکنش‌ها (خودکار)</b>
@@ -972,6 +1014,33 @@ async function quickPotion() {
     S = d.state; render(); toast((d.text||'استفاده شد').slice(0,80));
   } catch(e) { toast(e.message); }
 }
+async function doCastSpell(spell) {
+  // کست مستقیم یک طلسم
+  const sp = (META.spells||[]).find(s=>s.key===spell);
+  const noNeed = sp && ['heal','buff','utility','teleport','aoe','cone','heal_aoe','mark','auto','defense_bonus','heal_touch','heal_ranged','save_dex','save_con','save_wis','save_dex_aoe','save_dex_cone','save_wis_aoe','save_str_aoe','buff_long','buff_concentration','bonus_attack','teleport_bonus','buff_mark','attack_melee','attack_ranged','save_dex_cone'].includes(sp.kind);
+  // برای طلسم‌های حمله نیاز به هدف هست
+  const needsTgt = sp && ['attack_ranged','attack_melee','save_dex','save_wis','save_con','bonus_attack'].includes(sp.kind);
+  let tgt = '';
+  if (needsTgt) {
+    if (!selTarget) {
+      // برای طلسم heal/h_touch به ally نیاز است
+      if (sp.kind === 'heal_touch' || sp.key === 'curewounds' || sp.key === 'healingword' || sp.kind === 'heal_ranged') {
+        if (selAlly) tgt = selAlly;
+        else { toast('اول یک هم‌تیمی را انتخاب کن'); return; }
+      } else {
+        toast('اول یک دشمن را انتخاب کن'); return;
+      }
+    } else tgt = selTarget;
+  }
+  if (sp && (sp.kind === 'heal_touch' || sp.key === 'healingword' || sp.kind === 'heal_ranged' || sp.kind === 'heal_aoe')) {
+    if (selAlly) tgt = selAlly;
+  }
+  try {
+    const d = await api('/api/combat/cast', { room: roomCode, spell, target: tgt });
+    S = d.state; selTarget=null; selAlly=null; renderCombat(); renderFeed();
+    (d.messages||[]).slice(0,3).forEach(m=>toast(m.split('\n')[0].slice(0,80)));
+  } catch(e) { toast(e.message); }
+}
 
 /* ================= کاراکتر ================= */
 function renderChar() {
@@ -987,7 +1056,7 @@ function renderChar() {
       <select id="chClass" onchange="fillWeapons()">${classes}</select>
       <select id="chWeapon"></select>
       <button class="btn gold" onclick="createChar()">⚔️ ساختن ماجراجو</button>
-      <p class="hint">امتیاز توانایی‌ها به‌صورت استاندارد (array 15,14,13,12,10,8) توزیع می‌شود.<br>۴ کلاس: جنگجو، بربر، بَرد، دزد • ۸ نژاد</p>
+      <p class="hint">امتیاز توانایی‌ها به‌صورت استاندارد (array 15,14,13,12,10,8) توزیع می‌شود.<br>۱۲ کلاس (جنگجو، جادوگر، روحانی، دزد، بَرد، رنجر، پالادین، راهب، بربر، وارلاک، دروید، ساحر) • ۸ نژاد</p>
     </div>`;
     fillWeapons();
     return;

@@ -86,7 +86,7 @@ def tg(method, payload=None, timeout=25, retries=2):
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "DND-Bot-Android/2.42",
+                "User-Agent": "DND-Bot-Android/2.44",
                 "Connection": "close",
             }
             req = urllib.request.Request(url, data=data, headers=headers)
@@ -145,9 +145,13 @@ def webapp_kb(url):
 
 WELCOME = ("🐉 به دانجن‌مستر هوشمند خوش اومدی!\n\n"
            "این ربات با هوش مصنوعی سناریو می‌سازه، روایت می‌کنه و دانجن‌مستری می‌کنه — تا ۸ بازیکن!\n\n"
-           "🎮 همه‌چیز داخل مینی‌گیم انجام می‌شه: دکمه زیر رو بزن.\n"
+           "🎮 همه‌چیز داخل مینی‌گیم انجام می‌شه: دکمه مینی‌گیم کنار کادر پیام یا دکمه زیر رو بزن.\n"
            "🧙 یا با دستورها: /newgame → /newchar → /scenario → /story\n"
            "📚 راهنمای کامل: /help")
+
+# یک قفل سراسری برای این‌که در لحظه set_menu_button چندبار همزمان صدا نشویم
+_mb_lock = threading.Lock()
+_menu_button_set = False  # آیا در این چرخه دکمه منو ست شده است؟
 
 HELP = ("📚 راهنما:\n"
         "🎮 /newgame — اتاق بساز (کد می‌گیری)\n"
@@ -197,11 +201,74 @@ def is_dm(session, uid):
 # ==================== دستورها ====================
 
 def cmd_start(store, chat, uid, uname, args):
-    url = tunnel_url()
+    url = wait_for_tunnel(timeout=25)
     if url:
         send(chat, WELCOME, webapp_kb(url))
+        register_menu_button(url)
     else:
-        send(chat, WELCOME)
+        send(chat, WELCOME + "\n\n⏳ تونل مینی‌گیم در حال راه‌اندازی است... لحظاتی دیگر /game بزنید.")
+
+
+def cmd_game(store, chat, uid, uname, args):
+    url = wait_for_tunnel(timeout=25)
+    if not url:
+        send(chat, "❌ هنوز تونل آماده نشده. چند ثانیه صبر کن و دوباره /game بزن.")
+        return
+    send(chat, "🎮 مینی‌گیم D&D — همه‌چیز داخل بازی انجام می‌شود!", webapp_kb(url))
+    register_menu_button(url)
+
+
+def wait_for_tunnel(timeout=30):
+    """تا timeout ثانیه منتظر آماده شدن تونل می‌ماند."""
+    deadline = time.time() + timeout
+    while time.time() < deadline and not stopped():
+        u = tunnel_url()
+        if u:
+            # برای اطمینان، بررسی کن که تونل پاسخ می‌دهد
+            try:
+                req = urllib.request.Request(u + "/healthz", headers={"User-Agent": "DND-Bot-check/1.0"})
+                with urllib.request.urlopen(req, timeout=4) as r:
+                    if r.status == 200:
+                        return u
+            except Exception:
+                pass
+        time.sleep(1)
+    return tunnel_url()  # هرچی که هست برگردون (بهتر از هیچی است)
+
+
+def register_menu_button(url):
+    """دکمه دائمی مینی‌گیم را کنار کادر پیام ست می‌کند (یک‌بار در هر URL)."""
+    global _menu_button_set
+    if not url:
+        return False
+    with _mb_lock:
+        try:
+            # هم وب‌هوک را اگر هست حذف کن (برگشت به حالت polling)
+            tg("setChatMenuButton", {"menu_button": {
+                "type": "web_app", "text": "🎮 مینی‌گیم D&D",
+                "web_app": {"url": url.rstrip("/") + "/"}
+            }}, timeout=15, retries=1)
+            # همچنین دستورات بات را ست کن
+            tg("setMyCommands", {"commands": [
+                {"command": "newgame", "description": "🎮 ساخت اتاق بازی"},
+                {"command": "join", "description": "🔗 پیوستن با کد اتاق"},
+                {"command": "newchar", "description": "🧙 ساخت کاراکتر"},
+                {"command": "sheet", "description": "📜 کاراکتر من"},
+                {"command": "party", "description": "👥 گروه"},
+                {"command": "roll", "description": "🎲 تاس: /roll 2d6+3"},
+                {"command": "scenario", "description": "🐉 سناریو با AI"},
+                {"command": "story", "description": "📖 روایت با AI"},
+                {"command": "where", "description": "🗺️ وضعیت ماجرا"},
+                {"command": "combat", "description": "⚔️ شروع نبرد"},
+                {"command": "game", "description": "🎮 بازکردن مینی‌گیم"},
+                {"command": "help", "description": "📚 راهنما"},
+            ]}, timeout=15, retries=1)
+            _menu_button_set = True
+            log("✅ دکمه منوی مینی‌گیم ثبت شد: " + url)
+            return True
+        except Exception as e:
+            log("ثبت دکمه منو ناموفق: %s" % e)
+            return False
 
 
 def cmd_help(store, chat, uid, uname, args):
@@ -644,7 +711,7 @@ def on_message(store, msg):
     args = parts[1:]
 
     handlers = {
-        "start": cmd_start, "help": cmd_help, "game": cmd_start,
+        "start": cmd_start, "help": cmd_help, "game": cmd_game,
         "newgame": cmd_newgame, "reset": cmd_reset, "join": cmd_join,
         "sheet": cmd_sheet, "party": cmd_party, "roll": cmd_roll,
         "scenario": cmd_scenario, "story": cmd_story, "where": cmd_where,
@@ -775,6 +842,14 @@ def validate_init_data(init_data, bot_token):
         received = fields.pop("hash", None)
         if not received:
             return None
+        # چک بازه زمانی (باید کمتر از ۲۴ ساعت باشد)
+        try:
+            auth_date = int(fields.get("auth_date", "0"))
+            if abs(time.time() - auth_date) > 86400:
+                log("initData منقضی شده است (auth_date=%d)" % auth_date)
+                return None
+        except Exception:
+            pass
         secret = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
         dcs = "\n".join("%s=%s" % (k, fields[k]) for k in sorted(fields))
         calc = hmac.new(secret, dcs.encode(), hashlib.sha256).hexdigest()
@@ -782,7 +857,10 @@ def validate_init_data(init_data, bot_token):
             return None
         user_str = fields.get("user", "{}")
         try:
-            return json.loads(user_str)
+            u = json.loads(user_str)
+            if not u.get("id"):
+                return {"id": 0, "first_name": "بازیکن"}
+            return u
         except Exception:
             return {"id": 0, "first_name": "بازیکن"}
     except Exception:
@@ -843,7 +921,9 @@ class ApiHandler(BaseHTTPRequestHandler):
         try:
             n = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(n) if n else b""
-            self._body_cache = json.loads(raw.decode()) if raw else {}
+            data = json.loads(raw.decode()) if raw else {}
+            # اگر بدنه رشته/عدد/آرایه بود، آن را نادیده بگیر (به dict نیاز داریم)
+            self._body_cache = data if isinstance(data, dict) else {}
         except Exception:
             self._body_cache = {}
         return self._body_cache
@@ -984,6 +1064,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                     "hp": ch.hp, "max_hp": ch.max_hp, "ac": ch.ac, "alive": ch.hp > 0,
                 },
             })
+        world = getattr(s, "world", None) or {}
         my_sheet = self._sheet(s.get_char(user.get("id"))) if uid in s.players else None
         return {
             "room": {
@@ -992,6 +1073,9 @@ class ApiHandler(BaseHTTPRequestHandler):
                 "char_count": s.char_count(), "is_member": uid in s.players,
                 "is_dm": uid in s.players and s.dm_id == user.get("id"),
                 "players": players,
+                "location": world.get("location", ""),
+                "locations": world.get("locations", []),
+                "light": world.get("light", "dark"),
             },
             "me": {"uid": user.get("id"), "name": user.get("first_name", ""),
                    "is_member": uid in s.players,
@@ -1005,6 +1089,9 @@ class ApiHandler(BaseHTTPRequestHandler):
     # ---------- روتر ----------
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
+        if path == "/healthz":
+            self._json(200, {"ok": True, "fallback": True})
+            return
         if path == "/":
             try:
                 with open(os.path.join(FILES_DIR, "web", "index.html"), "rb") as f:
@@ -1764,6 +1851,7 @@ def resolve_edge_ips():
 
 
 def tunnel_loop(port, native_dir=None):
+    global _menu_button_set
     while not stopped():
         proc = None
         log("🌐 شروع تونل امن مینی‌گیم...")
@@ -1806,11 +1894,50 @@ def tunnel_loop(port, native_dir=None):
             proc = subprocess.Popen(
                 cmd, stdout=cf_log, stderr=subprocess.STDOUT,
                 env={"HOME": FILES_DIR, "PATH": "/system/bin:/system/xbin"})
+            # ❗ مهم: قبل از نوشتن URL منتظر بمانیم تا تونل واقعاً وصل شود
+            # معمولاً ۲-۶ ثانیه طول می‌کشد. حداکثر ۳۰ ثانیه انتظار.
+            url_ready = False
+            for _ in range(30):
+                if proc.poll() is not None:
+                    break  # پروسه مرد
+                time.sleep(1)
+                try:
+                    req = urllib.request.Request(
+                        url + "/healthz",
+                        headers={"User-Agent": "DND-Bot-healthcheck/1.0", "Connection": "close"},
+                    )
+                    with urllib.request.urlopen(req, timeout=4) as r:
+                        if r.status == 200:
+                            url_ready = True
+                            break
+                except Exception:
+                    continue
+            if not url_ready:
+                log("⚠️ تونل وصل نشد — تلاش مجدد...")
+                try: proc.terminate()
+                except Exception: pass
+                time.sleep(5)
+                continue
+            # حالا فایل را بنویس و لاگ کن
             with open(os.path.join(FILES_DIR, "tunnel_url.txt"), "w", encoding="utf-8") as f:
                 f.write(url)
+            _menu_button_set = False  # برای آپدیت منو با آدرس جدید
             log("✅ آدرس مینی‌گیم: " + url)
+            # دکمه منو را ست کن
+            register_menu_button(url)
+            # ارسال یک پیام اطلاع‌رسانی به DM (فقط در شروع اولیه)
             while not stopped() and proc.poll() is None:
+                # هر ۵ ثانیه چک کن که پروسه زنده است
                 time.sleep(5)
+                # همچنین چک کن که URL هنوز پاسخ می‌دهد
+                try:
+                    req = urllib.request.Request(url + "/healthz",
+                        headers={"User-Agent": "DND-check/1.0"},)
+                    with urllib.request.urlopen(req, timeout=5) as r:
+                        pass
+                except Exception:
+                    log("⚠️ تونل پاسخ نمی‌دهد — ری‌استارت...")
+                    break
             if not stopped():
                 log("⚠️ تونل قطع شد — اتصال مجدد...")
         except Exception as e:
@@ -1821,7 +1948,7 @@ def tunnel_loop(port, native_dir=None):
                     proc.terminate()
                 except Exception:
                     pass
-        time.sleep(15)
+        time.sleep(10)
 
 
 # ==================== نقطه ورود ====================
