@@ -86,7 +86,7 @@ def tg(method, payload=None, timeout=25, retries=2):
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "DND-Bot-Android/2.44",
+                "User-Agent": "DND-Bot-Android/2.45",
                 "Connection": "close",
             }
             req = urllib.request.Request(url, data=data, headers=headers)
@@ -1826,7 +1826,7 @@ def register_quick_tunnel():
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "DND-Bot-Android/2.3",
+            "User-Agent": "DND-Bot-Android/2.45",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as r:
