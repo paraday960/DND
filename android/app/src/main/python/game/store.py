@@ -15,9 +15,21 @@ except Exception:  # pragma: no cover
 from .models import Session
 
 
+def _ensure_parent_dir(path: str):
+    """Create parent directory when one is present.
+
+    ``os.path.dirname('file.db')`` is an empty string; calling makedirs('')
+    fails on Python/Android. Keeping this small helper makes Store robust for
+    both absolute paths and simple filenames.
+    """
+    parent = os.path.dirname(os.path.abspath(path)) if path else ""
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+
 class _SqliteBackend:
     def __init__(self, db_path: str):
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        _ensure_parent_dir(db_path)
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.execute(
             """CREATE TABLE IF NOT EXISTS sessions (
@@ -69,7 +81,7 @@ class _JsonBackend:
     def __init__(self, path: str):
         self.path = path
         self.lock = threading.Lock()
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        _ensure_parent_dir(path)
 
     def _read_all(self) -> dict:
         try:

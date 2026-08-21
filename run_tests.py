@@ -2,6 +2,7 @@
 """تست سریع موتور بازی — اجرا: python run_tests.py"""
 import os
 import sys
+import tempfile
 
 os.environ.setdefault("AI_PROVIDER", "none")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -58,7 +59,14 @@ check("level_up", info["new"] == 2 and ch.level == 2 and ch.max_hp > 0)
 
 print("💾 تست ذخیره‌سازی...")
 from game.store import Store
-store = Store("/tmp/test_dnd.db")
+# Android app sandboxes often do not have a writable /tmp. Use Python's
+# platform-aware temp directory (honours TMPDIR from ~/.phone_dev_env).
+test_db = os.path.join(tempfile.gettempdir(), "test_dnd.db")
+try:
+    os.remove(test_db)
+except FileNotFoundError:
+    pass
+store = Store(test_db)
 s = Session(chat_id=111, name="تست", dm_id=1, dm_name="DM")
 s.add_player(2, "بازیکن")
 s.players["2"]["char"] = ch
