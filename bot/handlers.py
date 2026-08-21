@@ -6,6 +6,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 import config
+import runtime
 from game.combat import (
     attack, cast, dodge, dash, disengage, help_action, hide, shove,
     second_wind, action_surge, rage, bardic_inspiration, move_action,
@@ -186,21 +187,32 @@ async def link_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """وضعیت زنده بات."""
-    import sys, platform
+    """وضعیت زنده بات با عیب‌یابی امن محیط اجرا."""
     url = config.webapp_url()
-    lines = ["📊 **وضعیت بات D&D v2.59**", ""]
+    check = runtime.check_runtime()
+    diag = check["diagnostics"]
+    disk_free = (diag.get("disk", {}).get("data_dir", {}) or {}).get("free")
+    disk_gb = (disk_free / (1024 ** 3)) if disk_free else 0
+    mem_avail = (diag.get("memory", {}) or {}).get("MemAvailable")
+    mem_mb = (mem_avail / (1024 ** 2)) if mem_avail else 0
+
+    lines = ["📊 **وضعیت بات D&D v2.60**", ""]
     lines.append("🌐 مینی‌گیم: " + ("✅ " + url if url else "❌ آماده نیست"))
-    healthy = False
     if url:
         try:
-            r = __import__("requests").get(url + "/healthz", timeout=5)
-            healthy = r.status_code == 200
-            lines.append("🔌 healthz: " + ("✅ %d" % r.status_code if healthy else "❌ %d" % r.status_code))
+            r = __import__("requests").get(url.rstrip("/") + "/healthz", timeout=5)
+            lines.append("🔌 healthz: " + ("✅ %d" % r.status_code if r.status_code == 200 else "❌ %d" % r.status_code))
         except Exception as e:
             lines.append("🔌 healthz: ❌ %s" % str(e)[:60])
-    lines.append("💬 پایتون: " + sys.version.split()[0])
-    lines.append("📱 پلتفرم: " + platform.machine())
+    lines.append("🧠 runtime: " + ("✅ آماده" if check["ok"] else "⚠️ " + ", ".join(check["problems"][:2])))
+    lines.append("💾 data: " + config.DATA_DIR)
+    lines.append("🧪 tmp: " + config.TMP_DIR)
+    if disk_free:
+        lines.append(f"📦 فضای آزاد: {disk_gb:.1f}GB")
+    if mem_avail:
+        lines.append(f"🧬 RAM قابل‌استفاده: {mem_mb:.0f}MB")
+    lines.append("💬 پایتون: " + diag.get("python", "?"))
+    lines.append("📱 پلتفرم: " + diag.get("machine", "?"))
     await update.message.reply_text("\n".join(lines))
 
 

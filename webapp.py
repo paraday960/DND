@@ -15,6 +15,7 @@ from urllib.parse import parse_qsl
 from flask import Flask, jsonify, request, send_from_directory
 
 import config
+import runtime
 from game.combat import (advance, attack, cast, dodge, dash, disengage,
                          help_action, hide, shove, second_wind, action_surge,
                          rage, bardic_inspiration, move_action,
@@ -35,6 +36,7 @@ from game.rules import (ABILITIES, ABILITY_FA, CLASSES, MONSTERS,
                         RACES, SPELLS, WEAPONS, proficiency_bonus)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+runtime.ensure_runtime(BASE_DIR)
 WEB_DIR = os.path.join(BASE_DIR, "web")
 
 _rooms = {}  # cache: code -> Session
@@ -461,8 +463,30 @@ def build_app(store, narrator, telegram_app=None, loop=None):
     # ---------- سلامت سرور (بدون احراز هویت — برای تونل و عیب‌یابی) ----------
     @app.get("/healthz")
     def healthz():
-        return jsonify({"ok": True, "bot_token_set": bool(config.BOT_TOKEN),
-                        "dev": config.WEBAPP_DEV, "rooms": len(_rooms)})
+        check = runtime.check_runtime(BASE_DIR)
+        return jsonify({
+            "ok": bool(check["ok"]),
+            "problems": check["problems"],
+            "bot_token_set": bool(config.BOT_TOKEN),
+            "dev": config.WEBAPP_DEV,
+            "rooms": len(_rooms),
+            "data_dir": config.DATA_DIR,
+            "tmp_dir": config.TMP_DIR,
+            "disk_free": check["diagnostics"].get("disk", {}).get("data_dir", {}).get("free"),
+        })
+
+    @app.get("/api/diagnostics")
+    def api_diagnostics():
+        data = runtime.diagnostics(BASE_DIR)
+        data.update({
+            "bot_token_set": bool(config.BOT_TOKEN),
+            "ai_provider": config.AI_PROVIDER,
+            "webapp_dev": config.WEBAPP_DEV,
+            "webapp_url_set": bool(config.webapp_url()),
+            "db_path": config.DB_PATH,
+            "rooms": len(_rooms),
+        })
+        return jsonify({"ok": True, "data": data})
 
     # ---------- متادیتا ----------
     @app.get("/api/meta")

@@ -8,6 +8,7 @@ import threading
 import time
 
 import requests
+import runtime
 from telegram import BotCommand, Update
 from telegram.ext import (
     Application, CallbackQueryHandler, CommandHandler,
@@ -40,6 +41,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+RUNTIME = runtime.ensure_runtime(BASE_DIR)
+try:
+    file_handler = logging.FileHandler(os.path.join(RUNTIME["log_dir"], "bot.log"), encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    logging.getLogger().addHandler(file_handler)
+except Exception as e:
+    logger.warning("file logging disabled: %s", e)
 
 # لوپ رویداد پایدار برای اپلیکیشن تلگرام (در یک نخ جداگانه — هیچ‌وقت بسته نمی‌شود)
 TEL_LOOP = asyncio.new_event_loop()
@@ -305,6 +313,8 @@ async def _post_init(app: Application):
 
 
 def main():
+    runtime.ensure_runtime(BASE_DIR)
+    logger.info("runtime ready: data=%s tmp=%s logs=%s", config.DATA_DIR, config.TMP_DIR, config.LOG_DIR)
     store = Store(config.DB_PATH)
     narrator = Narrator()
     app = build_app(store, narrator)

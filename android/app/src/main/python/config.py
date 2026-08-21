@@ -2,6 +2,8 @@
 """تنظیمات ربات — همه‌چیز از فایل .env خوانده می‌شود."""
 import os
 
+import runtime
+
 
 def _load_dotenv():
     env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -17,6 +19,10 @@ def _load_dotenv():
 
 
 _load_dotenv()
+RUNTIME = runtime.ensure_runtime(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.environ.get("DND_DATA_DIR", RUNTIME["data_dir"])
+TMP_DIR = os.environ.get("DND_TMP_DIR", RUNTIME["tmp_dir"])
+LOG_DIR = os.environ.get("DND_LOG_DIR", RUNTIME["log_dir"])
 
 # ---------- تلگرام ----------
 # strip() تا فاصله/خط جدیدی که موقع کپی توکن اضافه می‌شود، اعتبارسنجی را خراب نکند
@@ -35,9 +41,7 @@ MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
 MISTRAL_MODEL = os.environ.get("MISTRAL_MODEL", "mistral-small-latest")
 
 # ---------- پایگاه داده ----------
-DB_PATH = os.environ.get(
-    "DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "dnd_bot.db")
-)
+DB_PATH = os.environ.get("DB_PATH", os.path.join(DATA_DIR, "dnd_bot.db"))
 
 # ---------- قوانین بازی ----------
 MAX_PLAYERS = int(os.environ.get("MAX_PLAYERS", "8"))
@@ -58,7 +62,7 @@ def webapp_url() -> str:
     """آدرس مینی‌گیم: اول از .env، بعد از فایل تونل Termux."""
     if WEBAPP_URL:
         return WEBAPP_URL
-    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "tunnel_url.txt")
+    p = os.path.join(DATA_DIR, "tunnel_url.txt")
     try:
         with open(p, encoding="utf-8") as f:
             u = f.read().strip()
